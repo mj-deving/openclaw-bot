@@ -2,7 +2,7 @@
 
 ## What This Is
 
-OpenClaw IRC bot setup — configuration, security audits, deployment guide
+OpenClaw Telegram bot (Gregor) — deployment, configuration, security hardening
 
 **Owner:** Marius Jonathan Jauernik
 **GitHub:** [mj-deving/openclaw-bot](https://github.com/mj-deving/openclaw-bot)
@@ -53,7 +53,10 @@ OpenClaw IRC bot setup — configuration, security audits, deployment guide
 
 ## Current State
 
-**Status:** Planning complete, awaiting IRC registration before implementation
-**Bot nick:** Gregor | **Channel:** #gregor | **VPS:** Ubuntu 24.04 LTS
+**Status:** Phases 0-4 deployed and operational
+**Bot:** @gregor_openclaw_bot (Telegram) | **VPS:** 213.199.32.18, Ubuntu 24.04.4 LTS
+**OpenClaw:** v2026.2.17 | **Model:** claude-opus-4-6 | **Gateway:** 127.0.0.1:18789
+**Permissions:** tools.profile "full", exec.ask off, deny [gateway, nodes, sessions_spawn, sessions_send]
+**Pipeline:** ~/.openclaw/pipeline/ (inbox/outbox/ack) — async Isidore↔Gregor messaging
 **Last session:** 2026-02-19
-**Next steps:** User completes IRC registration (see Plans/IRC-REGISTRATION-GUIDE.md), then Phase 0
+**Next steps:** Phase 5 (memory tuning), Phase 8 (backups), MASTERPLAN update
