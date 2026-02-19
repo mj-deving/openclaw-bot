@@ -35,8 +35,10 @@ OpenClaw IRC bot setup — configuration, security audits, deployment guide
 ├── CLAUDE.local.md        # Session continuity (auto-generated, gitignored)
 ├── README.md              # Public-facing project documentation
 ├── Plans/
-│   ├── MASTERPLAN.md      # 10-phase deployment plan
-│   └── MASTERPLAN-EXPLAINED.md  # Reasoning behind every decision
+│   ├── MASTERPLAN.md      # 10-phase deployment plan (fully corrected)
+│   ├── MASTERPLAN-EXPLAINED.md  # Reasoning behind every decision
+│   ├── RESEARCH-OFFICIAL-DOCS.md  # Official docs research findings
+│   └── IRC-REGISTRATION-GUIDE.md  # Libera.Chat registration steps
 ├── src/                   # Source code (scripts, configs, systemd — TBD)
 └── .sessions/             # Session docs (auto-generated)
 ```
@@ -49,6 +51,7 @@ OpenClaw IRC bot setup — configuration, security audits, deployment guide
 
 ## Current State
 
-**Status:** Planning complete, implementation not started
+**Status:** Planning complete, awaiting IRC registration before implementation
+**Bot nick:** Gregor | **Channel:** #gregor | **VPS:** Ubuntu 24.04 LTS
 **Last session:** 2026-02-19
-**Next steps:** Deep research of official OpenClaw docs, then begin Phase 0 (VPS prep)
+**Next steps:** User completes IRC registration (see Plans/IRC-REGISTRATION-GUIDE.md), then Phase 0
