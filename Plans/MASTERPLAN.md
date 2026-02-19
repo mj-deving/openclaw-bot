@@ -68,6 +68,8 @@
 - Management access is via **SSH tunnel only** -- no Tailscale, no public Control UI
 - No plugins from ClawHub at launch (supply chain risk: 1,184+ malicious skills found in Feb 2026)
 - Two channels: IRC (public/community) + Telegram (personal/mobile management)
+- Isidore ↔ Gregor pipeline via GitHub repo `.pipeline/` directory (asynchronous task delegation and escalation)
+- Gregor = always-on assistant (VPS); Isidore = session-based mentor (local Claude Code)
 
 ---
 
@@ -479,7 +481,22 @@ Telegram uses a **pairing** model -- the first person to DM the bot becomes the 
 
 **This is why `dmPolicy: "pairing"` is recommended for Telegram** -- it's a one-time setup that locks the bot to your account. After pairing, no one else can DM the bot.
 
-### 5b.5 Telegram vs IRC Security Differences
+### 5b.5 Telegram Command Interface
+
+Gregor exposes structured commands for Telegram interactions:
+
+| Command | Purpose |
+|---------|---------|
+| `/ask <question>` | General question -- Gregor answers using Claude |
+| `/research <topic>` | Web search + summarize -- uses allowed tools |
+| `/status` | Report running tasks, pipeline status, uptime |
+| `/escalate <description>` | Push task to Isidore pipeline (writes to `.pipeline/gregor-to-isidore/`) |
+| `/review <github-url>` | Code review -- reads PR/commit via `gh` CLI, gives feedback |
+| `/tasks` | Show active task board from `.pipeline/shared/active-tasks.md` |
+
+These commands are implemented via the system prompt -- OpenClaw processes them as natural language patterns, not as IRC-style bot commands.
+
+### 5b.6 Telegram vs IRC Security Differences
 
 | Aspect | IRC | Telegram |
 |--------|-----|----------|
@@ -489,7 +506,7 @@ Telegram uses a **pairing** model -- the first person to DM the bot becomes the 
 | **Attack surface** | Channel prompt injection | DM prompt injection (but only from paired user) |
 | **Rate limits** | Server-side flood protection | Telegram Bot API rate limits (30 msg/sec) |
 
-### 5b.6 Telegram-Specific System Prompt Additions
+### 5b.7 Telegram-Specific System Prompt Additions
 
 Add to `~/.openclaw/agent/system.md`:
 
@@ -745,7 +762,36 @@ You are Gregor, an IRC bot on Libera.Chat. You are a knowledgeable assistant spe
 - Split long responses across multiple lines if needed
 ```
 
-### 7.2 IRC-Specific Considerations
+### 7.2 Gregor's Capability Scope
+
+Gregor operates under a strict capability model -- allowed/denied/escalated:
+
+**ALLOWED:**
+- Text conversation (IRC + Telegram)
+- Web search (`web_search` tool -- built-in, no skill needed)
+- Summarization (`summarize` skill -- steipete, Nix-packaged)
+- GitHub operations (`github` skill -- steipete, `gh` CLI integration)
+- Persistent memory (knowledge management across sessions)
+- Code review and discussion (via model capability + GitHub skill)
+- Research and information gathering (web search + summarize)
+- Task tracking and reporting (via `.pipeline/shared/active-tasks.md`)
+
+**DENIED (per Phase 4 tool deny list):**
+- `gateway` (self-reconfiguration), `cron` (scheduling)
+- `group:runtime` (exec, bash, process), `group:fs` (read, write, edit)
+- `browser`, `canvas`, `nodes`, `sessions_spawn`, `sessions_send`
+- Any self-modifying skill (Capability Evolver, self-improving-agent, etc.)
+
+**ESCALATION → Isidore** (via `.pipeline/gregor-to-isidore/`):
+- Complex code implementation requiring file edits
+- Architecture decisions requiring codebase exploration
+- Security-sensitive operations
+- Multi-file refactoring
+- Anything requiring tools Gregor doesn't have
+
+Gregor's power comes from the Claude model itself, not from a bloated skill registry. Four skills maximum (see Phase 9).
+
+### 7.3 IRC-Specific Considerations
 
 - **Line length:** IRC messages are limited to ~512 bytes including protocol overhead. OpenClaw should auto-split, but set `maxTokens` conservatively
 - **Flood protection:** Libera.Chat throttles clients that send too many messages too fast. OpenClaw should have built-in rate limiting
@@ -1044,30 +1090,85 @@ git push origin main || echo "$(date): git push failed" >> ~/.openclaw/logs/back
 
 ---
 
-## 11. Phase 9 -- ClawHub Plugins (Future, Audited Only)
+## 11. Phase 9 -- ClawHub Skills (Future, Audited Only)
 
-**NOT for initial deployment.** This phase happens later after the bot is stable and you've identified specific needs.
+**NOT for initial deployment.** This phase happens later after the bot is stable and you've identified specific needs. For the full ecosystem analysis, see `Plans/CLAWHUB-SKILLS-AND-GREGOR-ARCHITECTURE.md`.
 
-### 11.1 The Risk
+### 11.1 The ClawHavoc Risk -- Full Breakdown
 
-- 1,184+ malicious ClawHub skills were discovered in Feb 2026 (the "ClawHavoc" campaign)
-- ~20% of audited packages contained malicious code
-- AMOS macOS infostealer was bundled into skill uploads
-- Prompt injection payloads disguised as skills
+The ClawHavoc campaign (Feb 2026) revealed deep supply chain problems:
 
-### 11.2 Safe Plugin Adoption Process
+| Metric | Value |
+|--------|-------|
+| **Registry before cleanup** | 5,705 skills |
+| **Suspicious skills removed** | 2,419 |
+| **Registry after cleanup** | 3,286 skills |
+| **Registry now (Feb 19, 2026)** | 8,630 non-suspicious skills (grown back faster than moderation) |
+| **Confirmed malicious (initial)** | 341 |
+| **Confirmed malicious (ongoing)** | 824+ |
+| **Single worst actor** | hightower6eu -- 314 malicious skills by one account |
+| **Malware type** | AMOS macOS infostealer, credential theft, data exfiltration |
+| **Malicious rate at peak** | ~20% of audited packages |
 
-When you're ready to add plugins:
+**Critical architectural facts:**
+- **Skills run IN-PROCESS with the Gateway.** A malicious skill has full access to Gregor's process, memory, and API keys. There is NO sandboxing. This is an OpenClaw architectural limitation, not fixable with better scanning.
+- **Prompt injection is NOT scanned for.** VirusTotal catches binary malware, not adversarial prompts in SKILL.md files.
+- **npm lifecycle scripts execute during `clawhub install`.** `preinstall`/`postinstall` scripts are a classic supply chain vector.
 
-1. **Identify the need** -- what capability is missing?
-2. **Search ClawHub** for the skill
-3. **Audit the source code** manually before installing
-4. **Check the Cisco AI Defense skill scanner** results (if available)
-5. **Install in a test environment first**
-6. **Run `openclaw security audit --deep` after installation**
-7. **Monitor logs** for unexpected behavior (outbound connections, file access)
+### 11.2 The steipete Factor
 
-### 11.3 Re-enabling Plugins
+Peter Steinberger (steipete) created OpenClaw and authored **9 of the top 14 most-downloaded skills** on ClawHub. His skills are essentially the platform's standard library (28.1K downloads on `gog`, 22.1K on `wacli`, 21.5K on `summarize`, 20.7K on `github`).
+
+**Risk:** steipete joined OpenAI on Feb 15, 2026. OpenClaw continues under a foundation, but the most trusted contributor is no longer maintaining the ecosystem. This means:
+- His existing skills may not get security patches promptly
+- No new reference-quality skills from the platform creator
+- Community skills have no benchmark author to compare against
+
+**Mitigation:** Pin exact versions of his skills. Monitor for security advisories. Accept that his existing published code is the highest-quality available.
+
+### 11.3 Skill Whitelist -- Three Tiers
+
+**Tier 1 -- Install (vetted, essential):**
+
+| Skill | Author | Purpose | Requires Denied Tools? |
+|-------|--------|---------|----------------------|
+| `github` | steipete | GitHub CLI for pipeline communication, PR review | No |
+| `summarize` | steipete (Nix) | URL/file summarization for research tasks | No |
+
+**Tier 2 -- Consider after bot is stable (needs evaluation):**
+
+| Skill | Author | Purpose | Concern |
+|-------|--------|---------|---------|
+| `bird` | steipete (Nix) | X/Twitter monitoring | Requires Twitter API key |
+| `gogcli` | steipete (Nix) | Google services | Requires Google OAuth -- large attack surface |
+| `exa-web-search-free` | community | Enhanced web search | Need to vet author and code |
+
+**Tier 3 -- Never install:**
+
+| Skill | Reason |
+|-------|--------|
+| Capability Evolver | Self-modifying agent code -- antithetical to lockdown posture |
+| self-improving-agent | Autonomous self-modification |
+| Any browser skill | `browser` tool denied in Phase 4 |
+| Any coding-agent | Gregor doesn't spawn sub-agents |
+| moltbook / agentchat | Agent-to-agent social networking -- unnecessary attack surface |
+| Any skill by hightower6eu | Known malicious actor (314 skills) |
+| Any skill < 500 downloads with unknown author | Below trust threshold |
+
+**Policy: 4 skills maximum.** `github` + `summarize` + `web_search` (built-in) + `clawdhub` (registry search only). Every additional skill is attack surface. Gregor's power comes from the Claude model, not from community skills.
+
+### 11.4 Vetting Checklist (Before Installing ANY Skill)
+
+- [ ] Author is known/trusted (steipete, established community member with 1K+ downloads)
+- [ ] No VirusTotal flags on any file in the skill package
+- [ ] No ClawHavoc association (check author history, account age)
+- [ ] Manually read SKILL.md -- no `eval()`, `fetch()` to unknown hosts, `exec()`, obfuscated code
+- [ ] No npm lifecycle scripts in `package.json` (`preinstall`, `postinstall`, `prepare`)
+- [ ] Does not require any denied tools (`gateway`, `cron`, `group:runtime`, `group:fs`, `browser`, etc.)
+- [ ] Pin exact version after install -- disable auto-updates for skills
+- [ ] Run `openclaw security audit --deep` after installation
+
+### 11.5 Re-enabling Plugins
 
 ```jsonc
 {
@@ -1075,7 +1176,8 @@ When you're ready to add plugins:
     "enabled": true,
     "allow": [
       // Only explicitly approved plugins (NOT "allowList"!)
-      "plugin-name-here"
+      "github",
+      "summarize"
     ]
   }
 }
@@ -1093,6 +1195,12 @@ openclaw-bot/
 ├── README.md                          # Public documentation
 ├── Plans/
 │   └── MASTERPLAN.md                  # This file
+├── .pipeline/                         # Isidore ↔ Gregor communication channel
+│   ├── gregor-to-isidore/            # Gregor writes escalations, Isidore reads
+│   ├── isidore-to-gregor/            # Isidore writes responses, Gregor reads
+│   └── shared/                        # Shared state
+│       ├── active-tasks.md           # Current task board
+│       └── decisions.md              # Architectural decisions log
 ├── src/
 │   ├── config/
 │   │   ├── openclaw.json.example      # Sanitized config template
@@ -1133,6 +1241,9 @@ openclaw-bot/
 | **Gateway tool** | AI self-reconfiguration | `gateway` in deny list |
 | **Workspace injection** | .md files loaded as trusted context | Read-only workspace, no untrusted files |
 | **HTTP fingerprinting** | Instance identification | OpenClaw sends identifiable User-Agent headers |
+| **In-process skills** | Malicious skill gets full process/memory/API key access (no sandboxing) | Plugins disabled; whitelist-only installs; steipete-only trust model |
+| **Ecosystem maintenance** | steipete (creator, top contributor) joined OpenAI Feb 15 2026 | Pin skill versions; monitor advisories; accept maintenance lag risk |
+| **npm lifecycle scripts** | `clawhub install` runs preinstall/postinstall -- supply chain vector | Vetting checklist checks package.json scripts before any install |
 
 ### 13.2 Known CVEs to Track
 
@@ -1443,6 +1554,10 @@ ssh -L 18789:127.0.0.1:18789 your-admin-user@YOUR_VPS_IP
 | Memory | Persistent across sessions | Builds knowledge over time |
 | Update policy | Auto-update + security audit | Weekly cron, audit after each update |
 | Backups | VPS + sanitized config to git repo | Disaster recovery without exposing secrets |
+| Skill trust model | steipete-only (Tier 1) | Platform creator, highest-quality code, Nix-packaged, 9 of top 14 skills |
+| Skill count | 4 skills maximum | Every skill is attack surface; Claude model provides the real power |
+| Pipeline architecture | GitHub repo `.pipeline/` as message bus | Auditable, versioned, both agents have gh access, Marius can inspect |
+| Telegram commands | 6 structured commands (/ask, /research, /status, /escalate, /review, /tasks) | System prompt patterns, not IRC-style bot commands |
 
 ---
 
@@ -1504,4 +1619,4 @@ Phase 10 ─── Repo structure for this project
 
 ---
 
-*This plan is based on exhaustive analysis of the centminmod/explain-openclaw repository (199 files, 5.6MB), the official OpenClaw docs (docs.openclaw.ai), 3 independent security audits, CVE databases, and community research. Config schemas verified against official configuration reference. Updated 2026-02-19 with 9 critical corrections and 8 additions from official docs research.*
+*This plan is based on exhaustive analysis of the centminmod/explain-openclaw repository (199 files, 5.6MB), the official OpenClaw docs (docs.openclaw.ai), 3 independent security audits, CVE databases, and community research. Config schemas verified against official configuration reference. Updated 2026-02-19 with 9 critical corrections, 8 additions from official docs research, and ClawHub ecosystem architecture merge (skill whitelist, Isidore-Gregor pipeline, Telegram commands, steipete risk analysis). See `Plans/CLAWHUB-SKILLS-AND-GREGOR-ARCHITECTURE.md` for the full deep-dive.*

@@ -379,6 +379,117 @@ For a production IRC bot that needs to be reliable 24/7, the documented primary 
 
 ---
 
+## Why steipete-Only Skill Trust
+
+The MASTERPLAN limits Gregor to skills authored by Peter Steinberger (steipete). This is a deliberate, evidence-based decision:
+
+### The ecosystem reality (Feb 19, 2026)
+
+ClawHub has 8,630 non-suspicious skills. That sounds like abundance. Here's why it's actually a problem:
+
+1. **The registry grew from 3,286 to 8,630 AFTER the ClawHavoc cleanup.** The cleanup removed 2,419 suspicious skills, but the registry grew back in weeks. This means new skills are being uploaded faster than moderators can vet them.
+
+2. **steipete authored 9 of the top 14 most-downloaded skills.** No other author comes close. His skills (`gog`, `wacli`, `summarize`, `github`, etc.) are the platform's de facto standard library. Every other author has a fraction of the download count and community validation.
+
+3. **Skills run IN-PROCESS with the Gateway.** This is the architectural fact that makes trust the critical issue. A malicious skill isn't sandboxed -- it has full access to Gregor's process memory, API keys, and file system. One bad skill = total compromise.
+
+4. **VirusTotal doesn't catch prompt injection.** The scanning infrastructure catches binary malware (AMOS infostealer etc.) but a SKILL.md with adversarial prompts passes right through. This means the #1 attack vector against LLM agents is completely unmitigated in the scanning pipeline.
+
+### Why not trust other high-download authors?
+
+- **@byungkyu** (7K+ downloads each on Trello API, Fathom, Asana, etc.) uses a template pattern. Efficient, but a compromised template compromises all skills. Not enough independent verification.
+- **Community authors** have no accountability mechanism. Anyone can upload. Account age checks (added post-ClawHavoc) help but don't solve the fundamental problem.
+- **The "explore latest" feed is a firehose of spam** -- city guides, crypto DAOs, niche tools. Signal-to-noise ratio is terrible.
+
+### Why this still makes sense despite steipete leaving
+
+steipete joined OpenAI on Feb 15, 2026. His existing published skills still represent the highest-quality code in the ecosystem because:
+- His code is Nix-packaged (reproducible builds, hash-verified)
+- His download counts provide massive community validation
+- His skills have been running in thousands of instances for months
+- We pin exact versions, so his departure doesn't create version drift
+
+The risk is: no security patches if vulnerabilities are found in his skills. We accept this risk because (a) the alternative is trusting less-vetted authors, which is strictly worse, and (b) we can fork and patch if needed.
+
+---
+
+## Why GitHub Repo as Message Bus (Isidore ↔ Gregor Pipeline)
+
+The MASTERPLAN uses the `openclaw-bot` GitHub repo's `.pipeline/` directory for Isidore-Gregor communication. Four options were evaluated:
+
+### What was considered
+
+| Option | Pros | Cons | Verdict |
+|--------|------|------|---------|
+| **GitHub repo files** | Auditable, versioned, both agents have git/gh access, Marius can inspect anytime | Latency (~minutes), not real-time | **CHOSEN** |
+| **GitHub Issues** | Structured, threaded, labels/milestones | Too public unless repo is private, clunky for rapid exchange | Alternative |
+| **Direct API relay** | Real-time | Requires custom server, opens network attack surface, hard to audit | NO |
+| **Telegram as relay** | Marius always in the loop | Messages get lost in chat noise, no structure | Supplement only |
+
+### Why GitHub won
+
+1. **Auditable** -- every message is a git commit. You can see exactly what Gregor sent, when, and inspect the full history. No message disappears.
+
+2. **Already authenticated** -- Gregor has the `github` skill (steipete's `gh` CLI wrapper). Isidore has native git access. No new credentials needed.
+
+3. **Marius controls the flow** -- the repo is private. Marius can read pipeline messages anytime from GitHub's UI, his phone, or his local clone. He's always in the loop without being a bottleneck.
+
+4. **Structured format** -- pipeline messages use frontmatter (from/to/type/priority/timestamp) and markdown sections (Subject/Context/Request/Attachments). This is machine-parseable AND human-readable.
+
+5. **No new infrastructure** -- no custom server to deploy, no new attack surface to protect, no new dependency to maintain. The repo already exists.
+
+### Why not real-time?
+
+An IRC bot doesn't need sub-second escalation. The typical flow is: Marius gives task → Gregor tries → can't handle → writes to pipeline → notifies Marius on Telegram → Marius starts an Isidore session when convenient → Isidore reads pipeline. The bottleneck is human attention, not message latency.
+
+### Security consideration
+
+The repo must remain private. Pipeline messages may contain sensitive context (task descriptions, code snippets, architectural decisions). Gregor's GitHub token should be scoped to this repo only -- no org-wide access.
+
+---
+
+## Why Four Skills Maximum
+
+The MASTERPLAN limits Gregor to 4 skills: `github`, `summarize`, `web_search` (built-in), and `clawdhub` (registry search only). This constraint deserves explanation:
+
+### The skill surface area equation
+
+Every installed skill is:
+- **Code running in-process** -- no sandbox, full access to Gregor's memory/keys
+- **A dependency to maintain** -- version pinning, security monitoring, update vetting
+- **An attack vector** -- even a trusted skill can be compromised in a future version
+- **Cognitive overhead** -- more skills = more complex system prompt = more edge cases
+
+Four skills is the minimum viable set:
+- `github` enables the Isidore pipeline (essential)
+- `summarize` enables research tasks (core use case)
+- `web_search` is built-in (no install risk)
+- `clawdhub` enables searching the registry without installing (read-only)
+
+### What Gregor gets without skills
+
+Claude's base capabilities are substantial. Without any skills, Gregor can:
+- Answer complex questions on any topic
+- Review and discuss code (given as text in chat)
+- Analyze security threats and recommend mitigations
+- Have nuanced multi-turn conversations
+- Use persistent memory to build context over time
+
+Skills add *reach* (web search, GitHub API, URL summarization), but the *reasoning* comes from the model. An IRC bot with Claude Opus and 4 skills is more capable than a bot with a weaker model and 50 skills.
+
+### The expansion path
+
+If Gregor needs a capability not covered by the 4 skills:
+1. Check if the existing skills + model reasoning can approximate it
+2. If not, check Tier 2 candidates (bird, gogcli, exa-web-search-free)
+3. Run the full vetting checklist (11.4 in MASTERPLAN)
+4. Install, audit, pin version, monitor
+5. Update this document with the reasoning
+
+The ceiling isn't permanent -- it's a starting posture that can be loosened with evidence.
+
+---
+
 ## Why We Track CVEs in the Plan
 
 Three CVEs are listed not because they're currently exploitable (they're patched) but because:
