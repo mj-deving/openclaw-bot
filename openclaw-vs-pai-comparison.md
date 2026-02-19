@@ -2,7 +2,7 @@
 
 ## What They Are
 
-**OpenClaw** — A standalone AI Gateway (Node.js server) that connects your AI to 15+ messaging platforms. 208K GitHub stars, created by Peter Steinberger (who joined OpenAI Feb 15, 2026). Think: *"AI everywhere you already chat."*
+**OpenClaw** — A standalone AI Gateway (Node.js server) that connects your AI to 15+ messaging platforms. 198K GitHub stars, created by Peter Steinberger (who just joined OpenAI). Think: *"AI everywhere you already chat."*
 
 **PAI** — An extension layer on Claude Code that adds structured methodology, memory, and skills. Think: *"AI that thinks rigorously and improves over time."*
 
@@ -16,11 +16,11 @@ Always-on Gateway server                    On-demand CLI sessions
 15+ messaging channels                      Terminal only
 (WhatsApp, Telegram, Slack,                 (Claude Code)
  Signal, Discord, iOS, Android...)            ↕
-  ↕                                         The Algorithm v1.8.0
+  ↕                                         The Algorithm v1.6.0
 Any LLM (14 providers + local)             OBSERVE→THINK→PLAN→BUILD→
   ↕                                         EXECUTE→VERIFY→LEARN
-8,630+ community skills (ClawHub)             ↕
-                                            38 curated skills
+5,700+ community skills (ClawHub)             ↕
+                                            37 curated skills
                                             6-directory memory system
 ```
 
@@ -33,11 +33,11 @@ Any LLM (14 providers + local)             OBSERVE→THINK→PLAN→BUILD→
 | **Methodology** | Standard agentic loop (no gates) | The Algorithm + ISC verification + 7 hard-gated phases |
 | **Memory** | 2-layer (markdown + vector search) | 6-directory system with active learning, pattern extraction, ratings |
 | **Self-improvement** | No | Yes (reflection → pattern synthesis → upgrade proposals) |
-| **Skills** | 8,630+ (quality varies wildly) | 38 curated (high quality) |
-| **Security** | **Severe issues** — auth off by default, multiple CVEs (incl. 8.8 CVSS RCE), 1,184+ malicious skills on ClawHub, 40K+ exposed instances | Strong by default — no network surface, secret protection with 400+ regex patterns |
+| **Skills** | 5,700+ (quality varies wildly) | 37 curated (high quality) |
+| **Security** | **Severe issues** — auth off by default, 512 vulns found in audit, 341 malicious skills on ClawHub, 42K exposed instances | Strong by default — no network surface, secret protection with 400+ regex patterns |
 | **Setup** | ~10 min | ~30 min |
-| **Cost** | Free with any LLM (including local/Ollama) | Requires Anthropic subscription |
-| **Community** | 208K stars, massive but chaotic | Small, curated, one author |
+| **Cost** | Free with any LLM (including local/Ollama). Supports Anthropic subscription via `setup-token` — no separate API key needed | Requires Anthropic subscription |
+| **Community** | 198K stars, massive but chaotic | Small, curated, one author |
 
 ## The Key Difference: Breadth vs Depth
 
@@ -47,11 +47,12 @@ Any LLM (14 providers + local)             OBSERVE→THINK→PLAN→BUILD→
 
 ## OpenClaw's Elephant in the Room: Security
 
-- **Multiple high-severity CVEs** including CVE-2026-25253 (8.8 CVSS — 1-click RCE via auth token theft)
-- **1,184+ confirmed malicious skills** on ClawHub (~20% of registry at peak, including AMOS infostealer bundles)
-- **40,214+ publicly exposed Gateway instances** found by SecurityScorecard STRIKE team (28,663 unique IPs)
+- **512 vulnerabilities** found in the first security audit
+- **341 confirmed malicious skills** on ClawHub (12% of the registry at peak)
+- **42,000+ publicly exposed Gateway instances** found on the internet
 - Auth disabled by default, WebSocket server listens on network port
-- Creator admitted to "vibe coding" (shipping unreviewed code), then left for OpenAI — project now under foundation governance
+- Andrej Karpathy publicly reversed his endorsement, calling it *"a dumpster fire"*
+- Kaspersky assessed some issues are **structural** (not patchable)
 
 PAI has none of these problems — it has no network surface, no public skill marketplace, and runs as a local CLI process.
 
@@ -134,7 +135,7 @@ PAI has none of these problems — it has no network surface, no public skill ma
 | Tool Policies | Allow/deny lists with profile-based defaults |
 | Approval Workflows | User prompts for dangerous commands |
 | Docker Sandboxing | Optional per-agent/per-session |
-| ClawHub Vetting | Minimal — ~20% malicious at peak, VirusTotal scanning now active |
+| ClawHub Vetting | Minimal — 12% malicious skills at peak |
 | ClawBands (3rd party) | Middleware for synchronous blocking approval |
 
 ## Who Is Each One For?
@@ -146,13 +147,34 @@ PAI has none of these problems — it has no network surface, no public skill ma
 | "I want rigorous methodology" | Not available | Core value proposition |
 | "I want cheap/free/local models" | Yes (14 providers + Ollama) | No (Claude only) |
 | "I care about security" | Proceed with extreme caution | Strong by default |
-| "I want a massive plugin ecosystem" | ClawHub (8,630+) | 38 curated |
+| "I want a massive plugin ecosystem" | ClawHub (5,700+) | 37 curated |
 | "I want self-improving AI" | No | Yes |
 | "I'm a developer/power user" | Good (general-purpose) | Ideal (terminal-native) |
 
+## Anthropic Subscription Auth
+
+OpenClaw supports using your existing Claude Pro/Max subscription — no separate API key purchase needed:
+
+```bash
+# 1. Generate token from your subscription
+claude setup-token
+
+# 2. Configure in OpenClaw
+openclaw models auth setup-token --provider anthropic
+
+# Verify
+openclaw models status
+```
+
+- Token stored in `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`
+- Non-refreshing — regenerate periodically when it expires
+- [Official docs](https://docs.openclaw.ai/concepts/oauth#anthropic-setup-token-subscription-auth)
+
+This means you could run OpenClaw with Claude using the same subscription you already pay for PAI/Isidore.
+
 ## Bottom Line
 
-You already have PAI/Isidore — the rigorous thinking layer. OpenClaw would only add value for **phone-based reach** (WhatsApp, Telegram, Signal). Given its security state, wait until the OpenAI-backed foundation hardens it before running it on anything with access to your data.
+You already have PAI/Isidore — the rigorous thinking layer. OpenClaw would add value for **phone-based reach** (WhatsApp, Telegram, Signal), and you can power it with your existing Anthropic subscription via setup-token. The security concerns remain the main blocker — wait until the OpenAI-backed foundation hardens it before running it on anything with access to your data.
 
 ## Sources
 
@@ -162,6 +184,7 @@ You already have PAI/Isidore — the rigorous thinking layer. OpenClaw would onl
 - [OpenClaw Docs - Security](https://docs.openclaw.ai/gateway/security)
 - [OpenClaw Security Issues (The Register)](https://www.theregister.com/2026/02/02/openclaw_security_issues/)
 - [Creator Joins OpenAI (TechCrunch)](https://techcrunch.com/2026/02/15/openclaw-creator-peter-steinberger-joins-openai/)
+- [OpenClaw Docs - OAuth/Setup-Token](https://docs.openclaw.ai/concepts/oauth#anthropic-setup-token-subscription-auth)
 - [PAI GitHub](https://github.com/danielmiessler/Personal_AI_Infrastructure)
 
-*Research date: 2026-02-19*
+*Research date: 2026-02-19 (updated: subscription auth confirmed working via official docs)*
