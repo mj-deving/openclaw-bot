@@ -75,11 +75,13 @@ The `setup-token` method was chosen because:
 
 The caveat: Anthropic recommends API keys for "production or multi-user workloads." For a personal IRC bot with a single operator, setup-token is the right fit.
 
-### Why `claude-sonnet-4` specifically
+### Why `claude-sonnet-4` was originally recommended
 - **IRC is real-time** -- response latency matters. Opus is smarter but slower. Haiku is faster but dumber. Sonnet is the sweet spot.
 - **IRC responses are short** -- you don't need Opus-level reasoning for most channel interactions. Sonnet handles Q&A, code snippets, and general assistance well.
 - **Token economics** -- with `maxTokens: 1024`, each response is capped at roughly 750-800 words. On a subscription, this is predictable. With Opus, each response would cost ~3x more for minimal quality improvement in short-form chat.
 - **Upgrade path is trivial** -- if you find Sonnet isn't smart enough, changing to Opus is a single config line. No architecture changes needed.
+
+> **Override:** The MASTERPLAN uses `claude-opus-4` instead. This is a deliberate choice -- the owner prioritizes quality over latency for this bot's use cases (general + code/tech + security research). The Sonnet rationale above remains valid as a fallback if Opus proves too slow for IRC.
 
 ---
 
@@ -135,8 +137,8 @@ Each security decision maps to a specific threat:
 - **Evidence**: centminmod's security analysis section, `08-security-analysis/ecosystem-security-threats.md`
 - **Future path**: You said "audited ClawHub plugins later." The plan includes a 7-step adoption process (Phase 9) that requires manual source code review, test environment installation, and post-install security audit.
 
-**`gateway-tool` denied** (`tools.deny: ["gateway-tool"]`)
-- **Threat**: The gateway tool has zero-gating on `config.apply` and `config.patch` operations. Source: `src/agents/tools/gateway-tool.ts:175-225`. This means the AI agent can reconfigure itself -- change its own model, disable security settings, add new channels -- without any permission check.
+**`gateway` denied** (`tools.deny: ["gateway"]`)
+- **Threat**: The gateway tool has zero-gating on `config.apply` and `config.patch` operations. Source: `src/agents/tools/gateway.ts`. This means the AI agent can reconfigure itself -- change its own model, disable security settings, add new channels -- without any permission check.
 - **Evidence**: Found in the explain-openclaw security analysis. This is arguably the most dangerous tool in the entire toolset.
 - **Impact**: Without this deny, a prompt injection via IRC could instruct the bot to change its own config to be wide-open.
 

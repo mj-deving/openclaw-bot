@@ -34,11 +34,13 @@ OpenClaw IRC bot setup — configuration, security audits, deployment guide
 ├── CLAUDE.md              # This file — project context for Isidore
 ├── CLAUDE.local.md        # Session continuity (auto-generated, gitignored)
 ├── README.md              # Public-facing project documentation
+├── openclaw-vs-pai-comparison.md  # OpenClaw vs PAI deep comparison (fact-checked)
 ├── Plans/
 │   ├── MASTERPLAN.md      # 10-phase deployment plan (fully corrected)
 │   ├── MASTERPLAN-EXPLAINED.md  # Reasoning behind every decision
 │   ├── RESEARCH-OFFICIAL-DOCS.md  # Official docs research findings
-│   └── IRC-REGISTRATION-GUIDE.md  # Libera.Chat registration steps
+│   ├── IRC-REGISTRATION-GUIDE.md  # Libera.Chat registration steps
+│   └── CLAWHUB-SKILLS-AND-GREGOR-ARCHITECTURE.md  # ClawHub ecosystem + Gregor design
 ├── src/                   # Source code (scripts, configs, systemd — TBD)
 └── .sessions/             # Session docs (auto-generated)
 ```

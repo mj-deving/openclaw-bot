@@ -66,7 +66,7 @@
 - Gateway binds to **loopback only** (127.0.0.1) -- never exposed to the internet
 - The ONLY outbound connections are to Libera.Chat (IRC), Telegram Bot API, and Anthropic's API
 - Management access is via **SSH tunnel only** -- no Tailscale, no public Control UI
-- No plugins from ClawHub at launch (supply chain risk: 341 malicious skills found in Feb 2026)
+- No plugins from ClawHub at launch (supply chain risk: 1,184+ malicious skills found in Feb 2026)
 - Two channels: IRC (public/community) + Telegram (personal/mobile management)
 
 ---
@@ -217,6 +217,7 @@ openclaw doctor
 - If you see "OAuth token refresh failed," run `openclaw doctor --fix`
 - If you see "credentials only authorized for use with Claude Code," fall back to an API key (see 4.1b)
 - Anthropic's terms note: "For production or multi-user workloads, API keys are usually the safer choice." For a personal IRC bot, setup-token is fine.
+- **Note (Jan 2026):** Anthropic may have restricted setup-token for non-Claude-Code use since ~Jan 9, 2026. If setup-token auth fails, proceed immediately to the API key fallback in 4.1b.
 
 ### 4.1b Fallback: Direct API Key (if setup-token doesn't work)
 
@@ -505,7 +506,7 @@ Add to `~/.openclaw/agent/system.md`:
 
 ## 6. Phase 4 -- Security Hardening (Maximum Lockdown)
 
-This is the most critical phase. OpenClaw has had 28,000+ exposed instances, malicious ClawHub packages, and real CVEs. We lock everything down.
+This is the most critical phase. OpenClaw has had 40,000+ exposed instances, malicious ClawHub packages, and real CVEs. We lock everything down.
 
 ### 6.1 Gateway Binding
 
@@ -1049,8 +1050,8 @@ git push origin main || echo "$(date): git push failed" >> ~/.openclaw/logs/back
 
 ### 11.1 The Risk
 
-- 341 malicious ClawHub skills were discovered in Feb 2026 (the "ClawHavoc" campaign)
-- 12% of audited packages contained malicious code
+- 1,184+ malicious ClawHub skills were discovered in Feb 2026 (the "ClawHavoc" campaign)
+- ~20% of audited packages contained malicious code
 - AMOS macOS infostealer was bundled into skill uploads
 - Prompt injection payloads disguised as skills
 
@@ -1422,7 +1423,7 @@ ssh -L 18789:127.0.0.1:18789 your-admin-user@YOUR_VPS_IP
 | AI provider | Anthropic (Max subscription via setup-token) | Best quality, user preference, no separate API cost |
 | Auth method | Setup-token (API key as fallback) | Max subscription directly powers the bot |
 | IRC network | Libera.Chat | Largest FOSS network, best audience |
-| Security posture | Maximum lockdown | 28K+ exposed instances, real attacks |
+| Security posture | Maximum lockdown | 40K+ exposed instances, real attacks |
 | Gateway binding | Loopback only | No external exposure |
 | Remote access | SSH tunnel only | No Tailscale, no public UI |
 | Plugins | Disabled at launch | ClawHavoc supply chain risk |
