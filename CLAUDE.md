@@ -10,9 +10,8 @@ OpenClaw IRC bot setup — configuration, security audits, deployment guide
 
 ## Tech Stack
 
-- **Runtime:** Bun + TypeScript
-- **Frontend:** React + Tailwind CSS (if applicable)
-- **Deployment:** Cloudflare (if applicable)
+- **Runtime:** Bun + TypeScript (repo tooling); Node.js 22.x (OpenClaw itself)
+- **Deployment:** VPS with systemd (maximum lockdown security posture)
 
 ## Conventions
 
@@ -30,20 +29,26 @@ OpenClaw IRC bot setup — configuration, security audits, deployment guide
 
 ## Project Structure
 
-<!-- Update this as the project evolves -->
-
 ```
 .
-├── CLAUDE.md          # This file — project context for Isidore
-├── README.md          # Public-facing project documentation
-├── src/               # Source code
-└── ...
+├── CLAUDE.md              # This file — project context for Isidore
+├── CLAUDE.local.md        # Session continuity (auto-generated, gitignored)
+├── README.md              # Public-facing project documentation
+├── Plans/
+│   ├── MASTERPLAN.md      # 10-phase deployment plan
+│   └── MASTERPLAN-EXPLAINED.md  # Reasoning behind every decision
+├── src/                   # Source code (scripts, configs, systemd — TBD)
+└── .sessions/             # Session docs (auto-generated)
 ```
+
+## Key References
+
+- **Official docs:** docs.openclaw.ai (NOT clawbot.ai — potentially fake)
+- **Research source:** github.com/centminmod/explain-openclaw (199 files, third-party analysis)
+- **Auth method:** Claude Max subscription via `setup-token` (API key fallback)
 
 ## Current State
 
-<!-- Update this section at the end of each session -->
-
-**Status:** Just started
-**Last session:** 2026-02-18
-**Next steps:** TBD
+**Status:** Planning complete, implementation not started
+**Last session:** 2026-02-19
+**Next steps:** Deep research of official OpenClaw docs, then begin Phase 0 (VPS prep)
