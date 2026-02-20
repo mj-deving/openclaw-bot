@@ -679,9 +679,135 @@ With `tools.profile: "full"` and targeted denials, the bot can:
 
 ## Phase 9 — Memory & Persistence
 
-OpenClaw has a built-in memory system that lets the bot remember things across conversations.
+OpenClaw has a built-in memory system that lets the bot remember things across conversations. Before configuring it, here's how it actually works.
 
-### 9.1 Memory Configuration
+### 9.1 How Memory Works (ELI5)
+
+```
+  You write things            The bot reads them later
+  in markdown files           when you ask questions
+       │                              ▲
+       ▼                              │
+┌─────────────┐    "index"    ┌──────────────┐    "search"    ┌─────────┐
+│  .md files  │ ──────────►  │  Brain DB     │ ──────────►   │ Results │
+│  (raw text) │   chop up    │  (SQLite)     │   find best   │ (top 6) │
+└─────────────┘   + digest   └──────────────┘   matches      └─────────┘
+```
+
+**Writing memories** — The bot's memory lives as plain markdown files in `~/.openclaw/workspace/memory/`. That's it. Plain text. You (or the bot) just write `.md` files in that folder.
+
+**Indexing (the meat grinder)** — When you run `openclaw memory index`, each file gets chopped into chunks (400 tokens each, 80 overlap). A tiny local AI model (`embeddinggemma-300m`, ~329MB) turns each chunk into a list of 768 numbers — an "embedding vector" that captures what the text *means*, not just the words. These vectors get stored in `~/.openclaw/memory/main.sqlite`.
+
+```
+    Your .md file
+    ┌──────────────────────────────────┐
+    │ "I am an OpenClaw bot. I was     │
+    │ created by my owner. I engage    │
+    │ on Lattice for the Demos         │
+    │ protocol..."                     │
+    └──────────────────────────────────┘
+                  │
+                  ▼  CHOP into chunks (400 tokens each)
+          ┌───────────┬───────────┬─────┐
+          │  Chunk 1  │  Chunk 2  │ ... │
+          └─────┬─────┴─────┬─────┴─────┘
+                │           │
+                ▼           ▼
+          ┌─────────────────────────┐
+          │   embeddinggemma-300m   │  ◄── tiny AI brain (329MB)
+          │   (runs LOCALLY)       │      NO data sent anywhere
+          └───────────┬────────────┘
+                      │
+                turns each chunk into 768 numbers
+                      │
+                      ▼
+          ┌──────────────────────────┐
+          │  main.sqlite             │
+          │  ┌────┬────────┬───────┐ │
+          │  │ id │ text   │ vec   │ │
+          │  ├────┼────────┼───────┤ │
+          │  │ 1  │ "My na │ [0.2…]│ │
+          │  │ 2  │ "I eng │ [0.4…]│ │
+          │  └────┴────────┴───────┘ │
+          └──────────────────────────┘
+```
+
+**Searching (the magic part)** — When the bot gets a question, two searches happen simultaneously:
+
+```
+  Question: "What do you know about Lattice?"
+                    │
+        ┌───────────┴───────────┐
+        ▼                       ▼
+   VECTOR SEARCH           TEXT SEARCH
+   (meaning-based)         (word-based)
+        │                       │
+        │  Turn question        │  Just look for
+        │  into 768 numbers,    │  the word "Lattice"
+        │  find chunks with     │  in the text
+        │  similar numbers      │
+        ▼                       ▼
+        └───────────┬───────────┘
+                    │
+                    ▼  COMBINE (hybrid)
+              ┌─────────────┐
+              │ 70% vector  │  ◄── meaning matters more
+              │ 30% text    │  ◄── but exact words help too
+              └──────┬──────┘
+                     │
+                     ▼  then two more tricks:
+              ┌─────────────┐
+              │ MMR filter  │  ◄── "don't repeat yourself"
+              │ (diversity) │      picks DIFFERENT chunks
+              └──────┬──────┘
+                     │
+                     ▼
+              ┌─────────────┐
+              │ Time decay   │  ◄── newer memories rank higher
+              │ (30-day      │      old stuff fades (but never
+              │  half-life)  │      fully disappears)
+              └──────┬──────┘
+                     │
+                     ▼
+              Top 6 results (if score > 0.35)
+              injected into the bot's context
+```
+
+**The key idea:** The 768 numbers capture the *meaning* of the text. "Lattice protocol" and "Demos network engagement" would have *similar* numbers even though they use different words.
+
+**TL;DR:**
+
+```
+  📝 You write notes in markdown files
+       ↓
+  🔪 Files get chopped into small pieces
+       ↓
+  🧠 Tiny local AI turns each piece into a "meaning fingerprint"
+       ↓
+  💾 Fingerprints stored in a database
+       ↓
+  🔍 When the bot gets a question, it finds pieces with the most similar fingerprint
+       ↓
+  💬 Those pieces get stuffed into the prompt so Claude can answer with memories
+```
+
+### 9.2 Why We Configure It This Way
+
+OpenClaw ships with memory support, but the **default uses cloud-based OpenAI embeddings** — your conversation text gets sent to OpenAI's API for vectorization. This guide deliberately switches to a local-first setup:
+
+| Choice | Default (Cloud) | This Guide (Local) | Why We Switch |
+|--------|-----------------|-------------------|---------------|
+| **Embedding provider** | OpenAI API | `embeddinggemma-300m` (local) | No data leaves VPS |
+| **Cost** | Per-token API charges | Free | Zero ongoing cost |
+| **Privacy** | Text sent to OpenAI | 100% on-machine | Full data sovereignty |
+| **Dependencies** | Needs OpenAI API key | Self-contained | One fewer external service |
+| **RAM** | None (cloud) | ~4 GB for model | Trade RAM for privacy |
+
+We also evaluated external memory plugins (mem0, memory-lancedb, ClawHub community packages) and concluded none were worth the added complexity or risk. The full analysis is in [Plans/MEMORY-PLUGIN-RESEARCH.md](Plans/MEMORY-PLUGIN-RESEARCH.md).
+
+**Bottom line:** The config below switches embeddings to local and tunes search for quality. It's not the default — it's better.
+
+### 9.3 Memory Configuration
 
 ```jsonc
 {
@@ -714,7 +840,7 @@ OpenClaw has a built-in memory system that lets the bot remember things across c
 - **Temporal decay** — older memories gradually fade unless re-accessed (30-day half-life)
 - **MMR diversity** — prevents returning multiple near-identical memories
 
-### 9.2 Local Embeddings
+### 9.4 Local Embeddings
 
 | Provider | Cost | Privacy |
 |----------|------|---------|
@@ -725,7 +851,7 @@ OpenClaw has a built-in memory system that lets the bot remember things across c
 
 > **Note:** `openclaw doctor` may show a false-positive about "no local model file found." This is cosmetic. Run `openclaw memory index --force` to verify memory actually works.
 
-### 9.3 Initialize Memory
+### 9.5 Initialize Memory
 
 ```bash
 # Force initial indexing (downloads model on first run)

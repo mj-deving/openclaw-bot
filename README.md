@@ -35,7 +35,6 @@ A Telegram bot running Claude on your own server — web search, shell access, p
 
 ```
 ├── GUIDE.md                      # The full setup guide (start here)
-├── how-memory-works.md           # ELI5 guide to OpenClaw memory system
 ├── src/
 │   ├── config/
 │   │   └── openclaw.json.example # Sanitized config template
