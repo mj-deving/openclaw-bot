@@ -1266,11 +1266,13 @@ Establish baselines so you can spot anomalies. Here's a reference for estimating
 
 **Per-token pricing (as of early 2026):**
 
-| Model | Input (per MTok) | Output (per MTok) |
-|-------|-----------------|-------------------|
-| Opus 4.6 | $5.00 | $25.00 |
-| Sonnet 4.6 | $3.00 | $15.00 |
-| Haiku 4.5 | $1.00 | $5.00 |
+| Model | Input (per MTok) | Output (per MTok) | Cached Read (per MTok) |
+|-------|-----------------|-------------------|----------------------|
+| Opus 4.6 | $5.00 | $25.00 | $0.50 (90% off) |
+| Sonnet 4.6 | $3.00 | $15.00 | $0.30 (90% off) |
+| Haiku 4.5 | $1.00 | $5.00 | $0.10 (90% off) |
+
+Cache writes cost 1.25x input (5-min TTL) or 2.0x input (1-hr TTL). Cache reads are 0.1x input — the savings come from the system prompt being re-read (not re-processed) on every message after the first cache write.
 
 **Typical workload cost estimates:**
 
@@ -1281,13 +1283,104 @@ Establish baselines so you can spot anomalies. Here's a reference for estimating
 | Heavy use + cron | Sonnet + Haiku cron | ~50 + 5 cron/day | ~$20-30 |
 | Power use + Opus | Opus primary | ~50+ | ~$50-100+ |
 
-**Cost reduction levers (in order of impact):**
-1. **Model tiering** — Haiku for cron and simple queries, Sonnet for conversation, Opus only when needed
-2. **Context management** — Keep sessions isolated for cron, compact long Telegram sessions
-3. **Bootstrap reduction** — Minimize workspace files (each is re-injected on every message)
-4. **Memory tuning** — Reduce `maxResults` for workloads that don't need deep memory recall
+### 14.5 Prompt Caching Configuration
 
-### 14.5 Cron Cost Tracking
+Prompt caching is the single highest-impact optimization for a persistent bot. The system prompt (~3,000-5,000 tokens) plus bootstrap files (~10,000+ tokens) are re-sent on every message. With caching, subsequent messages pay 90% less for this repeated context.
+
+**Requirement:** Prompt caching only works with API key auth, not setup-token (subscription) auth. See Phase 2 for the API key setup instructions.
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "models": {
+        "anthropic/claude-sonnet-4": {
+          "params": {
+            "cacheRetention": "long"
+          }
+        }
+      },
+      "heartbeat": {
+        "every": "55m"
+      }
+    }
+  }
+}
+```
+
+The heartbeat at 55 minutes keeps the cache warm within the 60-minute TTL. Without it, idle sessions lose their cache and the next message pays full input price.
+
+### 14.6 Optimization Settings
+
+These config changes reduce per-message token overhead without affecting functionality:
+
+**Bootstrap file injection:**
+
+| Setting | Default | Recommended | Effect |
+|---------|---------|-------------|--------|
+| `bootstrapMaxChars` | 20,000 | 10,000 | Community reports no functionality loss at 10K |
+| `bootstrapTotalMaxChars` | 150,000 | 50,000 | Caps total bootstrap injection per message |
+| AGENTS.md length | Varies | 20-60 lines max | Shorter personality prompt = less per-message cost |
+
+**Context compaction:**
+
+```json
+{
+  "compaction": {
+    "memoryFlush": {
+      "enabled": true,
+      "softThresholdTokens": 40000
+    }
+  },
+  "contextPruning": {
+    "mode": "cache-ttl",
+    "ttl": "6h",
+    "keepLastAssistants": 3
+  }
+}
+```
+
+Compaction itself costs tokens (it's an LLM summarization call) but prevents the much larger cost of unbounded context growth in long Telegram sessions.
+
+**Memory search tuning:**
+
+Current config: 6 chunks × ~400 tokens = ~2,400 tokens per query. For cron tasks that don't need deep recall, reduce `maxResults` to 2-3 chunks. Raise `minScore` above 0.35 to filter low-relevance results.
+
+### 14.7 Optimization Roadmap
+
+Prioritized by impact and effort. Items marked with checkmarks are already implemented.
+
+**Tier 1 — Quick wins (config changes only):**
+
+| # | Action | Savings | Status |
+|---|--------|---------|--------|
+| 1 | Switch Lattice cron to Haiku | ~80% on cron costs | Done (Phase 10) |
+| 2 | Enable `/usage full` for baseline monitoring | Visibility | Ready |
+| 3 | Reduce `bootstrapMaxChars` to 10,000 | ~15% total input | Ready |
+| 4 | Trim system prompt / AGENTS.md to <60 lines | 10-20% input | Ready |
+| 5 | Disable extended thinking for cron | Variable | Done (Phase 10) |
+
+**Tier 2 — Medium-term (auth/architecture changes):**
+
+| # | Action | Savings | Status |
+|---|--------|---------|--------|
+| 6 | Switch to API key auth | Enables caching | Decided, not yet done |
+| 7 | Enable prompt caching (`cacheRetention: "long"`) | 50-90% input | Blocked by #6 |
+| 8 | Switch default model to Sonnet | 40% overall | Ready |
+| 9 | Install ClawMetry | Monitoring | Ready |
+| 10 | Configure context pruning | Variable | Ready |
+
+**Tier 3 — Advanced (code/architecture changes):**
+
+| # | Action | Savings | Effort |
+|---|--------|---------|--------|
+| 11 | Rule-based model routing (keyword → Haiku/Sonnet/Opus) | 60-70% | 2-4 hrs |
+| 12 | Pre-generate Lattice posts via Batch API | 90%+ on cron | 2-4 hrs |
+| 13 | Reduce memory chunks for cron tasks specifically | ~20% per cron | 1-2 hrs |
+
+**Combined impact (Tier 1 + 2):** 70-85% reduction in total token costs.
+
+### 14.8 Cron Cost Tracking
 
 Each cron run logs its activity. To track per-job costs over time:
 
@@ -1301,9 +1394,9 @@ cat ~/.openclaw/cron/runs/<jobId>.jsonl | jq '.usage'
 
 For a simple daily cost report, create a script that sums token usage across all cron runs for the day and multiplies by your model's rate.
 
-### 14.6 Summary
+### 14.9 Summary
 
-Start with `/usage full` in every session to build intuition for your costs. Install ClawMetry when you want a dashboard. The biggest savings come from model tiering — Haiku for automated tasks, Sonnet for conversation — not from micro-optimizing individual messages.
+Start with `/usage full` in every session to build intuition for your costs. Install ClawMetry when you want a dashboard. The biggest savings come from model tiering and prompt caching — not from micro-optimizing individual messages. With API key auth + caching + Haiku cron, expect 70-85% reduction over the uncached Opus baseline.
 
 ---
 
