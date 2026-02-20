@@ -2,9 +2,9 @@
 
 **Deploy your own AI-powered Telegram bot on a VPS in under an hour.**
 
-This guide walks you through every step — from a blank Ubuntu server to a fully operational, security-hardened OpenClaw bot powered by Anthropic Claude. No prior OpenClaw experience needed.
+This guide walks you through every step — from a blank Ubuntu server to a fully operational, security-hardened OpenClaw bot. Works with any LLM provider — Anthropic, OpenAI, OpenRouter (with free models), and 20+ others. No prior OpenClaw experience needed.
 
-> **Guiding philosophy:** *As capable as possible, while as secure as necessary.*
+> **Guiding philosophy:** *Maximum capability, minimum attack surface.*
 >
 > Security exists to protect capability, not to prevent it. Every deny-list entry, every disabled feature must justify itself against the question: "Does removing this capability make the bot meaningfully safer, or just less useful?"
 
@@ -15,7 +15,7 @@ This guide walks you through every step — from a blank Ubuntu server to a full
 **Part 1: Get It Running**
 1. [Phase 1 — VPS Setup & Hardening](#phase-1--vps-setup--hardening)
 2. [Phase 2 — Install OpenClaw](#phase-2--install-openclaw)
-3. [Phase 3 — Authenticate with Anthropic](#phase-3--authenticate-with-anthropic)
+3. [Phase 3 — Choose Your AI Provider](#phase-3--choose-your-ai-provider)
 4. [Phase 4 — Connect Telegram](#phase-4--connect-telegram)
 5. [Phase 5 — Your First Conversation](#phase-5--your-first-conversation)
 6. [Phase 6 — Run as a Service](#phase-6--run-as-a-service)
@@ -63,7 +63,7 @@ Before installing anything, secure your server. This phase takes the most time b
 | Network | IPv4, outbound HTTPS | Same |
 
 You also need:
-- **An Anthropic API key** — create one at [console.anthropic.com](https://console.anthropic.com) (Phase 3)
+- **An LLM API key** — from Anthropic, OpenAI, OpenRouter, or any supported provider (Phase 3)
 - **A Telegram account** — to create a bot via @BotFather (Phase 4)
 
 ### 1.2 First Login & System Update
@@ -238,35 +238,75 @@ After installation, OpenClaw creates:
 
 ---
 
-## Phase 3 — Authenticate with Anthropic
+## Phase 3 — Choose Your AI Provider
 
-OpenClaw needs an Anthropic API key to talk to Claude. This is separate from any Claude subscription you might have.
+OpenClaw works with **any LLM provider** — not just one. Pick the provider that fits your budget and needs.
 
-### 3.1 Get an API Key
+### 3.1 Pick a Provider
 
-1. Go to [console.anthropic.com](https://console.anthropic.com)
-2. Create an account (or log in)
-3. Go to **API Keys** → **Create Key**
-4. Copy the key (starts with `sk-ant-...`)
-5. Add billing — costs are per-token (see Phase 13 for estimates)
+| Provider | Best For | How to Get a Key |
+|----------|----------|-----------------|
+| **Anthropic** | High quality (Claude models), prompt caching | [console.anthropic.com](https://console.anthropic.com) → API Keys → Create Key |
+| **OpenAI** | GPT models, broad ecosystem | [platform.openai.com](https://platform.openai.com) → API Keys |
+| **OpenRouter** | Access to 200+ models, free tier, smart routing | [openrouter.ai](https://openrouter.ai) → Keys |
+| **Ollama** | Fully local, zero cost, complete privacy (CPU-only = slow, see note below) | [ollama.ai](https://ollama.ai) → Install → `ollama pull` a model |
 
-### 3.2 Configure OpenClaw
+> **Zero cost?** Run models locally with Ollama — no API key, no cloud, everything stays on your VPS. Needs decent hardware (8+ GB RAM for good models).
+>
+> **On a budget?** OpenRouter gives you access to free models and [smart routing](https://openrouter.ai/docs/guides/routing/routers/auto-router) (powered by NotDiamond) that analyzes your prompt and picks the best model. No extra cost — you pay only the selected model's rate.
+>
+> **Want the best quality?** Anthropic's Claude Sonnet is an excellent default — fast, capable, and supports prompt caching (saves money on repeated context).
+>
+> **Already have an OpenAI key?** It works out of the box.
 
+### 3.2 Configure Your Provider
+
+Pick your provider and run the matching commands:
+
+**Anthropic:**
 ```bash
-# Set the API key
 openclaw config set provider.name anthropic
 openclaw config set provider.apiKey "sk-ant-YOUR-KEY-HERE"
-
-# Set the default model (Sonnet = best balance of quality and cost)
 openclaw config set provider.model "claude-sonnet-4"
 ```
+
+**OpenAI:**
+```bash
+openclaw config set provider.name openai
+openclaw config set provider.apiKey "sk-YOUR-KEY-HERE"
+openclaw config set provider.model "gpt-4o"
+```
+
+**OpenRouter:**
+```bash
+openclaw config set provider.name openrouter
+openclaw config set provider.apiKey "sk-or-YOUR-KEY-HERE"
+openclaw config set provider.model "openrouter/auto"
+```
+
+> **OpenRouter's `auto` model** is powered by [NotDiamond](https://openrouter.ai/docs/guides/routing/routers/auto-router) — it analyzes your prompt and routes to the optimal model from a curated set. No extra cost. Also available: `openrouter/auto:floor` (cheapest) and `openrouter/auto:nitro` (fastest).
+
+**Ollama (local models):**
+```bash
+# Install Ollama first: https://ollama.ai
+ollama pull llama3.3:8b  # ~5 GB download, runs on CPU
+
+# Configure OpenClaw
+openclaw config set provider.name ollama
+openclaw config set provider.apiKey "ollama-local"
+openclaw config set provider.model "llama3.3:8b"
+```
+
+> **Ollama** runs models entirely on your VPS. No API calls, no cloud, no cost. OpenClaw [auto-detects](https://docs.openclaw.ai/providers/ollama) Ollama at `localhost:11434`.
+>
+> **Reality check on "free" local models:** Without a GPU, models run on CPU only. A 7-8B parameter model needs ~4 GB RAM and generates about 5-10 tokens/sec — usable but noticeably slow compared to API models (50-100+ tok/sec). Larger models (13B+) drop to 1-5 tok/sec. Quality also scales with model size: a 7B model is significantly less capable than Claude Sonnet or GPT-4o. Local models are great for experimenting, privacy-sensitive tasks, or as a free fallback — but for daily use where speed and quality matter, an API provider is worth the cost.
 
 ### 3.3 Verify Authentication
 
 ```bash
 # Check provider status
 openclaw models status
-# Should show: anthropic — authenticated
+# Should show your provider — authenticated
 
 # Test with a quick message
 openclaw chat --once "Hello, respond with just 'OK'"
@@ -279,19 +319,27 @@ If you see errors, run:
 openclaw doctor
 ```
 
-### 3.4 Choose Your Model
+### 3.4 Popular Models
 
-| Model | Best For | Approximate Cost |
-|-------|----------|-----------------|
-| `claude-sonnet-4` | Daily use — good quality, reasonable cost | ~$3/MTok input |
-| `claude-haiku-4` | Automated tasks, simple queries | ~$1/MTok input |
-| `claude-opus-4` | Complex reasoning, long context | ~$5/MTok input |
+| Model | Provider | Best For | Approximate Cost |
+|-------|----------|----------|-----------------|
+| `claude-sonnet-4` | Anthropic | Daily use — quality + speed balance | ~$3/MTok input |
+| `claude-haiku-4` | Anthropic | Automated tasks, simple queries | ~$1/MTok input |
+| `claude-opus-4` | Anthropic | Complex reasoning, long context | ~$5/MTok input |
+| `gpt-4o` | OpenAI | General purpose, multimodal | ~$2.50/MTok input |
+| `gpt-4o-mini` | OpenAI | Budget-friendly, fast | ~$0.15/MTok input |
+| `openrouter/auto` | OpenRouter | Cost-optimized routing across all models | Varies by query |
+| `google/gemini-2.0-flash` | OpenRouter | Fast, cheap, good for simple tasks | ~$0.10/MTok input |
+| `qwen2.5-coder:7b` | Ollama | Local coding model (~4 GB RAM, ~8 tok/s on CPU) | Free |
+| `llama3.3:8b` | Ollama | Local general purpose (~5 GB RAM, ~7 tok/s on CPU) | Free |
 
-**Start with Sonnet.** You can always switch later.
+**Start with one model.** You can always switch later — it's just a config change.
+
+> **Tip:** You can configure multiple models and switch between them. See Phase 13 for cost optimization strategies including model routing.
 
 ### ✅ Phase 3 Checkpoint
 
-- [ ] `openclaw models status` shows authenticated
+- [ ] `openclaw models status` shows authenticated with your chosen provider
 - [ ] `openclaw chat --once "test"` returns a response
 - [ ] API key stored securely (we'll lock down permissions in Phase 7)
 
@@ -363,7 +411,7 @@ Once paired, **only your Telegram account can talk to the bot.**
 3. **Test its tools** — "Search the web for today's top news"
 4. **Check the connection** — Send `/status` to see model info and session stats
 
-This is your bot. It's running Claude on your own server, talking to you through Telegram, with no third parties in between (except Anthropic's API and Telegram's servers).
+This is your bot. It's running your chosen AI model on your own server, talking to you through Telegram, fully under your control.
 
 **Before continuing:** Stop the gateway for now. We'll set it up as a proper service next.
 
@@ -788,7 +836,7 @@ OpenClaw has a built-in memory system that lets the bot remember things across c
        ↓
   🔍 When the bot gets a question, it finds pieces with the most similar fingerprint
        ↓
-  💬 Those pieces get stuffed into the prompt so Claude can answer with memories
+  💬 Those pieces get stuffed into the prompt so the AI can answer with memories
 ```
 
 ### 9.2 Why We Configure It This Way
@@ -1614,6 +1662,21 @@ ssh -L 18789:127.0.0.1:18789 openclaw@YOUR_VPS_IP
 - [VirusTotal: Automation to Infection](https://blog.virustotal.com/2026/02/from-automation-to-infection-how.html) — ClawHavoc campaign analysis
 - [THN: Infostealer targets OpenClaw](https://thehackernews.com/2026/02/infostealer-steals-openclaw-ai-agent.html) — Vidar variant
 - [THN: CVE-2026-25253](https://thehackernews.com/2026/02/openclaw-bug-enables-one-click-remote.html) — 1-click RCE coverage
+
+### Providers & Model Research
+
+- [OpenClaw Ollama Provider](https://docs.openclaw.ai/providers/ollama) — Official Ollama integration docs
+- [OpenRouter Auto Router](https://openrouter.ai/docs/guides/routing/routers/auto-router) — Smart routing powered by NotDiamond
+- [OpenRouter Free Models Router](https://openrouter.ai/docs/guides/routing/routers/free-models-router) — Zero-cost model access
+- [OpenRouter Integration Guide](https://openrouter.ai/docs/guides/guides/openclaw-integration) — OpenClaw-specific setup
+- [Ollama Hardware Guide](https://www.arsturn.com/blog/ollama-hardware-guide-what-you-need-to-run-llms-locally) — CPU, GPU & RAM requirements
+- [Running LLMs on VPS Without GPU](https://mangohost.net/blog/how-to-run-llama-3-or-ollama-on-a-vps-without-a-gpu-the-no-nonsense-guide-for-ai-tinkerers/) — Practical CPU-only guide
+- [RAM Requirements for Local LLMs](https://apxml.com/courses/getting-started-local-llms/chapter-2-preparing-local-environment/hardware-ram) — Model size to memory mapping
+- [Complete Guide to Running LLMs Locally](https://www.ikangai.com/the-complete-guide-to-running-llms-locally-hardware-software-and-performance-essentials/) — Hardware and performance essentials
+
+### Memory System Research
+
+- [Plans/MEMORY-PLUGIN-RESEARCH.md](Plans/MEMORY-PLUGIN-RESEARCH.md) — Full mem0 evaluation and built-in memory optimization strategy
 
 ---
 

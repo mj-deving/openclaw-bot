@@ -1,8 +1,8 @@
 # openclaw-bot
 
-Deploy your own AI-powered Telegram bot on a VPS, powered by Anthropic Claude via [OpenClaw](https://docs.openclaw.ai).
+Deploy your own AI-powered Telegram bot on a VPS using [OpenClaw](https://docs.openclaw.ai) — an open-source AI agent that works with any LLM provider.
 
-> *As capable as possible, while as secure as necessary.*
+> *Maximum capability, minimum attack surface.*
 
 ## Quick Start
 
@@ -15,12 +15,12 @@ Deploy your own AI-powered Telegram bot on a VPS, powered by Anthropic Claude vi
 ### What you'll need
 
 - A VPS (Ubuntu 22.04+, 2+ GB RAM)
-- An [Anthropic API key](https://console.anthropic.com)
+- An API key from any supported provider (Anthropic, OpenAI, OpenRouter, and [20+ others](https://docs.openclaw.ai)) — or run local models with Ollama (free)
 - A Telegram account
 
 ### What you'll get
 
-A Telegram bot running Claude on your own server — web search, shell access, persistent memory, scheduled posts — hardened and production-ready.
+A self-hosted AI agent on your own server — web search, shell access, persistent memory, scheduled automation — hardened and production-ready. Choose your own model and provider.
 
 ## Guide Structure
 
