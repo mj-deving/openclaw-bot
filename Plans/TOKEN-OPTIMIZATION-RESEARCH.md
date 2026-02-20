@@ -417,9 +417,11 @@ If Tier 1 + Tier 2 implemented:
 | Rate limits | Subscription-tier | API-tier |
 | Monthly cost predictability | Fixed (subscription) | Variable (usage-based) |
 
-**The decision:** If the bot's uncached token usage costs more than the potential caching savings, API key auth pays for itself. Given that prompt caching saves 50-90% on input tokens, and the bot processes potentially millions of input tokens/day, the break-even point is likely within the first day.
+**Decision: Switch to API key auth.**
 
-However, with Claude Max subscription, the setup-token usage might be "free" (included in subscription). If Anthropic doesn't meter setup-token usage against the subscription cap, then the uncached setup-token approach may still be cheaper than API key + caching. **This needs verification against your actual subscription terms.**
+Claude Max IS metered — it uses 5-hour rolling windows and weekly caps against the 5x Pro usage tier. This means setup-token gives you the worst of both worlds: metered usage WITHOUT prompt caching. Every message burns the full system prompt (~3,750 tokens) at full input cost with zero reuse.
+
+API key auth with `cacheRetention: "long"` enables prompt caching (90% savings on repeated input). For a bot that processes many messages per day, each re-sending the same system prompt, the savings are enormous. There is no scenario where metered-without-caching beats API-key-with-caching for a persistent bot workload.
 
 ---
 
