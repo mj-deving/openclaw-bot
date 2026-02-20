@@ -26,7 +26,10 @@ if ! systemctl is-active --quiet openclaw 2>/dev/null; then
 fi
 
 # Check binding — CRITICAL: must be 127.0.0.1, never 0.0.0.0
-if ss -tlnp 2>/dev/null | grep ':18789' | grep -q '0.0.0.0'; then
+# NOTE: ss output has both local and peer address columns. The peer column always shows
+# 0.0.0.0:* for listening sockets, which is normal. We must check specifically for
+# 0.0.0.0:18789 as the LOCAL address (meaning gateway bound to all interfaces).
+if ss -tlnp 2>/dev/null | grep -q '0\.0\.0\.0:18789'; then
     log "CRITICAL: Gateway bound to 0.0.0.0:18789! Stopping service immediately."
     systemctl stop openclaw 2>/dev/null || true
     log "Service stopped. Manual investigation required before restart."
