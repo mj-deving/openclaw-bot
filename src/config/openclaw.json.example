@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.2.17",
+    "lastTouchedAt": "REDACTED"
+  },
+  "logging": {
+    "redactSensitive": "tools",
+    "redactPatterns": [
+      "sk-ant-[\\w-]+",
+      "\\d{5,}:[A-Za-z0-9_-]+"
+    ]
+  },
+  "agents": {
+    "defaults": {
+      "models": {
+        "anthropic/claude-opus-4-6": {}
+      },
+      "memorySearch": {
+        "sources": ["memory"],
+        "provider": "local",
+        "store": {
+          "vector": { "enabled": true }
+        },
+        "query": {
+          "maxResults": 6,
+          "minScore": 0.35,
+          "hybrid": {
+            "vectorWeight": 0.7,
+            "textWeight": 0.3,
+            "candidateMultiplier": 4,
+            "mmr": { "enabled": true, "lambda": 0.7 },
+            "temporalDecay": { "enabled": true, "halfLifeDays": 30 }
+          }
+        }
+      },
+      "compaction": { "mode": "safeguard" },
+      "maxConcurrent": 4,
+      "subagents": { "maxConcurrent": 8 }
+    }
+  },
+  "tools": {
+    "profile": "full",
+    "deny": ["gateway", "nodes", "sessions_spawn", "sessions_send"],
+    "web": {
+      "search": { "enabled": true },
+      "fetch": { "enabled": true }
+    },
+    "elevated": { "enabled": false },
+    "exec": { "security": "full", "ask": "off" }
+  },
+  "messages": { "ackReactionScope": "group-mentions" },
+  "commands": { "native": "auto", "nativeSkills": "auto", "config": false },
+  "session": { "dmScope": "per-channel-peer" },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "dmPolicy": "pairing",
+      "botToken": "REDACTED",
+      "groups": {},
+      "groupPolicy": "allowlist",
+      "streamMode": "partial"
+    }
+  },
+  "discovery": { "mdns": { "mode": "off" } },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
+    "controlUi": { "dangerouslyDisableDeviceAuth": false },
+    "auth": {
+      "mode": "token",
+      "token": "REDACTED",
+      "rateLimit": {
+        "maxAttempts": 10,
+        "windowMs": 60000,
+        "lockoutMs": 300000,
+        "exemptLoopback": true
+      }
+    },
+    "trustedProxies": [],
+    "tailscale": { "mode": "off", "resetOnExit": false }
+  },
+  "plugins": {
+    "enabled": true,
+    "slots": { "memory": "memory-core" },
+    "entries": {
+      "telegram": { "enabled": true },
+      "device-pair": { "enabled": true },
+      "memory-core": { "enabled": true },
+      "memory-lancedb": { "enabled": false }
+    }
+  }
+}
