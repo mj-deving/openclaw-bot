@@ -29,7 +29,6 @@ A step-by-step deployment guide covering:
 │   ├── MASTERPLAN.md              # Complete setup guide (start here)
 │   ├── MASTERPLAN-EXPLAINED.md    # Reasoning behind key decisions (includes ClawHub ecosystem analysis)
 │   ├── RESEARCH-OFFICIAL-DOCS.md  # Official docs research findings
-│   ├── TOKEN-OPTIMIZATION-RESEARCH.md  # Token cost analysis
 │   └── SESSION-HISTORY.md         # Development journal
 ├── how-memory-works.md            # ELI5 guide to OpenClaw memory system
 ├── src/
