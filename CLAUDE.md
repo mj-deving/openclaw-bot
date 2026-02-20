@@ -2,7 +2,7 @@
 
 ## What This Is
 
-OpenClaw Telegram bot (Gregor) — deployment, configuration, security hardening
+OpenClaw Telegram bot (Gregor) — as capable as possible, as secure as necessary
 
 **Owner:** Marius Jonathan Jauernik
 **GitHub:** [mj-deving/openclaw-bot](https://github.com/mj-deving/openclaw-bot)
@@ -11,7 +11,7 @@ OpenClaw Telegram bot (Gregor) — deployment, configuration, security hardening
 ## Tech Stack
 
 - **Runtime:** Bun + TypeScript (repo tooling); Node.js 22.x (OpenClaw itself)
-- **Deployment:** VPS with systemd (maximum lockdown security posture)
+- **Deployment:** VPS with systemd (capability-first security posture)
 
 ## Conventions
 
@@ -41,7 +41,10 @@ OpenClaw Telegram bot (Gregor) — deployment, configuration, security hardening
 │   ├── RESEARCH-OFFICIAL-DOCS.md  # Official docs research findings
 │   ├── IRC-REGISTRATION-GUIDE.md  # Libera.Chat registration steps
 │   └── CLAWHUB-SKILLS-AND-GREGOR-ARCHITECTURE.md  # ClawHub ecosystem + Gregor design
-├── src/                   # Source code (scripts, configs, systemd — TBD)
+├── src/
+│   ├── config/            # Sanitized config template
+│   ├── scripts/           # VPS scripts (backup.sh)
+│   └── pipeline/          # Pipeline management scripts
 └── .sessions/             # Session docs (auto-generated)
 ```
 
@@ -53,10 +56,13 @@ OpenClaw Telegram bot (Gregor) — deployment, configuration, security hardening
 
 ## Current State
 
-**Status:** Phases 0-4 deployed and operational
+**Status:** Phases 0-8b deployed and operational (IRC skipped — Telegram-first)
 **Bot:** @gregor_openclaw_bot (Telegram) | **VPS:** 213.199.32.18, Ubuntu 24.04.4 LTS
 **OpenClaw:** v2026.2.17 | **Model:** claude-opus-4-6 | **Gateway:** 127.0.0.1:18789
-**Permissions:** tools.profile "full", exec.ask off, deny [gateway, nodes, sessions_spawn, sessions_send]
+**Permissions:** tools.profile "full", exec.security "full", deny [gateway, nodes, sessions_spawn, sessions_send]
+**Memory:** Local embeddings (embeddinggemma-300m), hybrid search (vector 0.7 + FTS 0.3)
 **Pipeline:** ~/.openclaw/pipeline/ (inbox/outbox/ack) — async Isidore↔Gregor messaging
-**Last session:** 2026-02-19
-**Next steps:** Phase 5 (memory tuning), Phase 8 (backups), MASTERPLAN update
+**Lattice:** Autonomous engagement 5x/day via cron (8:37, 11:37, 15:37, 18:37, 21:37 Berlin)
+**Backups:** Daily at 3 AM, 30-day retention, script at ~/scripts/backup.sh
+**Last session:** 2026-02-20
+**Next steps:** Phase 8 monitoring scripts, Demos yellow paper extraction

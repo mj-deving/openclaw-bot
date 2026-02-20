@@ -1,0 +1,15 @@
+# OpenClaw log rotation
+# Deployed to: /etc/logrotate.d/openclaw on VPS
+# Runs: daily via system logrotate
+#
+# Covers all monitoring script logs + OpenClaw's own gateway logs.
+
+/home/openclaw/.openclaw/logs/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0600 openclaw openclaw
+}
