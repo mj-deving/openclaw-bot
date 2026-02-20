@@ -337,11 +337,34 @@ OpenClaw v2026.2.17 ships 50 bundled skills as SKILL.md files inside the npm pac
 
 ### The ClawHub ecosystem reality
 
-The ClawHub registry has thousands of skills, but the quality and security picture is mixed:
-- The "ClawHavoc" campaign found hundreds of malicious uploads
-- VirusTotal scanning catches binary malware but not adversarial prompts
-- New skills are uploaded faster than moderators can vet them
-- Skills run in-process with the gateway -- a malicious skill has full access to process memory and API keys
+The ClawHub registry (8,630+ non-suspicious skills as of Feb 2026) is the largest community skill marketplace for OpenClaw. Understanding its state explains why bundled-only is the right strategy.
+
+**Scale and composition:**
+The registry spans 11 categories. AI/ML (48%) and Utility (46%) dominate. Development (30%), Productivity (25%), and Web (19%) round out the useful categories. Many skills span multiple categories, and recent uploads skew heavily toward city guides, crypto DAOs, and niche tools — the signal-to-noise ratio is poor.
+
+**steipete (Peter Steinberger) IS the ecosystem.** OpenClaw's creator authored 9 of the top 14 most-downloaded skills, including `gog` (28k downloads), `summarize` (21k), and `github` (20k). His tools are the platform's de facto standard library — clean Nix packaging, cross-platform support, well-documented. He joined OpenAI on Feb 15, 2026 to build "next-gen personal agents." OpenClaw continues under a foundation, but the most trusted contributor is no longer maintaining the ecosystem. This is the single biggest ecosystem risk.
+
+**The "ClawHavoc" campaign (Feb 2026):**
+
+| Metric | Detail |
+|--------|--------|
+| Malicious skills found | 824+ (growing from initial 341 discovery) |
+| Skills removed in cleanup | 2,419 (registry went from 5,705 → 3,286) |
+| Single worst actor | hightower6eu — 314 malicious skills by one account |
+| Malware type | Atomic Stealer — credential theft and data exfiltration |
+| Post-cleanup growth | Registry rebounded to 8,630+, growing faster than moderation |
+
+**Current security measures and their gaps:**
+
+| Measure | Status | Gap |
+|---------|--------|-----|
+| VirusTotal scanning | Active since Feb 7, 2026 | Catches binary malware only — no prompt injection detection |
+| GitHub account age check | Active | New accounts blocked, but compromised old accounts pass |
+| Community reporting | Active (auto-hide after 3 reports) | Reactive, not proactive |
+| Daily re-scans | Active | Cannot detect adversarial prompts in SKILL.md files |
+| Admin/moderator curation | Active | Human bottleneck — uploads outpace review |
+
+**The critical architectural problem:** Skills run in-process with the gateway. There is no sandboxing. A malicious skill has full access to process memory, API keys, and all tools the bot has. npm lifecycle scripts execute during `clawhub install` — classic supply chain vector. Even "safe-looking" SKILL.md files can contain adversarial prompts that hijack the agent's behavior.
 
 Bundled skills bypass this entire attack surface. The tradeoff is a smaller selection (50 vs thousands), but those 50 cover the most common use cases: GitHub, summarization, web search, weather, health checks, and more.
 
@@ -349,9 +372,19 @@ Bundled skills bypass this entire attack surface. The tradeoff is a smaller sele
 
 If a bundled skill doesn't cover a needed capability:
 1. Check if the existing skills + model reasoning can approximate it
-2. If not, evaluate the specific ClawHub skill: read its SKILL.md source, check the author, review download counts
+2. If not, evaluate the specific ClawHub skill using the vetting checklist below
 3. Install in a test environment first, audit behavior
 4. If clean, add to production with version pinning
+
+**Community skill vetting checklist** (all must pass before installing ANY non-bundled skill):
+- [ ] Author is known/trusted (steipete, established community member with history)
+- [ ] Downloads > 1,000 (social proof of community usage and scrutiny)
+- [ ] No VirusTotal flags on the skill or author's other skills
+- [ ] No association with ClawHavoc actors (especially hightower6eu)
+- [ ] Manually read SKILL.md — no `eval()`, `fetch()` to unknown hosts, `exec()`, or obfuscated code
+- [ ] No npm lifecycle scripts in package.json (`preinstall`, `postinstall`, `prepare`)
+- [ ] Does not require denied tools (gateway, nodes, sessions_spawn, sessions_send, browser)
+- [ ] Pin exact version after install — disable auto-updates
 
 ---
 
