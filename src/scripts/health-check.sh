@@ -9,11 +9,11 @@
 #   - This script catches a DIFFERENT failure: process alive but gateway unresponsive (zombie)
 #   - Zombie states are rare — 10 min detection is fast enough
 #   - CONSERVATIVE RESTART: requires 3 CONSECUTIVE failures before restart (= 30 min window)
-#     Why? Every restart costs Gregor initialization tokens (system prompt, memory warmup).
-#     With Gregor already using high token volume, we avoid unnecessary restart churn.
+#     Why? Every restart costs initialization tokens (system prompt, memory warmup).
+#     With the bot already using high token volume, we avoid unnecessary restart churn.
 #   - A single transient /health failure (network hiccup, momentary load) does NOT trigger restart.
 #
-# TOKEN COST: Zero. Pure system commands only. The restart itself costs Gregor init tokens,
+# TOKEN COST: Zero. Pure system commands only. The restart itself costs init tokens,
 #   but the 3-consecutive-failure gate minimizes false-positive restarts.
 
 set -euo pipefail

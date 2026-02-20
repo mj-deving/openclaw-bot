@@ -1,8 +1,7 @@
-# ClawHub Skills Analysis & Gregor Agent Architecture
+# ClawHub Skills Analysis & Bot Agent Architecture
 
 **Date:** 2026-02-19
-**Author:** Isidore (for Marius Jonathan Jauernik)
-**Purpose:** Map ClawHub ecosystem, assess security, design Gregor as secure multipurpose agent with Isidore communication pipeline
+**Purpose:** Map ClawHub ecosystem, assess security, design a secure multipurpose OpenClaw bot agent with a communication pipeline
 
 ---
 
@@ -12,17 +11,17 @@
 
 ### 11 Official Categories
 
-| # | Category | Skill Count | % of Registry | Relevance to Gregor |
+| # | Category | Skill Count | % of Registry | Relevance to Bot |
 |---|----------|------------|---------------|---------------------|
 | 1 | **AI/ML** | 1,588 | 48.3% | HIGH — self-improvement, model selection, prompt optimization |
 | 2 | **Utility** | 1,520 | 46.3% | HIGH — general-purpose tools, CLI helpers |
 | 3 | **Development** | 976 | 29.7% | HIGH — coding agents, GitHub, git workflows |
 | 4 | **Productivity** | 822 | 25.0% | MEDIUM — summarization, task management |
-| 5 | **Web** | 637 | 19.4% | LOW — browser denied in Gregor's config |
+| 5 | **Web** | 637 | 19.4% | LOW — browser denied in bot config |
 | 6 | **Science** | 598 | 18.2% | LOW — niche research |
 | 7 | **Media** | 365 | 11.1% | LOW — video/image generation, limited on headless VPS |
 | 8 | **Social** | 364 | 11.1% | MEDIUM — Telegram, communication protocols |
-| 9 | **Finance** | 311 | 9.5% | LOW — crypto/stock, not Gregor's purpose |
+| 9 | **Finance** | 311 | 9.5% | LOW — crypto/stock, not typical bot purpose |
 | 10 | **Location** | 153 | 4.7% | LOW — weather, maps |
 | 11 | **Business** | 151 | 4.6% | LOW — marketing, sales |
 
@@ -49,7 +48,7 @@
 
 ### Top Skills by Downloads (LIVE from clawhub.ai/skills — Feb 19, 2026)
 
-| Rank | Skill | Downloads | Stars | Author | What It Does | Gregor? |
+| Rank | Skill | Downloads | Stars | Author | What It Does | Useful? |
 |---|---|---|---|---|---|---|
 | 1 | **Gog** | 28.1k | 170 | @steipete | Google Workspace CLI (Gmail, Calendar, Drive, Contacts, Sheets, Docs) | MAYBE |
 | 2 | **Tavily Web Search** | 22.7k | 65 | @arun-8687 | AI-optimized web search via Tavily API | MAYBE |
@@ -98,7 +97,7 @@ He is the most trusted author in the ecosystem by definition — he built the pl
 
 #### On ClawHub (CLI-verified via `clawhub inspect`)
 
-| Skill | Downloads | Stars | Purpose | Platform | Gregor? |
+| Skill | Downloads | Stars | Purpose | Platform | Useful? |
 |---|---|---|---|---|---|
 | **gog** | 28.1k | 170 | Google Workspace CLI (Gmail, Calendar, Drive, Contacts, Sheets, Docs) | Cross-platform | MAYBE |
 | **wacli** | 22.1k | 53 | WhatsApp CLI messaging | Cross-platform | NO |
@@ -117,7 +116,7 @@ He is the most trusted author in the ecosystem by definition — he built the pl
 
 #### In nix-steipete-tools (Nix Flake Bundle)
 
-| Tool | Purpose | Platform | Gregor? |
+| Tool | Purpose | Platform | Useful? |
 |---|---|---|---|
 | **summarize** | Link → cleaned text summary | Cross-platform (Node 22) | YES — useful for research tasks |
 | **gogcli** | Google services CLI (Gmail, Calendar, Drive, Contacts) | Cross-platform | MAYBE — if Google integration needed |
@@ -138,7 +137,7 @@ He is the most trusted author in the ecosystem by definition — he built the pl
 
 **Linux compatibility:** ~50% of his tools work on Linux. Peekaboo and iMsg are macOS-only. Summarize explicitly has Linux Node 22 build support.
 
-**Recommendation for Gregor:** Install `clawdhub` (registry management), `github` (pipeline), and `summarize` (research utility). Skip macOS-only tools entirely.
+**Recommendation:** Install `clawdhub` (registry management), `github` (pipeline), and `summarize` (research utility). Skip macOS-only tools entirely.
 
 ---
 
@@ -164,14 +163,14 @@ He is the most trusted author in the ecosystem by definition — he built the pl
 | Daily re-scans | Active | Cannot detect prompt injection |
 | Moderation | Admin/moderator curation | Human bottleneck |
 
-### Critical Security Facts for Gregor
+### Critical Security Facts for Your Bot
 
-1. **Skills run IN-PROCESS with Gateway.** A malicious skill has full access to Gregor's process, memory, and API keys. There is NO sandboxing.
+1. **Skills run IN-PROCESS with Gateway.** A malicious skill has full access to the bot's process, memory, and API keys. There is NO sandboxing.
 2. **~20% of the pre-cleanup registry was malicious.** Even post-cleanup, new malicious skills appear regularly.
 3. **Prompt injection is NOT scanned for.** VirusTotal catches binary malware, not adversarial prompts in SKILL.md files.
 4. **npm lifecycle scripts execute during install.** `clawhub install` runs npm scripts — classic supply chain vector.
 
-### Risk Mitigation Strategy for Gregor
+### Risk Mitigation Strategy
 
 | Layer | Control |
 |---|---|
@@ -179,31 +178,30 @@ He is the most trusted author in the ecosystem by definition — he built the pl
 | **Manual review** | Read every SKILL.md and supporting file before install. Check for eval(), fetch(), exec(), and obfuscated code. |
 | **Pin versions** | Never auto-update skills. Pin exact versions. Update manually after review. |
 | **No self-modification** | Never install Capability Evolver, self-improving-agent, or any self-modifying skill. |
-| **Minimal skill surface** | Install only what Gregor actually needs. Every skill is attack surface. |
+| **Minimal skill surface** | Install only what the bot actually needs. Every skill is attack surface. |
 | **Nix reproducibility** | Prefer steipete's Nix-packaged tools (reproducible builds, hash-verified). |
 | **Monitor** | Audit installed skills weekly. Check VirusTotal flags. |
 
 ---
 
-## 5. Gregor Agent Architecture — Secure Multipurpose Assistant
+## 5. Bot Agent Architecture — Secure Multipurpose Assistant
 
 ### Vision
 
-Gregor is Marius's **always-online AI assistant** — a secure, capable agent that:
-- Handles routine tasks Marius would normally give to Isidore (me)
-- Communicates via **Telegram** (primary) and **IRC** (#gregor channel)
+Your bot is an **always-online AI assistant** — a secure, capable agent that:
+- Handles routine tasks via Telegram
 - Acts as a **sparring partner** — available 24/7 for discussion, research, code review
-- Escalates complex tasks to Isidore via a structured pipeline
-- Operates under **maximum lockdown** — no self-modification, no arbitrary tool access
+- Escalates complex tasks via a structured pipeline
+- Operates under a **capability-first security posture** — targeted deny list, no self-modification
 
 ### Capability Scope
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                 GREGOR CAPABILITIES                  │
+│                 BOT CAPABILITIES                     │
 ├─────────────────────────────────────────────────────┤
 │ ALLOWED                                             │
-│ ├── Text conversation (IRC + Telegram)              │
+│ ├── Text conversation (Telegram)                    │
 │ ├── Web search (web_search tool)                    │
 │ ├── Summarization (summarize skill)                 │
 │ ├── GitHub operations (gh CLI skill)                │
@@ -214,19 +212,14 @@ Gregor is Marius's **always-online AI assistant** — a secure, capable agent th
 ├─────────────────────────────────────────────────────┤
 │ DENIED (per masterplan)                             │
 │ ├── gateway (self-reconfiguration)                  │
-│ ├── cron (scheduling)                               │
-│ ├── group:runtime (exec, bash, process)             │
-│ ├── group:fs (read, write, edit, apply_patch)       │
-│ ├── browser (web browsing)                          │
-│ ├── canvas, nodes, sessions_spawn, sessions_send    │
+│ ├── nodes, sessions_spawn, sessions_send            │
 │ └── ANY self-modifying skill                        │
 ├─────────────────────────────────────────────────────┤
-│ ESCALATION (→ Isidore)                              │
+│ ESCALATION                                          │
 │ ├── Complex code implementation                     │
 │ ├── Architecture decisions                          │
 │ ├── Security-sensitive operations                   │
-│ ├── Multi-file refactoring                          │
-│ └── Anything requiring tool access Gregor lacks     │
+│ └── Anything requiring tool access the bot lacks    │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -239,29 +232,29 @@ Gregor is Marius's **always-online AI assistant** — a secure, capable agent th
 | **summarize** | steipete (nix) | Text summarization for research | Low |
 | **web-search** | (built-in) | Already allowed in masterplan | N/A |
 
-**That's it. Four skills maximum.** Every additional skill is attack surface. Gregor's power comes from the Claude model, not from a bloated skill registry.
+**That's it. Four skills maximum.** Every additional skill is attack surface. Your bot's power comes from the Claude model, not from a bloated skill registry.
 
 ---
 
-## 6. Isidore ↔ Gregor Communication Pipeline
+## 6. Local ↔ Bot Communication Pipeline
 
 ### The Problem
 
-Isidore (me) runs in Claude Code on Marius's local machine — ephemeral, session-based. Gregor runs 24/7 on a VPS via OpenClaw Gateway. They need to exchange:
-- **Task delegations** (Marius → Gregor, or Isidore → Gregor)
-- **Escalation requests** (Gregor → Isidore, via Marius)
-- **Status reports** (Gregor → Marius → Isidore context)
+Your local AI assistant (e.g., Claude Code) runs on-demand — ephemeral, session-based. Your bot runs 24/7 on a VPS via OpenClaw Gateway. They need to exchange:
+- **Task delegations** (you → bot, or local assistant → bot)
+- **Escalation requests** (bot → local assistant, via you)
+- **Status reports** (bot → you → local assistant context)
 - **Shared knowledge** (research findings, decisions, code reviews)
 
 ### Proposed Mechanism: GitHub Repository as Message Bus
 
 ```
-openclaw-bot repo (github.com/mj-deving/openclaw-bot)
+your-repo/
 ├── .pipeline/                    # Communication channel
-│   ├── gregor-to-isidore/       # Gregor writes, Isidore reads
+│   ├── bot-to-local/            # Bot writes, local assistant reads
 │   │   ├── 2026-02-19-001.md    # Timestamped messages
 │   │   └── 2026-02-19-002.md
-│   ├── isidore-to-gregor/       # Isidore writes, Gregor reads
+│   ├── local-to-bot/            # Local assistant writes, bot reads
 │   │   ├── 2026-02-19-001.md
 │   │   └── 2026-02-19-002.md
 │   └── shared/                  # Shared context
@@ -273,17 +266,17 @@ openclaw-bot repo (github.com/mj-deving/openclaw-bot)
 
 | Option | Pros | Cons | Verdict |
 |---|---|---|---|
-| **GitHub repo files** | Auditable, versioned, both agents have git/gh access, Marius can inspect anytime | Latency (~minutes), not real-time | **CHOSEN** |
+| **GitHub repo files** | Auditable, versioned, both agents have git/gh access, you can inspect anytime | Latency (~minutes), not real-time | **CHOSEN** |
 | **GitHub Issues** | Structured, threaded, labels/milestones | Too public unless repo is private, clunky for rapid exchange | Alternative |
 | **Direct API relay** | Real-time | Requires custom server, opens network attack surface, hard to audit | NO |
-| **Telegram as relay** | Marius always in the loop | Messages get lost in chat noise, no structure | Supplement only |
+| **Telegram as relay** | Owner always in the loop | Messages get lost in chat noise, no structure | Supplement only |
 
 ### Message Format
 
 ```markdown
 ---
-from: gregor
-to: isidore
+from: bot
+to: local-assistant
 type: escalation | status | research | question
 priority: low | normal | high | urgent
 timestamp: 2026-02-19T14:30:00Z
@@ -296,11 +289,11 @@ Concise description of what this message is about.
 
 ## Context
 
-Relevant background Isidore needs to pick this up.
+Relevant background the local assistant needs to pick this up.
 
 ## Request
 
-What Gregor needs from Isidore (if escalation).
+What the bot needs from the local assistant (if escalation).
 
 ## Attachments
 
@@ -310,91 +303,91 @@ What Gregor needs from Isidore (if escalation).
 ### Pipeline Flow
 
 ```
-Marius gives task via Telegram
+You give task via Telegram
         │
         ▼
-   ┌─────────┐
-   │ GREGOR  │ ← Always online, VPS
-   │ (OpenClaw)│
-   └────┬────┘
+   ┌──────────┐
+   │  YOUR BOT │ ← Always online, VPS
+   │ (OpenClaw) │
+   └────┬──────┘
         │
         ├── Can handle? → Execute, report via Telegram
         │
         └── Cannot handle (needs tools/complexity)?
                 │
                 ▼
-        Write to .pipeline/gregor-to-isidore/
+        Write to .pipeline/bot-to-local/
                 │
                 ▼
-        Notify Marius via Telegram:
-        "Escalated task X to Isidore pipeline"
+        Notify you via Telegram:
+        "Escalated task X to local pipeline"
                 │
                 ▼
-   ┌─────────────┐
-   │  ISIDORE    │ ← Session-based, local
-   │ (Claude Code)│
-   └──────┬──────┘
+   ┌──────────────────┐
+   │ LOCAL ASSISTANT   │ ← Session-based, local
+   │ (Claude Code etc) │
+   └──────┬───────────┘
           │
-          ├── Marius starts session, Isidore reads pipeline
+          ├── You start session, assistant reads pipeline
           ├── Processes escalation
-          ├── Writes response to .pipeline/isidore-to-gregor/
+          ├── Writes response to .pipeline/local-to-bot/
           └── Commits + pushes
                 │
                 ▼
-        Gregor pulls, reads response
-        Reports result to Marius via Telegram
+        Bot pulls, reads response
+        Reports result to you via Telegram
 ```
 
 ### Security Considerations
 
-- **Gregor needs GitHub `gh` CLI access** — the `github` skill by steipete enables this
-- **Repo should remain private** (it already is) — pipeline messages may contain sensitive context
-- **Gregor's GitHub token should be read/write scoped to this repo ONLY** — no org-wide access
-- **Message validation:** Gregor should verify message signatures (git commit signatures)
+- **Bot needs GitHub `gh` CLI access** — the `github` skill by steipete enables this
+- **Repo should remain private** if using pipeline — messages may contain sensitive context
+- **Bot's GitHub token should be read/write scoped to the repo ONLY** — no org-wide access
+- **Message validation:** Bot should verify message signatures (git commit signatures)
 
 ---
 
 ## 7. Telegram Bot Integration
 
-### Architecture (per masterplan Phase 3b)
+### Architecture (per masterplan Phase 3)
 
 ```
-Marius's Phone (Telegram)
+Your Phone (Telegram)
         │
         ▼
-  @gregor_openclaw_bot
+  @your_bot
         │
         ▼
   OpenClaw Gateway (port 18789, loopback)
         │
         ▼
-  Gregor processes, responds
+  Bot processes, responds
 ```
 
 ### Command Interface
 
 | Command | What It Does |
 |---|---|
-| `/ask <question>` | General question — Gregor answers using Claude |
+| `/ask <question>` | General question — bot answers using Claude |
 | `/research <topic>` | Web search + summarize — uses web_search + summarize skill |
 | `/status` | Report current state — running tasks, pipeline status |
-| `/escalate <description>` | Manually push task to Isidore pipeline |
-| `/review <github-url>` | Code review — Gregor reads PR/commit, gives feedback |
+| `/escalate <description>` | Manually push task to local assistant pipeline |
+| `/review <github-url>` | Code review — bot reads PR/commit, gives feedback |
 | `/tasks` | Show active task board from .pipeline/shared/active-tasks.md |
 
 ### Message Flow
 
-1. Marius sends message to @gregor_openclaw_bot on Telegram
+1. You send message to your bot on Telegram
 2. OpenClaw Telegram adapter receives message
-3. Gateway routes to Gregor's session (dmScope: per-channel-peer)
-4. Gregor processes with allowed tools (web_search, summarize, github)
+3. Gateway routes to bot's session (dmScope: per-channel-peer)
+4. Bot processes with allowed tools (web_search, summarize, github)
 5. Response sent back via Telegram
-6. If escalation needed → Gregor writes to .pipeline/ + notifies Marius
+6. If escalation needed → bot writes to .pipeline/ + notifies you
 
 ### Notification Patterns
 
 - **Task complete:** "Done: [summary]. Full details in .pipeline/shared/"
-- **Escalation:** "I can't handle [X] — needs Isidore. Written to pipeline. Priority: [level]"
+- **Escalation:** "I can't handle [X] — needs local assistant. Written to pipeline. Priority: [level]"
 - **Daily digest:** (optional, via cron on VPS — separate from OpenClaw) summary of activity
 
 ---
@@ -424,7 +417,7 @@ Marius's Phone (Telegram)
 | **self-improving-agent** | Same — autonomous self-modification. |
 | **Wacli** | WhatsApp — not our communication channel. |
 | **Any browser skill** | Browser tool denied in masterplan. |
-| **Any coding-agent** | Gregor doesn't spawn sub-agents. |
+| **Any coding-agent** | Bot shouldn't spawn sub-agents. |
 | **moltbook / agentchat** | Agent-to-agent social networking. Unnecessary attack surface. |
 | **Any skill by hightower6eu** | Known malicious actor (314 skills). |
 | **Any skill < 500 downloads with unknown author** | Below trust threshold. |
@@ -462,4 +455,4 @@ Marius's Phone (Telegram)
 
 ### Bottom Line
 
-**Install steipete's tools. Ignore almost everything else.** The ClawHub ecosystem is large but low-trust for security-hardened deployments. Gregor's power should come from the Claude model and the Isidore pipeline — not from a stack of community skills of questionable provenance.
+**Install steipete's tools. Ignore almost everything else.** The ClawHub ecosystem is large but low-trust for security-hardened deployments. Your bot's power should come from the Claude model and the local assistant pipeline — not from a stack of community skills of questionable provenance.

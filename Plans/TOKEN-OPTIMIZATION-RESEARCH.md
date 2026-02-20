@@ -1,25 +1,24 @@
-# Gregor Token Optimization Research
+# OpenClaw Bot Token Optimization Research
 
 **Date:** 2026-02-20
-**Author:** Isidore (for Marius Jonathan Jauernik)
-**Purpose:** Comprehensive research on reducing Gregor's token usage to Isidore-comparable levels
+**Purpose:** Comprehensive research on reducing an OpenClaw bot's token usage
 **Status:** Research complete — awaiting implementation decisions
 
 ---
 
 ## Executive Summary
 
-Gregor currently runs **claude-opus-4-6 for ALL interactions** — every Telegram message, every Lattice cron post, every heartbeat. By implementing model tiering, prompt caching, and session architecture changes, total API costs can be reduced by **70-90%**. The single highest-impact change: **routing Lattice cron posts to Haiku 4.5**, which alone cuts that workload's cost by ~80%.
+the bot currently runs **claude-opus-4-6 for ALL interactions** — every Telegram message, every Lattice cron post, every heartbeat. By implementing model tiering, prompt caching, and session architecture changes, total API costs can be reduced by **70-90%**. The single highest-impact change: **routing Lattice cron posts to Haiku 4.5**, which alone cuts that workload's cost by ~80%.
 
-**Critical finding:** Prompt caching does NOT work with setup-token (subscription) auth — only API key auth. This means Gregor's biggest potential optimization requires switching auth methods.
+**Critical finding:** Prompt caching does NOT work with setup-token (subscription) auth — only API key auth. This means the bot's biggest potential optimization requires switching auth methods.
 
 ---
 
-## 1. Why Gregor Uses "Multiples" of Isidore (The Delta Analysis)
+## 1. Why an OpenClaw Bot Uses More Tokens Than Claude Code (The Delta Analysis)
 
 ### The Core Problem
 
-| Factor | Isidore (Claude Code) | Gregor (OpenClaw) |
+| Factor | Claude Code (on-demand) | OpenClaw Bot (always-on) |
 |--------|----------------------|-------------------|
 | **Architecture** | On-demand sessions | Always-on gateway |
 | **Session lifecycle** | Opens → works → closes | Persists indefinitely |
@@ -29,9 +28,9 @@ Gregor currently runs **claude-opus-4-6 for ALL interactions** — every Telegra
 | **Memory injection** | No vector search overhead | 6 chunks × 400 tokens per message |
 | **Compaction** | Rare (short sessions) | Frequent (long-running session) |
 
-### Per-Message Token Overhead (Gregor)
+### Per-Message Token Overhead (the bot)
 
-Every single message Gregor processes incurs:
+Every single message the bot processes incurs:
 
 | Component | Approx. Tokens | Notes |
 |-----------|---------------|-------|
@@ -46,17 +45,17 @@ Every single message Gregor processes incurs:
 
 ### The Daily Math
 
-For Gregor doing 20 user messages + 5 Lattice cron + heartbeats:
+For the bot doing 20 user messages + 5 Lattice cron + heartbeats:
 - ~30+ total LLM calls/day
 - Each with 15K-150K input context
 - Estimated **3-10M+ tokens/day**
 - At Opus 4.6 pricing: significant daily cost
 
-For Isidore doing 20 user messages in a session:
+For Claude Code doing 20 user messages in a session:
 - Messages 1-20 with growing context, but session-bounded
 - Typically 500K-2M total tokens, then session ends
 
-**The multiplicative factors:** Always-on context growth + autonomous cron calls + per-message bootstrap re-injection + memory search overhead = "multiples" of Isidore's usage.
+**The multiplicative factors:** Always-on context growth + autonomous cron calls + per-message bootstrap re-injection + memory search overhead = "multiples" of Claude Code's usage.
 
 ---
 
@@ -152,7 +151,7 @@ openclaw cron edit <jobId> --model "anthropic/claude-haiku-4-5" --thinking off
 | **OpenRouter Auto** | Auto-selects cheapest adequate model | [openrouter.ai](https://openrouter.ai/docs/guides/guides/openclaw-integration) |
 | **LiteLLM local proxy** | Local routing layer for intelligent model selection | [Community gist](https://gist.github.com/digitalknk/ec360aab27ca47cb4106a183b2c25a98) |
 
-### Recommended Routing for Gregor
+### Recommended Routing for the bot
 
 No ML classifier needed. Simple rule-based routing:
 
@@ -190,7 +189,7 @@ No ML classifier needed. Simple rule-based routing:
 
 The `model-usage` skill (7.2K downloads) analyzes **per-model cost data** from CodexBar's local logs. It provides current model cost or full breakdown across all models.
 
-**Limitation for Gregor:** CodexBar is a macOS menu bar app designed for local development. For a VPS deployment, **ClawMetry is more appropriate** — it's designed for server-side observability. The built-in `/usage` commands are the immediate first step.
+**Limitation for the bot:** CodexBar is a macOS menu bar app designed for local development. For a VPS deployment, **ClawMetry is more appropriate** — it's designed for server-side observability. The built-in `/usage` commands are the immediate first step.
 
 ### Recommended Monitoring Implementation
 
@@ -288,7 +287,7 @@ Optimization options:
 
 **Prompt caching does NOT work with setup-token (subscription) auth.** OpenClaw auto-applies `cacheRetention: "short"` for API key auth only.
 
-This means Gregor currently gets **zero prompt caching benefit**. The system prompt is fully re-processed every single message.
+This means the bot currently gets **zero prompt caching benefit**. The system prompt is fully re-processed every single message.
 
 **To unlock prompt caching:**
 1. Switch from setup-token to direct API key auth at console.anthropic.com
@@ -418,7 +417,7 @@ If Tier 1 + Tier 2 implemented:
 | Rate limits | Subscription-tier | API-tier |
 | Monthly cost predictability | Fixed (subscription) | Variable (usage-based) |
 
-**The decision:** If Gregor's uncached token usage costs more than the potential caching savings, API key auth pays for itself. Given that prompt caching saves 50-90% on input tokens, and Gregor processes potentially millions of input tokens/day, the break-even point is likely within the first day.
+**The decision:** If the bot's uncached token usage costs more than the potential caching savings, API key auth pays for itself. Given that prompt caching saves 50-90% on input tokens, and the bot processes potentially millions of input tokens/day, the break-even point is likely within the first day.
 
 However, with Claude Max subscription, the setup-token usage might be "free" (included in subscription). If Anthropic doesn't meter setup-token usage against the subscription cap, then the uncached setup-token approach may still be cheaper than API key + caching. **This needs verification against your actual subscription terms.**
 

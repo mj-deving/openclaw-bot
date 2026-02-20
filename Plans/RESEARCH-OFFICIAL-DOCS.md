@@ -2,7 +2,7 @@
 
 **Researched:** 2026-02-19 (Deep Dive -- Second Pass)
 **Source:** docs.openclaw.ai (official), web searches, NVD, GitHub issues
-**Researcher:** Isidore (PAI Agent)
+**Researcher:** AI-assisted research
 **Status:** COMPREHENSIVE -- all 10 categories covered with full config schemas
 
 ---

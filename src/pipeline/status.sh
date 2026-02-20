@@ -15,8 +15,8 @@ ssh "$SSH_HOST" "
     OUTBOX=\${OUTBOX:-0}
     ACK=\$(ls -1 '${PIPELINE_DIR}/ack/' 2>/dev/null | grep -c '.json\$' || true)
     ACK=\${ACK:-0}
-    echo \"  Inbox (pending for Gregor): \${INBOX}\"
-    echo \"  Outbox (pending for Isidore): \${OUTBOX}\"
+    echo \"  Inbox (pending for bot): \${INBOX}\"
+    echo \"  Outbox (pending for local assistant): \${OUTBOX}\"
     echo \"  Acknowledged: \${ACK}\"
     echo \"\"
     if [ \"\${INBOX}\" -gt 0 ]; then

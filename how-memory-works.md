@@ -1,9 +1,9 @@
-# How Gregor's Memory Works (ELI5)
+# How the Bot's Memory Works (ELI5)
 
 ## The Big Picture
 
 ```
-  You write things            Gregor reads them later
+  You write things            The bot reads them later
   in markdown files           when you ask questions
        │                              ▲
        ▼                              │
@@ -15,18 +15,18 @@
 
 ## Step 1: Writing Memories
 
-Gregor's memory lives as plain markdown files:
+the bot's memory lives as plain markdown files:
 
 ```
 ~/.openclaw/workspace/memory/
 └── 2025-07-17.md          ◄── just a text file!
     │
-    │  "My name is Gregor. I was created by Marius.
+    │  "I am an OpenClaw bot. I was created by my owner.
     │   I engage on Lattice for the Demos protocol.
     │   My key directives are..."
 ```
 
-That's it. Plain text. You (or Gregor) just write `.md` files in that folder.
+That's it. Plain text. You (or the bot) just write `.md` files in that folder.
 
 ## Step 2: Indexing (The Meat Grinder)
 
@@ -35,8 +35,8 @@ When you run `openclaw memory index`, this happens:
 ```
     Your .md file (2992 bytes)
     ┌──────────────────────────────────────────┐
-    │ "My name is Gregor. I was created by     │
-    │ Marius. I engage on Lattice for the      │
+    │ "I am an OpenClaw bot. I was created by    │
+    │ my owner. I engage on Lattice for the        │
     │ Demos protocol. My key directives are    │
     │ to be helpful, private, and accurate..." │
     └──────────────────────────────────────────┘
@@ -85,7 +85,7 @@ When you run `openclaw memory index`, this happens:
 
 ## Step 3: Searching (The Magic Part)
 
-When Gregor gets a question, two searches happen at once:
+When the bot gets a question, two searches happen at once:
 
 ```
   Question: "What do you know about Lattice?"
@@ -125,13 +125,13 @@ When Gregor gets a question, two searches happen at once:
                      │
                      ▼
               Top 6 results (if score > 0.35)
-              injected into Gregor's context
+              injected into the bot's context
 ```
 
 ## The Whole Flow (End to End)
 
 ```
-   You on Telegram: "What did Marius tell you about privacy?"
+   You on Telegram: "What do you know about privacy?"
         │
         ▼
    ┌─────────────────────────────────────────────────┐
@@ -141,13 +141,13 @@ When Gregor gets a question, two searches happen at once:
    │  2. Search memory ──► main.sqlite ──► 3 matches  │
    │  3. Build prompt:                                 │
    │     ┌───────────────────────────────────────────┐│
-   │     │ System: "You are Gregor..."               ││
+   │     │ System: "You are an OpenClaw bot..."      ││
    │     │ Memory: [chunk about privacy directives]  ││  ◄── injected!
-   │     │ Memory: [chunk about Marius identity]     ││
+   │     │ Memory: [chunk about bot identity]        ││
    │     │ Memory: [chunk about key rules]           ││
-   │     │ User: "What did Marius tell you..."       ││
+   │     │ User: "What do you know about privacy?"   ││
    │     └───────────────────────────────────────────┘│
-   │  4. Send to Claude Opus ──► get answer           │
+   │  4. Send to Claude ──► get answer                │
    │  5. Reply on Telegram                             │
    └───────────────────────────────────────────────────┘
 ```
@@ -163,11 +163,11 @@ When Gregor gets a question, two searches happen at once:
        ↓
   💾 Fingerprints stored in a database
        ↓
-  🔍 When Gregor gets a question, he finds pieces
+  🔍 When the bot gets a question, it finds pieces
      with the most similar meaning fingerprint
        ↓
   💬 Those pieces get stuffed into the prompt
-     so Claude can answer with Gregor's memories
+     so Claude can answer with the bot's memories
 ```
 
 **What makes it special:** The fingerprints (embeddings) are made *locally* on the VPS by a tiny 329MB model. No text ever leaves the machine for memory search. Fully private.
