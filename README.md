@@ -1,52 +1,53 @@
 # openclaw-bot
 
-Community guide for deploying an OpenClaw-powered Telegram bot on a VPS, using Anthropic Claude as the AI provider.
+Deploy your own AI-powered Telegram bot on a VPS, powered by Anthropic Claude via [OpenClaw](https://docs.openclaw.ai).
 
-## What This Is
-
-A step-by-step deployment guide covering:
-
-- VPS preparation and OS hardening
-- OpenClaw installation and Anthropic authentication
-- Telegram bot setup with device pairing
-- Security hardening (capability-first posture)
-- Memory system with local embeddings
-- Systemd service with auto-recovery
-- Monitoring, backups, and log hygiene
-- ClawHub skill vetting (optional)
+> *As capable as possible, while as secure as necessary.*
 
 ## Quick Start
 
-1. Read `Plans/MASTERPLAN.md` — the complete setup guide
-2. Follow phases 0-8 in order
-3. Use `src/config/openclaw.json.example` as your config template
-4. Deploy monitoring scripts from `src/scripts/`
+**Experienced users:** Follow the phases in order, skip the explanations.
+
+**Beginners:** Every command is copy-pasteable. Every step has a checkpoint.
+
+**[Read the full guide → GUIDE.md](GUIDE.md)**
+
+### What you'll need
+
+- A VPS (Ubuntu 22.04+, 2+ GB RAM)
+- An [Anthropic API key](https://console.anthropic.com)
+- A Telegram account
+
+### What you'll get
+
+A Telegram bot running Claude on your own server — web search, shell access, persistent memory, scheduled posts — hardened and production-ready.
+
+## Guide Structure
+
+| Part | Phases | What it covers |
+|------|--------|---------------|
+| **1: Get It Running** | 1-6 | VPS hardening → Install → Auth → Telegram → First chat → Systemd |
+| **2: Make It Solid** | 7-10 | OpenClaw security → Identity → Memory → Backups |
+| **3: Make It Smart** | 11-13 | Skills → Cron automation → Cost optimization |
+| **Appendices** | A-G | Architecture, pipeline, multi-bot, threat model, config reference |
 
 ## Repository Structure
 
 ```
-├── Plans/
-│   ├── MASTERPLAN.md              # Complete setup guide (start here)
-│   ├── MASTERPLAN-EXPLAINED.md    # Reasoning behind key decisions (includes ClawHub ecosystem analysis)
-│   └── SESSION-HISTORY.md         # Development journal
-├── how-memory-works.md            # ELI5 guide to OpenClaw memory system
+├── GUIDE.md                      # The full setup guide (start here)
+├── how-memory-works.md           # ELI5 guide to OpenClaw memory system
 ├── src/
 │   ├── config/
-│   │   └── openclaw.json.example  # Sanitized config template
+│   │   └── openclaw.json.example # Sanitized config template
 │   └── scripts/
-│       ├── backup.sh              # Daily backup script
-│       ├── verify-binding.sh      # Gateway binding monitor
-│       ├── health-check.sh        # Service health monitor
-│       └── auto-update.sh         # Weekly update + security audit
+│       ├── backup.sh             # Daily backup script
+│       ├── verify-binding.sh     # Gateway binding monitor
+│       ├── health-check.sh       # Service health monitor
+│       └── auto-update.sh        # Weekly update + security audit
 ```
-
-## Philosophy
-
-> *As capable as possible, while as secure as necessary.*
-
-The bot runs with `tools.profile: "full"` and a targeted deny list — not blanket lockdown. Security protects capability, not replaces it.
 
 ## References
 
+- **Guide:** [GUIDE.md](GUIDE.md)
 - **Official docs:** [docs.openclaw.ai](https://docs.openclaw.ai)
-- **Security:** All configs verified against official schema. Known CVEs patched in v2026.1.29+.
+- **Security:** All configs verified against official schema. CVEs patched in v2026.1.29+.
