@@ -1596,4 +1596,47 @@ ssh -L 18789:127.0.0.1:18789 openclaw@YOUR_VPS_IP
 
 ---
 
-*Based on analysis of official OpenClaw docs (docs.openclaw.ai), security audits, and CVE databases. Config schemas verified against the official configuration reference.*
+## 18. References
+
+### Official Documentation
+
+- [docs.openclaw.ai](https://docs.openclaw.ai) — Main documentation site
+- [docs.openclaw.ai/llms.txt](https://docs.openclaw.ai/llms.txt) — Full documentation index (200+ pages)
+- [Gateway Security](https://docs.openclaw.ai/gateway/security/index.md)
+- [Authentication](https://docs.openclaw.ai/gateway/authentication.md)
+- [Configuration Reference](https://docs.openclaw.ai/gateway/configuration-reference.md)
+- [Telegram Channel](https://docs.openclaw.ai/channels/telegram.md)
+- [Memory System](https://docs.openclaw.ai/concepts/memory.md)
+- [Tools](https://docs.openclaw.ai/tools/index.md)
+- [ClawHub](https://docs.openclaw.ai/tools/clawhub.md)
+- [Sandboxing](https://docs.openclaw.ai/gateway/sandboxing.md)
+- [Network Model](https://docs.openclaw.ai/gateway/network-model.md)
+- [Linux/Systemd](https://docs.openclaw.ai/platforms/linux.md)
+- [Formal Verification](https://docs.openclaw.ai/security/formal-verification.md)
+
+### Security & CVE Sources
+
+- [NVD CVE-2026-25253](https://nvd.nist.gov/vuln/detail/CVE-2026-25253) — 8.8 High, 1-click RCE via `gatewayUrl` query param (patched v2026.1.29)
+- [GHSA-g8p2-7wf7-98mq](https://github.com/openclaw/openclaw/security/advisories/GHSA-g8p2-7wf7-98mq) — GitHub advisory
+- [SOCRadar CVE Analysis](https://socradar.io/blog/cve-2026-25253-rce-openclaw-auth-token/)
+- [Adversa.ai Security Guide](https://adversa.ai/blog/openclaw-security-101-vulnerabilities-hardening-2026/)
+
+### GitHub Issues (Referenced)
+
+- [#14845](https://github.com/openclaw/openclaw/issues/14845) — Service file not regenerated on upgrade
+- [#1380](https://github.com/openclaw/openclaw/issues/1380) — Binds to Tailscale IP instead of loopback
+- [#8823](https://github.com/openclaw/openclaw/issues/8823) — CLI RPC probe hardcodes `ws://127.0.0.1`
+- [#16299](https://github.com/openclaw/openclaw/issues/16299) — TUI hardcodes localhost, ignores bind mode
+- [#7626](https://github.com/openclaw/openclaw/issues/7626) — Gateway ignores `gateway.port` config and `--port` flag
+- [#16365](https://github.com/openclaw/openclaw/issues/16365) — Subscription auth feature request (indicates NOT supported)
+
+### Blog & Threat Intelligence
+
+- [VirusTotal Partnership](https://openclaw.ai/blog/virustotal-partnership) — ClawHub skill scanning (Feb 7, 2026)
+- [VirusTotal: Automation to Infection](https://blog.virustotal.com/2026/02/from-automation-to-infection-how.html) — ClawHavoc campaign analysis
+- [THN: Infostealer targets OpenClaw](https://thehackernews.com/2026/02/infostealer-steals-openclaw-ai-agent.html) — Vidar variant, 28,663 IPs exposed
+- [THN: CVE-2026-25253](https://thehackernews.com/2026/02/openclaw-bug-enables-one-click-remote.html) — 1-click RCE coverage
+
+---
+
+*Config schemas verified against [docs.openclaw.ai/gateway/configuration-reference.md](https://docs.openclaw.ai/gateway/configuration-reference.md). Research deep dive conducted 2026-02-19.*
