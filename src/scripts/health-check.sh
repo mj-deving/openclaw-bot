@@ -66,7 +66,7 @@ if [ "$HTTP_CODE" = "000" ]; then
         set_fail_count 0
         sleep 5
         # Verify binding after restart
-        if ss -tlnp 2>/dev/null | grep ':18789' | grep -q '0.0.0.0'; then
+        if ss -tlnp 2>/dev/null | grep -q '0\.0\.0\.0:18789'; then
             log "CRITICAL: Post-restart binding is 0.0.0.0! Stopping."
             systemctl stop openclaw 2>/dev/null || true
         else
