@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pipeline-send: Send a message to Gregor's inbox (non-blocking)
+# pipeline-send: Send a message to bot's inbox (non-blocking)
 # Usage: ./send.sh <type> <subject> <body> [priority]
 # Types: task, query, notification
 # Example: ./send.sh task "Check Lattice EXP" "Report your current EXP level"
@@ -22,8 +22,8 @@ FILENAME="${TIMESTAMP}-${TYPE}-${SLUG}.json"
 MESSAGE=$(cat <<EOF
 {
   "id": "${ID}",
-  "from": "isidore",
-  "to": "gregor",
+  "from": "local-assistant",
+  "to": "bot",
   "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "type": "${TYPE}",
   "subject": "${SUBJECT}",

@@ -12,7 +12,7 @@
 #   - Post-update: binding verification runs to catch any regression.
 #
 # TOKEN COST: Zero for the script itself. If version changes and service restarts,
-#   Gregor pays the normal initialization token cost once.
+#   The bot pays the normal initialization token cost once.
 
 set -euo pipefail
 
