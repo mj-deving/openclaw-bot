@@ -2,13 +2,15 @@
 
 **Deploy a security-hardened, self-hosted AI agent — from a blank server to production.**
 
-OpenClaw is an open-source AI agent that connects to any app and service. This guide uses Telegram as the starting interface — it's the fastest path to a working bot — but the security model, memory configuration, skill architecture, and cost patterns you'll learn here apply everywhere OpenClaw goes. Works with any LLM provider: Anthropic, OpenAI, OpenRouter (with free models), and 20+ others. No prior OpenClaw experience needed.
+OpenClaw is an open-source AI agent gateway that bridges multiple messaging platforms — Telegram, WhatsApp, Discord, iMessage, Slack, and more. This guide uses Telegram as the starting interface — it's the fastest path to a working bot — but the security model, memory configuration, skill architecture, and cost patterns you'll learn here apply to any channel OpenClaw supports. Works with any LLM provider: Anthropic, OpenAI, OpenRouter (with free models), and 20+ others. No prior OpenClaw experience needed.
 
 > **Guiding philosophy:** *Maximum capability, minimum attack surface.*
 >
 > Security exists to protect capability, not to prevent it. Every deny-list entry, every disabled feature must justify itself against the question: "Does removing this capability make the bot meaningfully safer, or just less useful?"
 >
-> This guide includes the *reasoning* behind every major decision — not just the steps. Look for the indented "Why?" blocks throughout. The guide was built from three sources: the `centminmod/explain-openclaw` repo (199 files of third-party analysis from 5 AI models), web research across security coverage and official docs, and hands-on deployment experience.
+> This guide includes the *reasoning* behind every major decision — not just the steps. Look for the indented "Why?" blocks throughout.
+>
+> **How this was built:** Deep research into every domain where OpenClaw has leverage — security, memory, skills, context engineering, cost optimization — combined with official documentation and hands-on deployment experience on a live VPS.
 
 ---
 
