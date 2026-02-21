@@ -1,14 +1,14 @@
-# The OpenClaw Masterplan
+# The OpenClaw Deployment Guide
 
-**Deploy your own AI-powered Telegram bot on a VPS in under an hour.**
+**Deploy a security-hardened, self-hosted AI agent — from a blank server to production.**
 
-This guide walks you through every step — from a blank Ubuntu server to a fully operational, security-hardened OpenClaw bot. Works with any LLM provider — Anthropic, OpenAI, OpenRouter (with free models), and 20+ others. No prior OpenClaw experience needed.
+OpenClaw is an open-source AI agent that connects to any app and service. This guide uses Telegram as the starting interface — it's the fastest path to a working bot — but the security model, memory configuration, skill architecture, and cost patterns you'll learn here apply everywhere OpenClaw goes. Works with any LLM provider: Anthropic, OpenAI, OpenRouter (with free models), and 20+ others. No prior OpenClaw experience needed.
 
 > **Guiding philosophy:** *Maximum capability, minimum attack surface.*
 >
 > Security exists to protect capability, not to prevent it. Every deny-list entry, every disabled feature must justify itself against the question: "Does removing this capability make the bot meaningfully safer, or just less useful?"
 >
-> This guide includes the *reasoning* behind every major decision — not just the steps. Look for the indented "Why?" blocks throughout. The plan was built from three sources: the `centminmod/explain-openclaw` repo (199 files of third-party analysis from 5 AI models), web research across security coverage and official docs, and hands-on deployment experience.
+> This guide includes the *reasoning* behind every major decision — not just the steps. Look for the indented "Why?" blocks throughout. The guide was built from three sources: the `centminmod/explain-openclaw` repo (199 files of third-party analysis from 5 AI models), web research across security coverage and official docs, and hands-on deployment experience.
 
 ---
 

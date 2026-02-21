@@ -1,52 +1,77 @@
 # openclaw-bot
 
-Deploy your own AI-powered Telegram bot on a VPS using [OpenClaw](https://docs.openclaw.ai) — an open-source AI agent that works with any LLM provider.
+The most thorough guide to deploying [OpenClaw](https://docs.openclaw.ai) on your own server. Security-first, provider-agnostic, every decision explained.
 
 > *Maximum capability, minimum attack surface.*
 
-## Quick Start
+## Why This Guide Exists
 
-**Experienced users:** Follow the phases in order, skip the explanations.
+The official OpenClaw docs explain features well. What doesn't exist is a single resource that covers **end-to-end secure deployment** — from a blank Ubuntu server to a hardened, production-ready AI agent.
 
-**Beginners:** Every command is copy-pasteable. Every step has a checkpoint.
+This guide fills that gap:
 
-**[Read the full guide → GUIDE.md](GUIDE.md)**
+- **Every decision explained.** Not just the commands — the *reasoning*. Why these permissions? Why this auth method? Why deny these tools? Look for the indented "Why?" blocks throughout.
+- **Security as a first-class concern.** SSH hardening, 4-layer permission pipeline, skill supply chain vetting, threat model appendix. Security protects capability — it doesn't prevent it.
+- **Provider-agnostic.** Anthropic, OpenAI, OpenRouter, Ollama (free local models), and 20+ others. Choose your model, choose your provider, change your mind later.
+- **Built from three sources.** The `centminmod/explain-openclaw` repo (199 files of third-party analysis from 5 AI models), web research across security coverage and official docs, and hands-on deployment experience.
 
-### What you'll need
+## What You'll Build
+
+A self-hosted AI agent on your own VPS — web search, shell access, persistent memory, scheduled automation, hardened permissions. You own the server, you own the data.
+
+We start with Telegram as the interface because it's the fastest path to a working bot. But OpenClaw connects to any app and service — the security model, memory configuration, skill architecture, and cost patterns you'll learn here transfer everywhere OpenClaw goes.
+
+"Production-ready" means: systemd service management, automated backups, health monitoring, log rotation, and a security posture you can reason about.
+
+## Who This Is For
+
+**New to self-hosting or AI agents?** Every command is copy-pasteable. Every step has a checkpoint. The guide assumes you can SSH into a server and not much else.
+
+**Experienced with deployment?** Skip the explanations, follow the phases, use the reference docs for deep dives on specific topics.
+
+**Veterans?** The threat model appendix, architecture decisions, and supply chain security research are written for you. The reference docs go deep.
+
+## What You'll Need
 
 - A VPS (Ubuntu 22.04+, 2+ GB RAM)
-- An API key from any supported provider (Anthropic, OpenAI, OpenRouter, and [20+ others](https://docs.openclaw.ai)) — or run local models with Ollama (free)
+- An API key from any supported provider — or run local models with [Ollama](https://ollama.ai) (free)
 - A Telegram account
 
-### What you'll get
+## The Guide
 
-A self-hosted AI agent on your own server — web search, shell access, persistent memory, scheduled automation — hardened and production-ready. Choose your own model and provider.
+14 phases across three parts, plus appendices:
 
-## Guide Structure
-
-| Part | Phases | What it covers |
+| Part | Phases | What It Covers |
 |------|--------|---------------|
-| **1: Get It Running** | 1-6 | VPS hardening → Install → Auth → Telegram → First chat → Systemd |
-| **2: Make It Solid** | 7-10 | OpenClaw security → Identity → Memory → Backups |
-| **3: Make It Smart** | 11-14 | Skills → Cron automation → Cost optimization → Context engineering |
+| **Get It Running** | 1-6 | VPS hardening, install, auth, Telegram, first chat, systemd |
+| **Make It Solid** | 7-10 | OpenClaw security, identity, memory, backups & monitoring |
+| **Make It Smart** | 11-14 | Skills, cron automation, cost optimization, context engineering |
 | **Appendices** | A-G | Architecture, pipeline, multi-bot, threat model, config reference |
 
-## Repository Structure
+**[Read the guide &rarr; GUIDE.md](GUIDE.md)**
+
+## Repository Map
 
 ```
-├── GUIDE.md                      # The full setup guide — how AND why (start here)
-├── Reference/
-│   ├── CONTEXT-ENGINEERING.md    # Context management, caching & session persistence
-│   ├── MEMORY-PLUGIN-RESEARCH.md # mem0 evaluation + memory optimization research
-│   └── SKILLS-AND-TOOLS.md      # Skills, tools, MCP, security vetting & supply chain
-├── src/
-│   ├── config/
-│   │   └── openclaw.json.example # Sanitized config template
-│   └── scripts/
-│       ├── backup.sh             # Daily backup script
-│       ├── verify-binding.sh     # Gateway binding monitor
-│       ├── health-check.sh       # Service health monitor
-│       └── auto-update.sh        # Weekly update + security audit
+GUIDE.md                          # The deployment guide (2,000 lines)
+AGENTS.md                         # Machine-readable project context for AI agents
+Reference/
+  CONTEXT-ENGINEERING.md          # Prompt caching, session persistence, memory tuning
+  MEMORY-PLUGIN-RESEARCH.md       # Why built-in memory over external plugins (mem0 eval)
+  SKILLS-AND-TOOLS.md             # Skill architecture, tool permissions, supply chain security
+src/
+  config/
+    openclaw.json.example         # Sanitized config template with security annotations
+    logrotate-openclaw            # Log rotation config
+  scripts/
+    backup.sh                     # Daily backup with 30-day retention
+    health-check.sh               # Service health monitor
+    verify-binding.sh             # Gateway binding verification
+    auto-update.sh                # Weekly update + security audit
+  pipeline/
+    send.sh / read.sh / status.sh # Async messaging pipeline utilities
+assets/
+  social-preview.png              # GitHub social preview image
 ```
 
 ## References
@@ -56,4 +81,3 @@ A self-hosted AI agent on your own server — web search, shell access, persiste
 - **Memory research:** [Reference/MEMORY-PLUGIN-RESEARCH.md](Reference/MEMORY-PLUGIN-RESEARCH.md) — why we use built-in memory over external plugins
 - **Skills & tools:** [Reference/SKILLS-AND-TOOLS.md](Reference/SKILLS-AND-TOOLS.md) — skill creation, tool permissions, security vetting, supply chain risks
 - **Official docs:** [docs.openclaw.ai](https://docs.openclaw.ai)
-- **Security:** All configs verified against official schema. CVEs patched in v2026.1.29+.
