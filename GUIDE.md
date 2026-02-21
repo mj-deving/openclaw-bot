@@ -634,6 +634,40 @@ Capability-first with targeted denials:
 
 Everything else stays enabled. The bot's power comes from full tool access, not from restrictions.
 
+### 7.2.1 How Permissions Work (The Four-Layer Pipeline)
+
+Tool access is resolved through four layers, applied in sequence. **Each layer can only restrict, never expand:**
+
+```
+Layer 1: Tool Profile (base allowlist — "full", "coding", "messaging", "minimal")
+    ↓
+Layer 2: Provider-specific profiles (tools.byProvider)
+    ↓
+Layer 3: Global + per-agent allow/deny lists (what you configured above)
+    ↓
+Layer 4: Sandbox-specific policies
+```
+
+**Three rules govern the pipeline:**
+1. **Deny always wins.** At every layer, deny overrides allow.
+2. **Non-empty allow creates implicit deny.** If you specify `allow: ["read", "exec"]`, everything else is implicitly denied.
+3. **Per-agent overrides can only further restrict** — not expand beyond global settings.
+
+For bulk management, OpenClaw provides **tool groups** you can deny/allow as a unit:
+
+| Group | Contains |
+|-------|----------|
+| `group:runtime` | exec, process |
+| `group:fs` | read, write, edit, apply_patch |
+| `group:sessions` | Session management tools |
+| `group:memory` | memory_search, memory_get |
+| `group:web` | web_search, web_fetch |
+| `group:automation` | cron, gateway |
+
+> **Why this matters for skills (Phase 11):** Skills cannot escalate permissions. A skill is a teaching document — it guides the agent to use tools that are already available. If a tool is denied, the skill's instructions simply won't work. The defense is this permission pipeline, not the skill itself.
+>
+> For the full permission model including provider-specific profiles and sandbox policies, see [Reference/SKILLS-AND-TOOLS.md](Reference/SKILLS-AND-TOOLS.md).
+
 ### 7.3 Disable Network Discovery
 
 ```jsonc
@@ -1097,9 +1131,23 @@ chmod +x ~/scripts/auto-update.sh
 
 ## Phase 11 — Skills
 
-### 11.1 Bundled vs. Community Skills
+### 11.1 How Skills Work
 
-OpenClaw ships with ~50 **bundled skills** inside the npm package. These are official, maintained, and carry no supply chain risk. They're completely separate from the ClawHub community registry (8,600+ skills, but also the target of the "ClawHavoc" campaign — 800+ malicious packages planted in Feb 2026). Skills run **in-process** with full access to memory and API keys. There is no sandboxing. That's why this guide recommends bundled-only.
+Before installing anything, understand what skills actually are. OpenClaw agents gain capabilities through three mechanisms:
+
+| Mechanism | What It Is | Key Property |
+|-----------|-----------|-------------|
+| **Native tools** | Built-in functions (exec, read, write, etc.) | Execute actions — governed by tool policy |
+| **Skills** | SKILL.md instruction files | Educate the agent — guide existing tools |
+| **MCP servers** | External processes via Model Context Protocol | Separate process — not yet available (see 11.8) |
+
+**The critical distinction: tools *execute*, skills *educate*.** A skill cannot do anything the agent's tools can't already do — it just teaches the agent HOW to use tools for a specific purpose. This means a malicious skill can't bypass your deny list (Phase 7), but it CAN trick the agent into misusing tools it already has.
+
+**Token cost:** Each loaded skill adds ~24 tokens to the system prompt on every LLM call. Denied tools automatically exclude their associated skills from injection — so your deny list saves tokens too.
+
+### 11.2 Bundled vs. Community Skills
+
+OpenClaw ships with ~50 **bundled skills** inside the npm package. These are official, maintained, and carry no supply chain risk. They're completely separate from the ClawHub community registry (8,600+ skills, but also the target of the "ClawHavoc" campaign — 800+ malicious packages in Feb 2026).
 
 **Key concept:** Bundled skills show as "missing" until their external CLI dependency is installed. Once the binary is in PATH, the skill automatically becomes "ready." No `clawhub install` required.
 
@@ -1108,7 +1156,7 @@ openclaw skills list                  # Shows all 50 with status
 openclaw skills info <skill-name>     # Shows dependencies
 ```
 
-### 11.2 Useful Skills for a VPS Bot
+### 11.3 Useful Skills for a VPS Bot
 
 | Skill | CLI Dependency | Install Command | What It Does |
 |-------|---------------|-----------------|-------------|
@@ -1119,11 +1167,11 @@ openclaw skills info <skill-name>     # Shows dependencies
 | **healthcheck** | (none) | Already ready | System health and audit scheduling |
 | **weather** | (none) | Already ready | Weather via wttr.in |
 | **tmux** | (none) | Already ready | Remote-control tmux sessions |
-| **skill-creator** | (none) | Already ready | Create custom skills |
+| **skill-creator** | (none) | Already ready | Create custom skills (see 11.5) |
 
 Some skills are **macOS-only** and won't work on Linux (peekaboo, imsg, apple-notes, etc.).
 
-### 11.3 Installing Skill Dependencies
+### 11.4 Installing Skill Dependencies
 
 ```bash
 # 1. Check what a skill needs
@@ -1142,17 +1190,80 @@ gh auth login
 
 **No gateway restart needed.** Skills are detected dynamically.
 
-### 11.4 Community Skills — Proceed with Caution
+### 11.5 Creating Custom Skills
+
+When bundled skills don't cover a workflow, create your own. A skill is just a SKILL.md file with YAML frontmatter:
+
+```bash
+# Create the skill directory
+mkdir -p ~/.openclaw/skills/my-skill/
+
+# Create SKILL.md
+cat > ~/.openclaw/skills/my-skill/SKILL.md << 'EOF'
+---
+name: my-skill
+description: Brief description of what this teaches the agent
+---
+
+# My Skill
+
+## When to Use
+- Trigger condition 1
+- Trigger condition 2
+
+## How to Use
+Step-by-step instructions for the agent...
+
+## Examples
+Show the agent concrete examples of invocation and expected output.
+EOF
+
+# Verify it loaded (no restart needed)
+openclaw skills list | grep my-skill
+```
+
+Skills can also include supporting files:
+
+```
+my-skill/
+├── SKILL.md              # Required — agent instructions
+├── scripts/              # Optional — code the agent can exec
+├── references/           # Optional — on-demand context (not injected every message)
+└── assets/               # Optional — templates, boilerplate
+```
+
+> **Tip:** The bundled `skill-creator` skill automates this process. Ask your bot: "Create a skill for [purpose]" and it walks through a six-step workflow.
+>
+> For the full SKILL.md specification (frontmatter fields, gating via metadata, skill precedence hierarchy), see [Reference/SKILLS-AND-TOOLS.md](Reference/SKILLS-AND-TOOLS.md).
+
+### 11.6 Expanding Capabilities (Decision Framework)
+
+Not everything needs a skill. Use this decision tree when your bot needs a new capability:
+
+```
+Need new capability?
+  │
+  ├── Is it a CLI tool? → Install the binary, document in TOOLS.md
+  │                        (simplest path — the exec tool handles it)
+  │
+  ├── Does it need multi-step guidance? → Create a skill (11.5)
+  │                        (structured instructions beyond what TOOLS.md provides)
+  │
+  ├── Does it need per-agent scoping? → Agent tool overrides
+  │                        (different tool profiles for main vs cron agents)
+  │
+  └── Does it need process isolation / formal tool schemas? → Wait for MCP (11.8)
+```
+
+**The simplest expansion** is just installing a CLI binary and telling the bot about it in a workspace TOOLS.md file. The exec tool makes every binary in PATH available — no skill needed for straightforward tools.
+
+### 11.7 Community Skills — Proceed with Caution
 
 If you consider community skills from ClawHub, understand the ecosystem reality:
 
-**The registry:** 8,630+ skills across 11 categories. AI/ML (48%) and Utility (46%) dominate. Recent uploads skew heavily toward city guides, crypto DAOs, and niche tools — the signal-to-noise ratio is poor.
+**The ClawHavoc campaign (Feb 2026):** 824+ malicious skills planted by organized actors. Attack payloads included credential stealers (Atomic macOS Stealer), memory poisoning via SOUL.md/MEMORY.md modifications, and social engineering "prerequisites" that tricked users into running attacker-supplied shell commands. The cleanup removed 2,419 skills. The registry rebounded to 8,630+ — growing faster than moderation can keep up.
 
-**The key contributor:** steipete (Peter Steinberger) authored 9 of the top 14 most-downloaded skills including `gog` (28k downloads) and `summarize` (21k). He joined OpenAI in Feb 2026 — the most trusted contributor is no longer maintaining the ecosystem.
-
-**The ClawHavoc campaign (Feb 2026):** 824+ malicious skills planted by organized actors (worst: hightower6eu with 314 alone). The cleanup removed 2,419 skills. Registry rebounded to 8,630+ — growing faster than moderation can keep up. Current scanning (VirusTotal) catches binary malware but **cannot detect adversarial prompts** in SKILL.md files.
-
-**The architectural problem:** Skills run IN-PROCESS with the gateway. No sandboxing. A malicious skill has full access to process memory, API keys, and all tools. npm lifecycle scripts execute during `clawhub install` — a classic supply chain vector.
+**The architectural problem:** Skills run IN-PROCESS with the gateway. No sandboxing. A malicious skill has full access to process memory, API keys, and all tools. Current ClawHub scanning (VirusTotal) catches binary malware but **cannot detect adversarial prompts** in SKILL.md files.
 
 **Vetting checklist before installing any community skill:**
 
@@ -1161,10 +1272,27 @@ If you consider community skills from ClawHub, understand the ecosystem reality:
 - [ ] Manually read the source — no `eval()`, `exec()`, `fetch()` to unknown hosts
 - [ ] No npm lifecycle scripts (`preinstall`, `postinstall`)
 - [ ] Does not require denied tools
-- [ ] Pin exact version after install
+- [ ] Pin exact version after install (`clawhub install skill@1.2.3`)
 - [ ] Run `openclaw security audit --deep` after installation
 
-**Recommendation:** Stick with bundled skills. They cover the most common needs.
+**Recommendation:** Stick with bundled skills. They cover the most common needs. For the full supply chain threat model, attack vectors, and SecureClaw security auditing tool, see [Reference/SKILLS-AND-TOOLS.md](Reference/SKILLS-AND-TOOLS.md).
+
+### 11.8 MCP Servers (Future)
+
+The **Model Context Protocol (MCP)** is a standard for exposing tool schemas via external processes. Unlike skills (which educate the agent using existing tools), MCP servers run as separate child processes with their own code execution — closer to plugins than instruction files.
+
+**Current status:** Native MCP support is not yet in OpenClaw mainline. Community PR #21530 is open and under review (Feb 2026). The `mcpServers` config key is currently ignored.
+
+**When it lands, treat each MCP server as untrusted code.** MCP servers inherit the spawning user's filesystem and network permissions with no built-in tool-level access control. Audit each server package with the same rigor as npm dependencies.
+
+> For proposed configuration format and detailed security implications, see [Reference/SKILLS-AND-TOOLS.md](Reference/SKILLS-AND-TOOLS.md).
+
+### ✅ Phase 11 Checkpoint
+
+- [ ] Understand the three extension mechanisms (tools, skills, MCP)
+- [ ] Bundled skills activated for your needs (`openclaw skills list`)
+- [ ] Know how to create a custom skill if needed
+- [ ] Community skills avoided (or thoroughly vetted)
 
 ---
 
