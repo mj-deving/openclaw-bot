@@ -356,29 +356,90 @@ If you see errors, run:
 openclaw doctor
 ```
 
-### 3.4 Popular Models
+### 3.4 Provider Pricing Reference
 
-| Model | Provider | Best For | Approximate Cost |
-|-------|----------|----------|-----------------|
-| `claude-sonnet-4` | Anthropic | Daily use — quality + speed balance | ~$3/MTok input |
-| `claude-haiku-4` | Anthropic | Automated tasks, simple queries | ~$1/MTok input |
-| `claude-opus-4` | Anthropic | Complex reasoning, long context | ~$5/MTok input |
-| `gpt-4o` | OpenAI | General purpose, multimodal | ~$2.50/MTok input |
-| `gpt-4o-mini` | OpenAI | Budget-friendly, fast | ~$0.15/MTok input |
-| `openrouter/auto` | OpenRouter | Cost-optimized routing across all models | Varies by query |
-| `google/gemini-2.0-flash` | OpenRouter | Fast, cheap, good for simple tasks | ~$0.10/MTok input |
-| `qwen2.5-coder:7b` | Ollama | Local coding model (~4 GB RAM, ~8 tok/s on CPU) | Free |
-| `llama3.3:8b` | Ollama | Local general purpose (~5 GB RAM, ~7 tok/s on CPU) | Free |
+Prices as of February 2026. Per million tokens (MTok). Full details with cache write costs, rate limits, and batch API discounts in [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md).
+
+**Cloud providers:**
+
+| Model | Provider | Input (/MTok) | Output (/MTok) | Cached (/MTok) | Best For |
+|-------|----------|--------------|----------------|----------------|----------|
+| **Sonnet 4.6** | Anthropic | $3.00 | $15.00 | $0.30 | Daily use — quality + speed balance |
+| **Haiku 4.5** | Anthropic | $1.00 | $5.00 | $0.10 | Automated tasks, simple queries |
+| **Opus 4.6** | Anthropic | $5.00 | $25.00 | $0.50 | Complex reasoning, long context |
+| **GPT-4o** | OpenAI | $2.50 | $10.00 | $1.25 | General purpose, multimodal |
+| **o4-mini** | OpenAI | $1.10 | $4.40 | $0.275 | Budget reasoning |
+| **Gemini 2.5 Flash** | Google | $0.30 | $2.50 | $0.075 | Fast, cheap, 1M context |
+| **Gemini 2.5 Pro** | Google | $1.25 | $10.00 | $0.31 | Quality at lower price |
+| **DeepSeek-V3** | DeepSeek | $0.27 | $1.10 | $0.07 | Cheapest quality option |
+| **DeepSeek-R1** | DeepSeek | $0.55 | $2.19 | $0.14 | Budget reasoning |
+
+**Gateways and local:**
+
+| Model | Provider | Cost | Notes |
+|-------|----------|------|-------|
+| `openrouter/auto` | OpenRouter | Pass-through + 5.5% fee | NotDiamond routing, picks optimal model per query |
+| `qwen2.5-coder:7b` | Ollama | Free | ~4 GB RAM, ~8 tok/s on CPU |
+| `llama3.3:8b` | Ollama | Free | ~5 GB RAM, ~7 tok/s on CPU |
+
+> **Why cached pricing matters:** The bot's system prompt and bootstrap context (~35K tokens) are re-sent on every message. With prompt caching enabled, this repeated content costs 90% less. That's the difference between $50/mo and $22/mo for the same usage. See Phase 13 for how to enable it.
 
 **Start with one model.** You can always switch later — it's just a config change.
 
-> **Tip:** You can configure multiple models and switch between them. See Phase 13 for cost optimization strategies including model routing.
+### 3.5 Fallback Chains (Resilience)
+
+If your primary provider has an outage or hits rate limits, a fallback chain automatically switches to the next model. No downtime, no manual intervention.
+
+```bash
+openclaw models fallbacks add anthropic/claude-haiku-4-5
+openclaw models fallbacks add google/gemini-2.5-flash
+```
+
+> **Why this order?** Haiku first — same provider, same personality DNA, prompt cache stays warm. Gemini Flash second — cross-provider hedge for when all of Anthropic is down. Fallbacks only activate during failures; no cost impact under normal operation.
+
+> **Why?** Caching works best within a single provider. Switching Sonnet → Haiku preserves the Anthropic cache. Switching to Gemini breaks it. So the chain goes: same-provider downgrade first, cross-provider last resort.
+
+### 3.6 Model Aliases
+
+Aliases let you switch models on the fly — in Telegram, CLI, or config — without typing full model IDs.
+
+```bash
+openclaw models aliases add opus anthropic/claude-opus-4-6
+openclaw models aliases add sonnet anthropic/claude-sonnet-4-6
+openclaw models aliases add haiku anthropic/claude-haiku-4-5
+openclaw models aliases add flash google/gemini-2.5-flash
+```
+
+Then switch in Telegram:
+
+```
+/model opus    # Hard problems, long reasoning
+/model sonnet  # Daily use (default)
+/model haiku   # Simple queries, quick tasks
+/model flash   # Budget mode, cross-provider
+```
+
+> **Why?** Manual model switching within the same provider preserves prompt caches. `/model haiku` for a simple question saves tokens without breaking your cache. This is the practical alternative to automated routing — you know which questions are hard.
+
+### 3.7 ClawRouter (After Phase 1)
+
+[ClawRouter](https://github.com/BlockRunAI/ClawRouter) is an OpenClaw-native LLM router that automatically routes requests to the cheapest capable model using 15-dimension local scoring in <1ms. It uses [x402](https://www.x402.org) — the Coinbase-backed agent micropayment standard — for USDC payments on Base L2.
+
+**Don't install it yet.** Get prompt caching and fallback chains working first (Phase 13). ClawRouter's multi-provider routing conflicts with caching, and caching is the bigger win. But once your base setup is stable, ClawRouter adds genuine value:
+
+- **Intelligent routing:** Classifies requests into 4 tiers (SIMPLE/MEDIUM/COMPLEX/REASONING) and routes to the cheapest model that can handle it
+- **Resilience:** Adds a routing layer beyond OpenClaw's native fallback chain
+- **Agent economy:** x402 wallet + blockchain interaction is infrastructure for an agent that can pay for services, interact with smart contracts, and operate in the emerging agent economy
+
+See [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) for the full deep dive — routing tiers, x402 security model, adoption path, and the crypto-free fork option.
 
 ### ✅ Phase 3 Checkpoint
 
 - [ ] `openclaw models status` shows authenticated with your chosen provider
 - [ ] `openclaw chat --once "test"` returns a response
 - [ ] API key stored securely (we'll lock down permissions in Phase 7)
+- [ ] *(Optional)* Fallback chain configured: `openclaw models fallbacks list` shows entries
+- [ ] *(Optional)* Model aliases set up: `/model haiku` works in Telegram
 
 ---
 
@@ -1366,11 +1427,11 @@ Add `cron` to your deny list if you want full control over scheduling.
 
 ## Phase 13 — Cost Management & Optimization
 
-Even with API key auth and prompt caching, understanding token flow matters. Cron costs compound silently (5 runs/day adds up), subscription metering has rolling windows and weekly caps, and you can't optimize what you don't measure. This phase establishes baselines.
+You can't optimize what you don't measure. This phase goes from measurement to action — caching, model tiering, and intelligent routing. Provider pricing is in [Phase 3.4](#34-provider-pricing-reference). The deep reference for routing strategies, caching economics, and cost projections is [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md).
 
-### 13.1 Built-in Cost Tracking
+### 13.1 Measure First
 
-Use these commands in Telegram or CLI:
+Use these commands in Telegram or CLI to understand where tokens go:
 
 | Command | What It Shows |
 |---------|--------------|
@@ -1378,9 +1439,17 @@ Use these commands in Telegram or CLI:
 | `/usage full` | Full breakdown: tokens, cost, model |
 | `/context list` | Token breakdown per loaded file |
 
-### 13.2 Prompt Caching (Biggest Savings)
+Establish a baseline before making changes. Run `/usage full` daily for a week.
 
-The system prompt and bootstrap files are re-sent on every message. With API key auth, prompt caching saves 90% on this repeated content:
+### 13.2 Prompt Caching (Biggest Win)
+
+The bot's system prompt and bootstrap context (~35K tokens) are re-sent on every single message. Without caching, you're paying full input price for the same content hundreds of times per day. One config change fixes this:
+
+```bash
+openclaw config set agents.defaults.models.anthropic/claude-sonnet-4.params.cacheRetention long
+```
+
+Or in `openclaw.json`:
 
 ```jsonc
 {
@@ -1389,37 +1458,72 @@ The system prompt and bootstrap files are re-sent on every message. With API key
       "models": {
         "anthropic/claude-sonnet-4": {
           "params": {
-            "cacheRetention": "long"
+            "cacheRetention": "long"  // 60-minute TTL, refreshes free on every hit
           }
         }
       },
       "heartbeat": {
-        "every": "55m"
+        "every": "55m"  // Keeps cache warm within the 60-minute TTL
       }
     }
   }
 }
 ```
 
-The heartbeat keeps the cache warm within the 60-minute TTL.
+> **Why?** The numbers make the case. Cached input tokens cost 10% of base price (90% savings). With 35K bootstrap tokens per message at Sonnet's $3/MTok input rate:
+>
+> - **Without caching:** 35K tokens × $3/MTok × 30 msgs/day × 30 days = ~$9.45/mo just for bootstrap context
+> - **With caching:** Same volume at $0.30/MTok = ~$1.32/mo (first message of each session is a cache miss, ~90% hit rate)
+> - **Savings: ~$8/mo on bootstrap alone (~86%)**
+>
+> Scale linearly with usage. At $50/mo total spend, caching cuts approximately 56% — the single highest-impact optimization you can make.
 
-### 13.3 Cost Baselines
+**The caching vs routing tradeoff:** Prompt caching is provider-specific and model-specific. Routing messages to different providers destroys the cache for all of them. Switching Sonnet → Haiku within Anthropic preserves the cache. Switching to Gemini or DeepSeek breaks it. This is why caching comes before routing — and why model aliases within the same provider (Phase 3.6) are preferable to cross-provider auto-routing for most workloads.
 
-| Model | Input (per MTok) | Output (per MTok) | Cached (per MTok) |
-|-------|-----------------|-------------------|-------------------|
-| Opus 4.6 | $5.00 | $25.00 | $0.50 |
-| Sonnet 4.6 | $3.00 | $15.00 | $0.30 |
-| Haiku 4.5 | $1.00 | $5.00 | $0.10 |
+See [CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md) for cache mechanics, the known cache-read-always-0 bug (OpenClaw issue #19534), and session persistence strategies.
 
-**Typical monthly estimates:**
+### 13.3 Model Tiering
 
-| Usage | Model | Estimated Monthly |
-|-------|-------|-------------------|
-| Light (~10 msgs/day) | Sonnet | ~$3-5 |
-| Moderate (~30 msgs/day) | Sonnet | ~$10-15 |
-| Heavy + cron | Sonnet + Haiku cron | ~$20-30 |
+Not every message needs your most expensive model. Route simple tasks to cheap models and save the heavy hitter for what matters.
 
-### 13.4 Optimization Settings
+**Heartbeat optimization:**
+
+The heartbeat keeps caches warm — it doesn't need intelligence, just presence. Use Haiku:
+
+```jsonc
+{
+  "agents": {
+    "defaults": {
+      "heartbeat": {
+        "every": "55m",
+        "model": "anthropic/claude-haiku-4-5"
+      }
+    }
+  }
+}
+```
+
+> **Why?** Haiku heartbeats at $1/MTok vs Sonnet at $3/MTok — 3x cheaper for a task that just needs to keep caches warm.
+
+**Manual model switching (most practical for personal use):**
+
+With the aliases from Phase 3.6:
+
+```
+/model haiku   # Quick questions, simple tasks
+/model sonnet  # Default — daily use
+/model opus    # Hard problems, complex reasoning
+```
+
+You know which questions are hard better than any router does. Switching within Anthropic preserves your prompt cache. This is the recommended approach for personal deployments — it captures most of the savings of automated routing without the complexity.
+
+**Cron model selection:**
+
+Use the cheapest model that produces acceptable output for each cron job. Set `--model` per job (see Phase 12.2). Start with Haiku for engagement posts; upgrade to Sonnet only if quality is noticeably worse.
+
+### 13.4 Context Optimization
+
+Reduce the token volume per message to compound savings on top of caching:
 
 ```jsonc
 {
@@ -1437,7 +1541,29 @@ The heartbeat keeps the cache warm within the 60-minute TTL.
 }
 ```
 
-### 13.5 Third-Party Monitoring
+> **Why these values?** `softThresholdTokens: 40000` flushes conversation history to memory before context gets expensive. `contextPruning` with a 6-hour TTL drops stale context automatically. Together they keep each message lean without losing continuity.
+
+### 13.5 ClawRouter (Phase 2 Optimization)
+
+Once caching and fallback chains are stable, [ClawRouter](https://github.com/BlockRunAI/ClawRouter) adds intelligent automated routing. It classifies every request into 4 tiers (SIMPLE/MEDIUM/COMPLEX/REASONING) using a 15-dimension local scorer in <1ms, then routes to the cheapest capable model.
+
+**Adoption path:**
+
+1. **Audit the install script** (ClawRouter uses `curl | bash` — download and read it first):
+   ```bash
+   curl -fsSL https://blockrun.ai/ClawRouter-update -o clawrouter-install.sh
+   less clawrouter-install.sh
+   bash clawrouter-install.sh
+   ```
+2. **Configure routing tiers** in `openclaw.yaml` — adjust which models handle each tier
+3. **Fund the x402 wallet** with $5-10 USDC on Base L2
+4. **Monitor savings** via `/stats` command
+
+> **Why wait until now?** ClawRouter's multi-provider routing conflicts with prompt caching (different providers = cache miss). Get the 56% caching savings first, then layer ClawRouter on top for intelligent within-provider routing and cross-provider resilience.
+
+> **Why x402?** The [x402 protocol](https://www.x402.org) is the Coinbase-backed agent micropayment standard — designed for exactly this use case (machine-to-machine payments). USDC exposure is capped at wallet balance. It's infrastructure for an agent that can eventually interact with smart contracts and the broader agent economy. See [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) for the full security assessment and the crypto-free fork alternative.
+
+### 13.6 Monitoring
 
 | Tool | What It Does | Install |
 |------|-------------|---------|
