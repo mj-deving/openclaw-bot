@@ -17,10 +17,13 @@ This repository contains the most thorough guide to deploying OpenClaw on a self
 | File | Format | Lines | Purpose | Relevance |
 |------|--------|-------|---------|-----------|
 | `README.md` | Markdown | ~85 | Project overview, audience, navigation | [essential] |
-| `GUIDE.md` | Markdown | 2,018 | Full deployment guide — 14 phases + 7 appendices | [essential] |
+| `GUIDE.md` | Markdown | 2,239 | Full deployment guide — 14 phases + 7 appendices | [essential] |
 | `AGENTS.md` | Markdown | ~70 | This file — machine-readable project context | [essential] |
 | `Reference/CONTEXT-ENGINEERING.md` | Markdown | 215 | Prompt caching, session persistence, memory tuning | [reference] |
 | `Reference/MEMORY-PLUGIN-RESEARCH.md` | Markdown | 338 | mem0 evaluation, built-in memory optimization | [reference] |
+| `Reference/COST-AND-ROUTING.md` | Markdown | 563 | LLM cost optimization, model routing, provider strategy | [reference] |
+| `Reference/IDENTITY-AND-BEHAVIOR.md` | Markdown | 566 | System prompt design, persona patterns, identity security | [reference] |
+| `Reference/SECURITY.md` | Markdown | 2,216 | VPS/OS hardening, application/LLM security (55 sources) | [reference] |
 | `Reference/SKILLS-AND-TOOLS.md` | Markdown | 549 | Skill architecture, tool permissions, supply chain security | [reference] |
 | `src/config/openclaw.json.example` | JSON | 93 | Sanitized config template with security annotations | [config] |
 | `src/config/logrotate-openclaw` | Config | 15 | Log rotation configuration | [utility] |
