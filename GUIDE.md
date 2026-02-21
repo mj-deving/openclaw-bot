@@ -32,6 +32,7 @@ This guide walks you through every step — from a blank Ubuntu server to a full
 11. [Phase 11 — Skills](#phase-11--skills)
 12. [Phase 12 — Autonomous Engagement (Cron)](#phase-12--autonomous-engagement-cron)
 13. [Phase 13 — Cost Management & Optimization](#phase-13--cost-management--optimization)
+14. [Phase 14 — Context Engineering](#phase-14--context-engineering)
 
 **Appendices**
 - [A — Architecture Overview](#appendix-a--architecture-overview)
@@ -890,7 +891,7 @@ OpenClaw ships with memory support, but **the local embedding setup below is NOT
 | **Dependencies** | Needs OpenAI API key | Self-contained | One fewer external service |
 | **RAM** | None (cloud) | ~4 GB for model | Trade RAM for privacy |
 
-We also evaluated external memory plugins (mem0, memory-lancedb, ClawHub community packages) and concluded none were worth the added complexity or risk. The full analysis is in [Plans/MEMORY-PLUGIN-RESEARCH.md](Plans/MEMORY-PLUGIN-RESEARCH.md).
+We also evaluated external memory plugins (mem0, memory-lancedb, ClawHub community packages) and concluded none were worth the added complexity or risk. The full analysis is in [Reference/MEMORY-PLUGIN-RESEARCH.md](Reference/MEMORY-PLUGIN-RESEARCH.md).
 
 **Bottom line:** The config below switches embeddings to local and tunes search for quality. It's not the default — it's better.
 
@@ -1343,6 +1344,149 @@ loginctl enable-linger $(whoami)
 
 ---
 
+## Phase 14 — Context Engineering
+
+Phase 13 showed you where tokens go and what they cost. This phase is about spending them wisely — structuring what the bot sees on every call so it gets maximum value from every token in the context window.
+
+> **Why this matters:** The bot's context window is a fixed budget. Workspace files, memory chunks, conversation history, and tool results all compete for space. Poorly structured context means the bot pays for information it doesn't need while missing information it does. The deep reference for everything in this phase is [Reference/CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md).
+
+### 14.1 Understand the Context Stack
+
+Every LLM call assembles these components in order:
+
+```
+[Tool schemas]                  ← Fixed per session (~5-10K tokens)
+[System prompt + workspace]     ← Re-injected every message (~bootstrap files)
+[Memory chunks]                 ← Retrieved per-search (up to 6 chunks)
+[Conversation history]          ← Grows with each turn
+[Latest user message]           ← Always new
+```
+
+**Key insight:** Everything in workspace gets re-injected on every single message. This is the biggest lever you can pull.
+
+> **Checkpoint:** Run `/context detail` in your bot. Note which workspace files exist and their sizes.
+
+### 14.2 Trim Workspace Files
+
+The workspace directory (`~/.openclaw/workspace/`) is brute-force injected into every call. Apply this decision framework:
+
+**Keep in workspace** (needed every message):
+- Bot identity and personality
+- Core behavioral rules
+- Security constraints and tool restrictions
+
+**Move to memory** (only needed when relevant):
+- Historical facts, project context
+- Learned preferences, past conversation summaries
+- Reference material, documentation
+
+```bash
+# Check your current workspace files
+ls -la ~/.openclaw/workspace/
+
+# Check token impact
+# In Telegram or CLI:
+/context detail
+```
+
+> **Rule of thumb:** If removing a file from a random message wouldn't break the bot, it belongs in `memory/` where it gets retrieved by relevance instead of injected every time.
+
+### 14.3 Tune Memory Retrieval
+
+Your memory search config controls how much context the retrieval system adds per call. The current defaults work, but tuning them can reduce noise:
+
+```jsonc
+{
+  "agents": {
+    "defaults": {
+      "memorySearch": {
+        "query": {
+          "maxResults": 6,           // Try 4 — fewer high-quality chunks beat more medium ones
+          "minScore": 0.35,          // Try 0.40-0.45 — empty retrieval > noisy retrieval
+          "hybrid": {
+            "vectorWeight": 0.7,     // Good default for hybrid search
+            "textWeight": 0.3,
+            "mmr": {
+              "enabled": true,       // Deduplicates similar memory chunks
+              "lambda": 0.7
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+> **How to test:** After changing a value, have a normal conversation and compare response quality. If the bot misses context it used to catch, back off. If responses stay the same or improve, keep the tighter setting.
+
+### 14.4 Session Continuity
+
+Two mechanisms keep context alive across conversations:
+
+**Compaction** — When context nears the window limit, OpenClaw auto-summarizes older history, keeping recent messages verbatim. You can also trigger it manually:
+```
+/compact Focus on decisions and open questions
+```
+
+**Memory flush** — Runs before compaction to persist important facts to `memory/` files before they get summarized away. This is your cross-session continuity mechanism:
+
+```jsonc
+{
+  "compaction": {
+    "memoryFlush": {
+      "enabled": true,              // Persist context before compaction discards it
+      "softThresholdTokens": 40000  // Trigger at 40K tokens
+    }
+  }
+}
+```
+
+Without memory flush, compaction permanently discards older context. With it, key facts survive in memory files and get retrieved in future conversations when relevant.
+
+### 14.5 Context Pruning
+
+Tool results (file reads, web searches) are the fastest-growing context consumer and become irrelevant quickly. Pruning removes stale tool output from the in-memory prompt without rewriting the session transcript:
+
+```jsonc
+{
+  "contextPruning": {
+    "mode": "cache-ttl",
+    "ttl": "6h",                    // Tool results expire after 6 hours
+    "keepLastAssistants": 3         // Always keep the last 3 responses
+  }
+}
+```
+
+If the bot does heavy tool use, consider a shorter TTL. If conversations are long but tool-light, the defaults work fine.
+
+### 14.6 Cache-Friendly Architecture
+
+When prompt caching is enabled (Phase 13), the structure of your context affects cache hit rates:
+
+- **Static content first, dynamic content last.** Tool schemas and system prompt are cached as a prefix. Memory chunks and conversation history change — they go after.
+- **Never modify earlier conversation turns.** The cache depends on prefix stability. Append-only conversations maximize cache hits.
+- **Avoid dynamic content in workspace files.** Timestamps, session IDs, or counters that change per-call break the cache prefix, potentially causing zero cache hits (see [OpenClaw issue #19534](https://github.com/openclaw/openclaw/issues/19534)).
+
+> **Verify caching works:** After a conversation, check your API logs or ClawMetry for `cache_read_input_tokens > 0`. If it's always zero, dynamic content in the system prompt may be breaking the cache.
+
+### 14.7 Priority Checklist
+
+In order of impact:
+
+1. Enable prompt caching (`cacheRetention: "long"`) — Phase 13.2
+2. Verify cache hits are actually occurring — check `cache_read_input_tokens`
+3. Audit workspace files with `/context detail` — move non-essential files to memory
+4. Enable `memoryFlush` — preserves context across sessions
+5. Test raising `minScore` to 0.40 — reduces low-relevance memory noise
+6. Enable MMR — deduplicates similar memory chunks
+7. Test reducing `maxResults` to 4 — less context waste if quality holds
+8. Monitor token distribution via ClawMetry — data-driven tuning from here
+
+> **Deep reference:** [Reference/CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md) has the full internals — bootstrap injection mechanics, memory search pipeline, cache invalidation rules, and context overflow handling.
+
+---
+
 ## Known Tradeoffs & Open Questions
 
 Transparency about what's still being evaluated:
@@ -1739,7 +1883,7 @@ ssh -L 18789:127.0.0.1:18789 openclaw@YOUR_VPS_IP
 
 ### Memory System Research
 
-- [Plans/MEMORY-PLUGIN-RESEARCH.md](Plans/MEMORY-PLUGIN-RESEARCH.md) — Full mem0 evaluation and built-in memory optimization strategy
+- [Reference/MEMORY-PLUGIN-RESEARCH.md](Reference/MEMORY-PLUGIN-RESEARCH.md) — Full mem0 evaluation and built-in memory optimization strategy
 
 ---
 
