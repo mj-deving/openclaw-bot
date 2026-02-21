@@ -180,7 +180,7 @@ ClawRouter uses the [x402 protocol](https://www.x402.org) for **USDC micropaymen
 The install method `curl -fsSL URL | bash` is a supply chain risk independent of what's being installed:
 
 - **DNS hijack:** Attacker poisons DNS resolution, serves a malicious script from a lookalike server
-- **CDN compromise:** The legitimate CDN serves a tampered payload (rare but has happened -- [codecov 2021](https://about.codecov.io/security-update/), [ua-parser-js 2021](https://github.com/nicolo-ribaudo/tc39-meetings/blob/main/2021/2021-11-tc39-proposal-intl-enumeration-api.md))
+- **CDN compromise:** The legitimate CDN serves a tampered payload (rare but has happened -- [codecov 2021](https://about.codecov.io/security-update/), ua-parser-js 2021 supply chain attack)
 - **No pre-execution audit:** The script runs before you can read it. On a VPS with `exec.security: "full"`, this means arbitrary code execution as the `openclaw` user
 - **No checksum verification:** No `.sha256` file to verify integrity independently
 - **No atomic rollback:** If the script modifies system state halfway through and fails, cleanup is manual
