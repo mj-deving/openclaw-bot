@@ -37,7 +37,8 @@ A self-hosted AI agent on your own server — web search, shell access, persiste
 ├── GUIDE.md                      # The full setup guide — how AND why (start here)
 ├── Reference/
 │   ├── CONTEXT-ENGINEERING.md    # Context management, caching & session persistence
-│   └── MEMORY-PLUGIN-RESEARCH.md # mem0 evaluation + memory optimization research
+│   ├── MEMORY-PLUGIN-RESEARCH.md # mem0 evaluation + memory optimization research
+│   └── SKILLS-AND-TOOLS.md      # Skills, tools, MCP, security vetting & supply chain
 ├── src/
 │   ├── config/
 │   │   └── openclaw.json.example # Sanitized config template
@@ -53,5 +54,6 @@ A self-hosted AI agent on your own server — web search, shell access, persiste
 - **Guide:** [GUIDE.md](GUIDE.md) — complete setup instructions with reasoning behind every decision
 - **Context engineering:** [Reference/CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md) — prompt caching, memory tuning, session persistence
 - **Memory research:** [Reference/MEMORY-PLUGIN-RESEARCH.md](Reference/MEMORY-PLUGIN-RESEARCH.md) — why we use built-in memory over external plugins
+- **Skills & tools:** [Reference/SKILLS-AND-TOOLS.md](Reference/SKILLS-AND-TOOLS.md) — skill creation, tool permissions, security vetting, supply chain risks
 - **Official docs:** [docs.openclaw.ai](https://docs.openclaw.ai)
 - **Security:** All configs verified against official schema. CVEs patched in v2026.1.29+.
