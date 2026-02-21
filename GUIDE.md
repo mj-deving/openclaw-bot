@@ -7,6 +7,8 @@ This guide walks you through every step — from a blank Ubuntu server to a full
 > **Guiding philosophy:** *Maximum capability, minimum attack surface.*
 >
 > Security exists to protect capability, not to prevent it. Every deny-list entry, every disabled feature must justify itself against the question: "Does removing this capability make the bot meaningfully safer, or just less useful?"
+>
+> This guide includes the *reasoning* behind every major decision — not just the steps. Look for the indented "Why?" blocks throughout. The plan was built from three sources: the `centminmod/explain-openclaw` repo (199 files of third-party analysis from 5 AI models), web research across security coverage and official docs, and hands-on deployment experience.
 
 ---
 
@@ -46,11 +48,15 @@ This guide walks you through every step — from a blank Ubuntu server to a full
 
 > **Goal:** Go from a blank VPS to a working Telegram bot you can talk to.
 
+> **Why this phase order?** The phases are ordered to minimize risk at each step. Harden the OS *before* installing OpenClaw (no window of exposure). Configure the AI provider *before* Telegram (so the bot can respond when it first connects). Set up Telegram *before* hardening OpenClaw (easier to debug issues before lockdown). Add skills and cron *after* the base is stable (debug one layer at a time). Cost monitoring comes last because you need real workloads running before you can meaningfully measure.
+
 ---
 
 ## Phase 1 — VPS Setup & Hardening
 
 Before installing anything, secure your server. This phase takes the most time but protects everything that follows.
+
+> **Why VPS?** OpenClaw supports four deployment options: VPS, Mac mini, Cloudflare Moltworker, and Docker Model Runner. VPS wins for a Telegram bot because it's always-on without relying on your local machine, systemd gives you auto-restart and security sandboxing, and it's the most thoroughly documented path in the OpenClaw ecosystem. Mac mini ties you to physical hardware. Moltworker lacks egress filtering and is rated "proof-of-concept" grade. Docker Model Runner needs GPU hardware for decent quality. VPS is the production-grade choice.
 
 ### 1.1 What You Need
 
@@ -82,7 +88,9 @@ apt update && apt upgrade -y
 
 ### 1.3 Create a Dedicated User
 
-**Never run OpenClaw as root.** Create a dedicated `openclaw` user:
+**Never run OpenClaw as root.** A dedicated user means even if OpenClaw is fully compromised, the attacker can only access `~/.openclaw/` and `~/workspace/` — they can't escalate privileges, read other users' files, or modify system binaries.
+
+Create a dedicated `openclaw` user:
 
 ```bash
 # Create user with home directory
@@ -159,7 +167,7 @@ sudo dpkg-reconfigure -plow unattended-upgrades
 
 ### 1.7 Install Node.js
 
-OpenClaw requires Node.js 22.x:
+OpenClaw requires Node.js 22.x (not Bun — the OpenClaw docs note "known bugs" with Bun as runtime. Use Node for the OpenClaw process itself; Bun is fine for development tooling):
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
@@ -240,24 +248,37 @@ After installation, OpenClaw creates:
 
 ## Phase 3 — Choose Your AI Provider
 
-OpenClaw works with **any LLM provider** — not just one. Pick the provider that fits your budget and needs.
+OpenClaw works with **any LLM provider** — not just one. This guide is provider-agnostic: pick what fits your budget, privacy needs, and quality expectations.
 
-### 3.1 Pick a Provider
+### 3.1 How to Choose
 
-| Provider | Best For | How to Get a Key |
-|----------|----------|-----------------|
-| **Anthropic** | High quality (Claude models), prompt caching | [console.anthropic.com](https://console.anthropic.com) → API Keys → Create Key |
-| **OpenAI** | GPT models, broad ecosystem | [platform.openai.com](https://platform.openai.com) → API Keys |
-| **OpenRouter** | Access to 200+ models, free tier, smart routing | [openrouter.ai](https://openrouter.ai) → Keys |
-| **Ollama** | Fully local, zero cost, complete privacy (CPU-only = slow, see note below) | [ollama.ai](https://ollama.ai) → Install → `ollama pull` a model |
+The decision comes down to four factors:
 
-> **Zero cost?** Run models locally with Ollama — no API key, no cloud, everything stays on your VPS. Needs decent hardware (8+ GB RAM for good models).
+| Factor | Cloud API (Anthropic, OpenAI) | Gateway (OpenRouter) | Local (Ollama) |
+|--------|------------------------------|---------------------|----------------|
+| **Quality** | Best available (frontier models) | Same models, via intermediary | Significantly lower (see benchmarks below) |
+| **Cost** | Pay-per-token ($1-5/MTok) | Same rates + free tier | Free (but costs hardware/electricity) |
+| **Privacy** | Data sent to one provider | Data crosses two trust boundaries | 100% on-machine |
+| **Speed** | 50-100+ tokens/sec | Same as provider | 8-15 tok/sec on CPU (see below) |
+| **Prompt caching** | Anthropic: yes. OpenAI: yes. | Depends on underlying provider | N/A |
+
+> **Want the best quality?** Anthropic's Claude Sonnet or OpenAI's GPT-4o — both are frontier models with prompt caching support.
 >
-> **On a budget?** OpenRouter gives you access to free models and [smart routing](https://openrouter.ai/docs/guides/routing/routers/auto-router) (powered by NotDiamond) that analyzes your prompt and picks the best model. No extra cost — you pay only the selected model's rate.
+> **On a budget?** OpenRouter gives you access to free models and [smart routing](https://openrouter.ai/docs/guides/routing/routers/auto-router) (powered by NotDiamond) that picks the optimal model per query. No extra cost.
 >
-> **Want the best quality?** Anthropic's Claude Sonnet is an excellent default — fast, capable, and supports prompt caching (saves money on repeated context).
+> **Maximum privacy?** Ollama runs everything locally — zero API calls, zero cloud. But quality and speed are substantially lower without a GPU.
 >
-> **Already have an OpenAI key?** It works out of the box.
+> **Already have a key?** Any provider works. It's a single config change to switch later.
+
+### 3.1.1 Why API Key Auth (Not Setup-Token)
+
+If you're using Anthropic with a Claude Max subscription, you might see the `setup-token` auth method documented. **Use an API key instead.** Here's why:
+
+**Setup-token does not support prompt caching.** The bot's bootstrap context is re-sent on every single message at full input cost. With API key auth and `cacheRetention: "long"`, that context is cached and reused — dramatically reducing per-message cost.
+
+**In practice, setup-token is fine for initializing and testing your bot** — send a few messages, verify everything works. But for any real workload (daily conversations, scheduled tasks, skill usage), token costs add up fast without caching. Personal usage showed setup-token auth burning through tokens at a rate that made sustained use impractical. API key auth with prompt caching is necessary for production workloads.
+
+**The switch is trivial:** Create an API key at [console.anthropic.com](https://console.anthropic.com), set it in your config, enable `cacheRetention: "long"` (see Phase 13). One config change, immediate improvement.
 
 ### 3.2 Configure Your Provider
 
@@ -299,7 +320,20 @@ openclaw config set provider.model "llama3.3:8b"
 
 > **Ollama** runs models entirely on your VPS. No API calls, no cloud, no cost. OpenClaw [auto-detects](https://docs.openclaw.ai/providers/ollama) Ollama at `localhost:11434`.
 >
-> **Reality check on "free" local models:** Without a GPU, models run on CPU only. A 7-8B parameter model needs ~4 GB RAM and generates about 5-10 tokens/sec — usable but noticeably slow compared to API models (50-100+ tok/sec). Larger models (13B+) drop to 1-5 tok/sec. Quality also scales with model size: a 7B model is significantly less capable than Claude Sonnet or GPT-4o. Local models are great for experimenting, privacy-sensitive tasks, or as a free fallback — but for daily use where speed and quality matter, an API provider is worth the cost.
+> **Reality check — speed:** Without a GPU, models run on CPU only. On a typical 8-core VPS, expect **8-15 tokens/sec** with a quantized 7B model (Q4_K_M via llama.cpp) — roughly 1-3 words per second. Cloud APIs return 50-100+ tok/sec. Larger models (13B+) drop to 1-5 tok/sec on CPU. Memory bandwidth is the bottleneck, not core count. ([llama.cpp CPU benchmarks](https://github.com/ggml-org/llama.cpp/discussions/3167))
+>
+> **Reality check — quality:** The gap between a 7B local model and a frontier cloud model is measurable:
+>
+> | Benchmark | Llama 3.1 8B | Qwen 2.5 7B | Claude Sonnet | GPT-4o |
+> |-----------|:------------:|:-----------:|:-------------:|:------:|
+> | MMLU (knowledge) | 69 | 75 | 89 | 89 |
+> | HumanEval (coding) | 73 | 85 | 92 | 90 |
+> | GSM8K (math) | 85 | 92 | 93 | ~95 |
+> | MMLU-Pro (hard reasoning) | 47 | 56 | 79 | — |
+>
+> *Sources: [Meta Llama 3.1 evals](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/eval_details.md), [Qwen2.5 blog](https://qwenlm.github.io/blog/qwen2.5-llm/), [Anthropic system card](https://anthropic.com/claude-sonnet-4-6-system-card), [OpenAI benchmarks](https://llm-stats.com/benchmarks/humaneval)*
+>
+> The gap depends on the task: basic math is near-parity, coding is modest (~7 points), but broad knowledge (~14 points) and hard reasoning (~23 points) show frontier models in a different league. Local models are great for experimenting, privacy-sensitive tasks, or as a free fallback — but for daily use where quality matters, an API provider is worth the cost.
 
 ### 3.3 Verify Authentication
 
@@ -346,6 +380,8 @@ openclaw doctor
 ---
 
 ## Phase 4 — Connect Telegram
+
+> **Why Telegram?** OpenClaw supports Telegram, WhatsApp, IRC, Discord, Slack, and more. Telegram stands out for personal bots: rich markdown formatting, mature and free Bot API, no inbound ports needed (the bot polls Telegram's servers via HTTPS), and DMs are private by default. The `pairing` policy cryptographically ties the bot to your account — after pairing, it ignores everyone else. Zero attack surface from random users.
 
 ### 4.1 Create a Bot via @BotFather
 
@@ -429,7 +465,7 @@ Running OpenClaw as a systemd service means it starts automatically on boot, res
 
 ### 6.1 Create the Environment File
 
-Secrets go here (not in `openclaw.json`):
+Secrets go in a root-owned env file, not in `openclaw.json`. Why? The JSON config is readable by the `openclaw` user — and the AI agent has file-read tools. A root-owned env file (0600, loaded by systemd at startup) means the agent can't read its own API keys from disk. Defense in depth.
 
 ```bash
 sudo mkdir -p /etc/openclaw
@@ -466,18 +502,19 @@ ExecStop=/bin/kill -SIGTERM $MAINPID
 Restart=on-failure
 RestartSec=10
 
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=read-only
+# Security hardening — each directive eliminates a class of attacks.
+# Combined, these are more restrictive than Docker defaults.
+NoNewPrivileges=true          # No privilege escalation (no setuid/capabilities)
+ProtectSystem=strict          # Filesystem read-only except listed paths
+ProtectHome=read-only         # Can't modify other users' files
 ReadWritePaths=/home/openclaw/.openclaw /home/openclaw/workspace
-PrivateTmp=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictNamespaces=true
-RestrictRealtime=true
-MemoryDenyWriteExecute=true
+PrivateTmp=true               # Isolated /tmp (no cross-process tmp attacks)
+ProtectKernelTunables=true    # Can't modify /proc/sys
+ProtectKernelModules=true     # Can't load kernel modules (no rootkits)
+ProtectControlGroups=true     # Can't modify cgroups
+RestrictNamespaces=true       # Can't create namespaces (no container escape)
+RestrictRealtime=true         # Can't monopolize CPU
+MemoryDenyWriteExecute=true   # Can't create W+X memory (blocks shellcode)
 
 [Install]
 WantedBy=multi-user.target
@@ -525,6 +562,8 @@ journalctl -u openclaw -f
 ## Phase 7 — OpenClaw Security
 
 Your VPS is hardened (Phase 1). Now harden OpenClaw itself.
+
+> **The security philosophy:** *As capable as possible, while as secure as necessary.* The bot runs with `tools.profile: "full"` because a bot that can't do things isn't useful. The real threats aren't capability — they're *self-modification*. The `gateway` tool lets the AI reconfigure itself with zero permission checks. The `nodes`/`sessions` tools add multi-device attack surface with no benefit for a single bot. Deny those. Enable everything else. With Telegram pairing limiting who can message the bot, the attack surface is already small.
 
 ### 7.1 Gateway Binding
 
@@ -670,7 +709,7 @@ The audit checks 50+ items across 12 categories. Run it after every config chang
 
 ### 7.9 SSH Tunnel for Management
 
-The **only** way to access the gateway remotely:
+The **only** way to access the gateway remotely. Tailscale is documented as an alternative, but adds another trust boundary (your traffic routes through their coordination server), another service to maintain, and zero capability you don't already have with SSH. If you later want phone access where SSH tunneling is awkward, it's a single config change — `gateway.tailscale.mode: "serve"`.
 
 ```bash
 # From your local machine:
@@ -841,7 +880,7 @@ OpenClaw has a built-in memory system that lets the bot remember things across c
 
 ### 9.2 Why We Configure It This Way
 
-OpenClaw ships with memory support, but the **default uses cloud-based OpenAI embeddings** — your conversation text gets sent to OpenAI's API for vectorization. This guide deliberately switches to a local-first setup:
+OpenClaw ships with memory support, but **the local embedding setup below is NOT the default installation.** Out of the box, OpenClaw uses cloud-based OpenAI embeddings — your conversation text gets sent to OpenAI's API for vectorization. This guide deliberately switches to a local-first setup that requires explicit configuration:
 
 | Choice | Default (Cloud) | This Guide (Local) | Why We Switch |
 |--------|-----------------|-------------------|---------------|
@@ -963,7 +1002,7 @@ chmod +x ~/scripts/backup.sh
 
 ### 10.2 Binding Verification
 
-A cron job that catches the 0.0.0.0 binding bug:
+A cron job that catches the 0.0.0.0 binding bug. This exists because of a specific OpenClaw source code issue: when loopback binding fails (port conflict, transient error), the gateway silently falls back to `0.0.0.0` — no warning, no log entry. Your gateway becomes internet-facing without you knowing. This script is a compensating control; if OpenClaw fixes the bug upstream, it becomes a harmless no-op.
 
 ```bash
 #!/bin/bash
@@ -1059,7 +1098,7 @@ chmod +x ~/scripts/auto-update.sh
 
 ### 11.1 Bundled vs. Community Skills
 
-OpenClaw ships with ~50 **bundled skills** inside the npm package. These are official, maintained, and carry no supply chain risk. They're completely separate from the ClawHub community registry.
+OpenClaw ships with ~50 **bundled skills** inside the npm package. These are official, maintained, and carry no supply chain risk. They're completely separate from the ClawHub community registry (8,600+ skills, but also the target of the "ClawHavoc" campaign — 800+ malicious packages planted in Feb 2026). Skills run **in-process** with full access to memory and API keys. There is no sandboxing. That's why this guide recommends bundled-only.
 
 **Key concept:** Bundled skills show as "missing" until their external CLI dependency is installed. Once the binary is in PATH, the skill automatically becomes "ready." No `clawhub install` required.
 
@@ -1104,7 +1143,15 @@ gh auth login
 
 ### 11.4 Community Skills — Proceed with Caution
 
-If you consider community skills from ClawHub, be aware: the **ClawHavoc campaign** (Feb 2026) planted 800+ malicious packages on ClawHub. Skills run IN-PROCESS with full access to the bot's memory and API keys. There is NO sandboxing.
+If you consider community skills from ClawHub, understand the ecosystem reality:
+
+**The registry:** 8,630+ skills across 11 categories. AI/ML (48%) and Utility (46%) dominate. Recent uploads skew heavily toward city guides, crypto DAOs, and niche tools — the signal-to-noise ratio is poor.
+
+**The key contributor:** steipete (Peter Steinberger) authored 9 of the top 14 most-downloaded skills including `gog` (28k downloads) and `summarize` (21k). He joined OpenAI in Feb 2026 — the most trusted contributor is no longer maintaining the ecosystem.
+
+**The ClawHavoc campaign (Feb 2026):** 824+ malicious skills planted by organized actors (worst: hightower6eu with 314 alone). The cleanup removed 2,419 skills. Registry rebounded to 8,630+ — growing faster than moderation can keep up. Current scanning (VirusTotal) catches binary malware but **cannot detect adversarial prompts** in SKILL.md files.
+
+**The architectural problem:** Skills run IN-PROCESS with the gateway. No sandboxing. A malicious skill has full access to process memory, API keys, and all tools. npm lifecycle scripts execute during `clawhub install` — a classic supply chain vector.
 
 **Vetting checklist before installing any community skill:**
 
@@ -1122,7 +1169,7 @@ If you consider community skills from ClawHub, be aware: the **ClawHavoc campaig
 
 ## Phase 12 — Autonomous Engagement (Cron)
 
-OpenClaw's built-in cron system lets the bot perform tasks on a schedule — without user interaction.
+OpenClaw's built-in cron system lets the bot perform tasks on a schedule — without user interaction. A bot that only responds when spoken to feels passive; scheduled posts give it persistent presence. The cron runs inside the gateway process (no external scheduler), supports per-job model overrides (Haiku for cheap routine posts), and uses isolated sessions so cron runs can't leak info from private conversations.
 
 ### 12.1 How Cron Works
 
@@ -1187,6 +1234,8 @@ Add `cron` to your deny list if you want full control over scheduling.
 ---
 
 ## Phase 13 — Cost Management & Optimization
+
+Even with API key auth and prompt caching, understanding token flow matters. Cron costs compound silently (5 runs/day adds up), subscription metering has rolling windows and weekly caps, and you can't optimize what you don't measure. This phase establishes baselines.
 
 ### 13.1 Built-in Cost Tracking
 
@@ -1294,6 +1343,18 @@ loginctl enable-linger $(whoami)
 
 ---
 
+## Known Tradeoffs & Open Questions
+
+Transparency about what's still being evaluated:
+
+1. **`tools.deny` completeness** — The deny list blocks known-dangerous tools (gateway, nodes, sessions), but OpenClaw has 50+ tools. New tools may be added in updates. Review new tool additions after each OpenClaw update.
+
+2. **Haiku quality for autonomous posts** — Cron jobs use Haiku to save costs. Whether Haiku produces posts that meet quality standards over time requires monitoring. If quality degrades, reverting to Sonnet is a single cron edit.
+
+3. **Long-term maintenance** — OpenClaw is transitioning to a foundation model after its creator joined OpenAI (Feb 2026). How this affects release cadence, security patches, and backward compatibility is unknown. This guide is designed to be resilient to upstream changes: version pinning, minimal external dependencies, bundled-only skills.
+
+---
+
 # Appendices
 
 ---
@@ -1316,15 +1377,15 @@ loginctl enable-linger $(whoami)
 │  │  └────┬─────┘  └───┬────┘  └────┬────┘               │  │
 │  │       │            │            │                      │  │
 │  │       │       ┌────┴─────┐  ┌───┴──────┐             │  │
-│  │       │       │ Anthropic│  │ Local    │             │  │
-│  │       │       │ Claude   │  │ Embeddings│             │  │
+│  │       │       │ Your LLM │  │ Local    │             │  │
+│  │       │       │ Provider │  │ Embeddings│             │  │
 │  │       │       │ API      │  │ gemma-300m│             │  │
 │  │       │       └──────────┘  └──────────┘             │  │
 │  └───────┼───────────────────────────────────────────────┘  │
 │          │                                                   │
 │          │ HTTPS (Bot API polling)                            │
 │          ▼                                                   │
-│  api.telegram.org              api.anthropic.com             │
+│  api.telegram.org              your-provider-api.com          │
 │                                                              │
 │  SSH tunnel ◄──── Local machine (management)                  │
 └──────────────────────────────────────────────────────────────┘
@@ -1332,7 +1393,7 @@ loginctl enable-linger $(whoami)
 
 **Key points:**
 - Gateway binds to **loopback only** — never exposed to the internet
-- Outbound only: Telegram Bot API + Anthropic API
+- Outbound only: Telegram Bot API + your LLM provider API
 - Management via **SSH tunnel** — no public Control UI
 - **Capability-first:** `tools.profile "full"` with targeted deny list
 
@@ -1340,7 +1401,7 @@ loginctl enable-linger $(whoami)
 
 ## Appendix B — Async Pipeline (Local ↔ Bot)
 
-A file-based message queue for delegating tasks between your local machine and the bot.
+A file-based message queue for delegating tasks between your local machine and the bot. Why files over a real-time API? SSH is already there (no new auth, ports, or software), JSON files are inspectable with `ls`/`cat`/`jq`, processed messages move to `ack/` for a full audit trail, and the tasks it handles (summarize, scan, research) aren't time-critical — the bottleneck is human attention, not message latency.
 
 ### Directory Setup
 
@@ -1450,6 +1511,8 @@ Each bot is completely isolated — separate config, memory, credentials, and Te
 | **Cost overrun** | Unbounded token spend | Monitor with `/usage full`, set model tiers |
 
 ### Known CVEs
+
+These are listed not because they're currently exploitable (all patched) but for three reasons: version pinning (you know the minimum safe version), attack pattern awareness (CVE-2026-25253 reveals fragility in the WebSocket auth model — that class of vulnerability may recur), and audit context (when `openclaw security audit --deep` runs, you understand what it's checking).
 
 | CVE | Severity | Description | Status |
 |-----|----------|-------------|--------|
