@@ -34,7 +34,9 @@ A self-hosted AI agent on your own server — web search, shell access, persiste
 ## Repository Structure
 
 ```
-├── GUIDE.md                      # The full setup guide (start here)
+├── GUIDE.md                      # The full setup guide — how AND why (start here)
+├── Plans/
+│   └── MEMORY-PLUGIN-RESEARCH.md # mem0 evaluation + memory optimization research
 ├── src/
 │   ├── config/
 │   │   └── openclaw.json.example # Sanitized config template
@@ -47,6 +49,7 @@ A self-hosted AI agent on your own server — web search, shell access, persiste
 
 ## References
 
-- **Guide:** [GUIDE.md](GUIDE.md)
+- **Guide:** [GUIDE.md](GUIDE.md) — complete setup instructions with reasoning behind every decision
+- **Memory research:** [Plans/MEMORY-PLUGIN-RESEARCH.md](Plans/MEMORY-PLUGIN-RESEARCH.md) — why we use built-in memory over external plugins
 - **Official docs:** [docs.openclaw.ai](https://docs.openclaw.ai)
 - **Security:** All configs verified against official schema. CVEs patched in v2026.1.29+.
