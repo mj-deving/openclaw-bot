@@ -11,7 +11,7 @@ Every LLM call the OpenClaw bot makes assembles this context stack:
 | Component | ~Tokens | Behavior |
 |-----------|---------|----------|
 | Tool schemas | 5-10K | Fixed per session |
-| Bootstrap/workspace files | ~35K chars (truncated by `bootstrapMaxChars`) | Re-injected **every message** |
+| Bootstrap/workspace files | ~35K chars (~8-10K tokens, truncated by `bootstrapMaxChars`) | Re-injected **every message** |
 | Skills metadata | 1-2K | Fixed per session |
 | Memory chunks | 2-4K (6 chunks @ ~700 chars) | Per-search, varies |
 | Conversation history | Grows unbounded | Managed by pruning + compaction |

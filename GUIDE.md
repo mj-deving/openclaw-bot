@@ -384,7 +384,7 @@ Prices as of February 2026. Per million tokens (MTok). Full details with cache w
 | `qwen2.5-coder:7b` | Ollama | Free | ~4 GB RAM, ~8 tok/s on CPU |
 | `llama3.3:8b` | Ollama | Free | ~5 GB RAM, ~7 tok/s on CPU |
 
-> **Why cached pricing matters:** The bot's system prompt and bootstrap context (~35K tokens) are re-sent on every message. With prompt caching enabled, this repeated content costs 90% less. That's the difference between $50/mo and $22/mo for the same usage. See Phase 13 for how to enable it.
+> **Why cached pricing matters:** The bot's system prompt and bootstrap context (~35K tokens) are re-sent on every message. With prompt caching enabled, cache reads cost 90% less than base input price. That's the difference between ~$55/mo and ~$15/mo for the same usage. See Phase 13 for how to enable it.
 
 **Start with one model.** You can always switch later — it's just a config change.
 
@@ -1547,13 +1547,13 @@ Or in `openclaw.json`:
 }
 ```
 
-> **Why?** The numbers make the case. Cached input tokens cost 10% of base price (90% savings). With 35K bootstrap tokens per message at Sonnet's $3/MTok input rate:
+> **Why?** The numbers make the case. With 35K bootstrap tokens per message at Sonnet's $3/MTok input rate:
 >
-> - **Without caching:** 35K tokens × $3/MTok × 30 msgs/day × 30 days = ~$9.45/mo just for bootstrap context
-> - **With caching:** Same volume at $0.30/MTok = ~$1.32/mo (first message of each session is a cache miss, ~90% hit rate)
-> - **Savings: ~$8/mo on bootstrap alone (~86%)**
+> - **Per message uncached:** 35K / 1M × $3 = **$0.105**
+> - **Per message cached (read):** 35K / 1M × $0.30 = **$0.0105** (90% cheaper)
+> - **Monthly at ~15 msgs/day:** Uncached bootstrap input ≈ $47/mo. Cached ≈ $10/mo (accounting for occasional cache writes at session starts). **Savings: ~$37/mo on bootstrap input alone (~80%).**
 >
-> Scale linearly with usage. At $50/mo total spend, caching cuts approximately 56% — the single highest-impact optimization you can make.
+> Total spend drops from ~$55/mo to ~$15/mo — the single highest-impact optimization you can make. See [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) Section 5 for detailed projections at different volumes.
 
 **The caching vs routing tradeoff:** Prompt caching is provider-specific and model-specific. Routing messages to different providers destroys the cache for all of them. Switching Sonnet → Haiku within Anthropic preserves the cache. Switching to Gemini or DeepSeek breaks it. This is why caching comes before routing — and why model aliases within the same provider (Phase 3.6) are preferable to cross-provider auto-routing for most workloads.
 
@@ -1580,7 +1580,7 @@ The heartbeat keeps caches warm — it doesn't need intelligence, just presence.
 }
 ```
 
-> **Why?** Haiku heartbeats at $1/MTok vs Sonnet at $3/MTok — 3x cheaper for a task that just needs to keep caches warm.
+> **Why Haiku?** Prompt cache is **model-specific** — a Haiku heartbeat warms the Haiku cache (used by cron), not the Sonnet cache (used by conversations). Sonnet cache warmth relies on the 1-hour TTL covering gaps between user messages. The Haiku heartbeat at $0.10/MTok reads (~$2.50/mo) keeps cron running on cheap cache reads instead of expensive writes — saving more than it costs. See [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) Recommendation 4 for the full tradeoff analysis.
 
 **Manual model switching (most practical for personal use):**
 
@@ -1636,7 +1636,7 @@ Once caching and fallback chains are stable, [ClawRouter](https://github.com/Blo
 3. **Fund the x402 wallet** with $5-10 USDC on Base L2
 4. **Monitor savings** via `/stats` command
 
-> **Why wait until now?** ClawRouter's multi-provider routing conflicts with prompt caching (different providers = cache miss). Get the 56% caching savings first, then layer ClawRouter on top for intelligent within-provider routing and cross-provider resilience.
+> **Why wait until now?** ClawRouter's multi-provider routing conflicts with prompt caching (different providers = cache miss). Get the ~73% caching savings first, then layer ClawRouter on top for intelligent within-provider routing and cross-provider resilience.
 
 > **Why x402?** The [x402 protocol](https://www.x402.org) is the Coinbase-backed agent micropayment standard — designed for exactly this use case (machine-to-machine payments). USDC exposure is capped at wallet balance. It's infrastructure for an agent that can eventually interact with smart contracts and the broader agent economy. See [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) for the full security assessment and the crypto-free fork alternative.
 

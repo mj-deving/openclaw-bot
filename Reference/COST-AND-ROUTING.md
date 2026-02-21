@@ -344,25 +344,29 @@ Full caching mechanics are documented in [CONTEXT-ENGINEERING.md](CONTEXT-ENGINE
 
 ### 5.1 Break-Even Calculation
 
-Anthropic prompt caching with `cacheRetention: "long"` (1-hour TTL):
-- **Cache write:** 125% of base input price (25% premium)
-- **Cache read:** 10% of base input price (90% savings)
-- **TTL:** 60 minutes, refreshes free on every cache hit
+Anthropic prompt caching write premiums:
+- **5-minute TTL:** 125% of base input price (25% premium)
+- **1-hour TTL:** 200% of base input price (100% premium)
+- **Cache read (both):** 10% of base input price (90% savings)
+- **TTL refresh:** Free on every cache hit — no additional write charge
 
-**Break-even:** 1 write + 1 read = 125% + 10% = 135% for 2 messages. Without caching: 200%. **Caching pays for itself on the second message.**
+**Break-even with 5-minute TTL:** 1 write + 1 read = 125% + 10% = 135% vs 200% uncached. **Pays for itself on the second message.**
+
+**Break-even with 1-hour TTL:** 1 write + 1 read = 200% + 10% = 210% vs 200% uncached. The first read doesn't quite break even, but by the third message (200% + 10% + 10% = 220% vs 300%) you're well ahead. **Pays for itself on the third message.**
+
+**Why use 1-hour despite the higher write cost?** Telegram conversations have natural gaps >5 minutes between messages. With 5-minute TTL, each gap triggers a new cache write (1.25×). With 1-hour TTL, a single write (2×) covers an entire conversation session. For a personal bot with sporadic usage, 1-hour TTL produces fewer total writes and lower overall cost.
 
 ### 5.2 Real-World Savings (Sonnet 4.6)
 
-The OpenClaw bootstrap context (workspace files, tools, system prompt) is approximately 35K tokens, re-sent on every message.
+The OpenClaw bootstrap context (workspace files, tools, system prompt) is approximately 35K tokens, re-sent on every message. These numbers show **bootstrap input cost only** — output tokens and conversation history are additional.
 
-| Scenario | Messages/Day | Without Caching | With Caching | Monthly Savings |
-|----------|-------------|----------------|-------------|----------------|
-| **Light** | 10 | ~$3.15/mo | ~$0.47/mo | **~$2.68 (85%)** |
-| **Moderate** | 30 | ~$9.45/mo | ~$1.32/mo | **~$8.13 (86%)** |
-| **Heavy** | 50 | ~$15.75/mo | ~$2.16/mo | **~$13.59 (86%)** |
-| **Heavy + cron** | 50 + 5 cron/day | ~$20.25/mo | ~$2.70/mo | **~$17.55 (87%)** |
+| Scenario | Messages/Day | Without Caching | With Caching (1h) | Monthly Savings |
+|----------|-------------|----------------|-------------------|----------------|
+| **Light** | 10 | ~$31.50/mo | ~$9/mo | **~$22 (71%)** |
+| **Moderate** | 30 | ~$94.50/mo | ~$15/mo | **~$79 (84%)** |
+| **Heavy** | 50 | ~$157.50/mo | ~$22/mo | **~$136 (86%)** |
 
-*Calculation: 35K input tokens/message at Sonnet pricing ($3/MTok). Cached assumes ~90% hit rate (first message of each session is a miss). Cron uses Haiku pricing separately.*
+*Calculation: 35K tokens × $3/MTok = $0.105/message uncached. Cached column assumes 1-hour TTL with ~1 cache write per day ($6/MTok) and the rest as cache reads ($0.30/MTok) — realistic with the heartbeat keeping caches warm. Higher message volumes amortize the daily write cost better, hence improving savings percentages.*
 
 ### 5.3 Multi-Provider Caching Conflict
 
@@ -375,31 +379,33 @@ Caching is **provider-specific and model-specific.** Routing different messages 
 | Auto-routing (OpenRouter/ClawRouter) | Poor -- frequent provider switches invalidate caches |
 | Manual model switching within same provider | Good -- switching Sonnet <-> Haiku preserves Anthropic cache |
 
-**The fundamental tradeoff:** Prompt caching (86-87% savings on input) conflicts with multi-provider routing (50-90% on individual requests). For personal deployments, **caching wins** because it applies to every single message, while routing savings only apply to the subset that could use a cheaper model.
+**The fundamental tradeoff:** Prompt caching (71-86% savings on input, depending on session patterns) conflicts with multi-provider routing (50-90% on individual requests). For personal deployments, **caching wins** because it applies to every single message, while routing savings only apply to the subset that could use a cheaper model.
 
 ---
 
 ## 6. Monthly Cost Projections
 
-> **Scaling note:** The projections below assume 30 conversational messages/day with moderate context. Actual spend may be higher with longer sessions, heavier tool use, or more messages. If your baseline is ~$50/mo, multiply the ratios below accordingly -- the *percentage savings* from caching and tiering remain the same regardless of absolute spend.
+> **Usage calibration:** Projections use ~15 conversational messages/day, which produces the ~$50/mo baseline measured on this setup. Scale linearly for different volumes -- at 30 msgs/day, double the input costs; at 5 msgs/day, cut them by two-thirds. Percentage savings from caching and tiering are consistent across volumes.
 
 ### 6.1 Baseline: Current Setup (Sonnet primary, Haiku cron, no caching)
 
 | Component | Volume | Model | Monthly Cost (est.) |
 |-----------|--------|-------|-------------------|
-| Conversation | 30/day | Sonnet 4.6 | ~$9.45 input + ~$4.50 output = **~$14** |
-| Cron (Lattice) | 5/day | Haiku 4.5 | ~$1.50 input + ~$0.75 output = **~$2.25** |
-| **Total** | | | **~$16/mo** |
+| Conversation | ~15/day | Sonnet 4.6 | ~$47 input + ~$2 output = **~$49** |
+| Cron (Lattice) | 5/day | Haiku 4.5 | ~$5.25 input + ~$0.25 output = **~$5.50** |
+| **Total** | | | **~$55/mo** |
+
+*Input dominates: 35K bootstrap tokens × $3/MTok = $0.105/message. Output at ~300 tokens/message is comparatively small.*
 
 ### 6.2 With Prompt Caching Enabled
 
 | Component | Volume | Model | Monthly Cost (est.) |
 |-----------|--------|-------|-------------------|
-| Conversation | 30/day | Sonnet (cached) | ~$1.32 input + ~$4.50 output = **~$6** |
-| Cron | 5/day | Haiku (cached) | ~$0.15 input + ~$0.75 output = **~$1** |
-| **Total** | | | **~$7/mo** |
+| Conversation | ~15/day | Sonnet (cached, 1h) | ~$10 input + ~$2 output = **~$12** |
+| Cron + heartbeat | 5+24/day | Haiku (cached) | ~$3 input + ~$0.25 output = **~$3.25** |
+| **Total** | | | **~$15/mo** |
 
-**Savings: ~$9/mo (56%) from one config change.**
+**Savings: ~$40/mo (73%) from one config change.** Cached input: ~80% savings on Sonnet (session starts are cache writes at 2× base; intra-session messages are reads at 10%). Heartbeat keeps Haiku cache warm for cron.
 
 ### 6.3 With Caching + Model Tiering
 
@@ -407,20 +413,22 @@ Using Haiku for simple messages (~50% of traffic), Sonnet for complex:
 
 | Component | Volume | Model | Monthly Cost (est.) |
 |-----------|--------|-------|-------------------|
-| Complex conversation | 15/day | Sonnet (cached) | ~$3 |
-| Simple conversation | 15/day | Haiku (cached) | ~$0.50 |
-| Cron | 5/day | Haiku (cached) | ~$1 |
-| **Total** | | | **~$4.50/mo** |
+| Complex conversation | ~8/day | Sonnet (cached) | ~$7 |
+| Simple conversation | ~7/day | Haiku (cached) | ~$1.50 |
+| Cron + heartbeat | 5+24/day | Haiku (cached) | ~$3.25 |
+| **Total** | | | **~$12/mo** |
+
+*Tiering adds modest savings on top of caching because cache reads are already cheap. The bigger tiering win is on output tokens: Haiku at $5/MTok vs Sonnet at $15/MTok.*
 
 ### 6.4 Budget-Optimized (Gemini Flash primary)
 
 | Component | Volume | Model | Monthly Cost (est.) |
 |-----------|--------|-------|-------------------|
-| Conversation | 30/day | Gemini 2.5 Flash | ~$2.50 |
-| Cron | 5/day | Haiku (cached) | ~$1 |
-| **Total** | | | **~$3.50/mo** |
+| Conversation | ~15/day | Gemini 2.5 Flash | ~$3 input + ~$0.35 output = **~$3.50** |
+| Cron + heartbeat | 5+24/day | Haiku (cached) | ~$3.25 |
+| **Total** | | | **~$7/mo** |
 
-*Tradeoff: Gemini Flash is cheaper but Claude Sonnet provides better tool use and instruction following for bot workloads.*
+*Tradeoff: Gemini Flash is cheaper but Claude Sonnet provides better tool use and instruction following for bot workloads. Google's cache has per-hour storage fees that make it less cost-effective for sporadic usage.*
 
 ---
 
@@ -433,7 +441,7 @@ Using Haiku for simple messages (~50% of traffic), Sonnet for complex:
 
 ### Recommendation 1: Enable Prompt Caching (Do This First)
 
-The single highest-impact change. One config line, ~56% cost reduction.
+The single highest-impact change. One config line, ~73% cost reduction.
 
 ```bash
 ssh vps
@@ -465,7 +473,7 @@ openclaw models aliases add flash google/gemini-2.5-flash
 
 Then switch in Telegram: `/model opus` for hard problems, `/model sonnet` for daily use, `/model haiku` for simple tasks.
 
-### Recommendation 4: Cheap Heartbeat Model
+### Recommendation 4: Heartbeat for Cache Warming
 
 ```jsonc
 {
@@ -480,7 +488,9 @@ Then switch in Telegram: `/model opus` for hard problems, `/model sonnet` for da
 }
 ```
 
-Haiku heartbeats at $1/MTok vs Sonnet at $3/MTok -- 3x cheaper for a task that just needs to keep caches warm.
+**Cache is model-specific.** A Haiku heartbeat keeps the Haiku cache warm (benefiting cron and Haiku conversations), but does NOT warm the Sonnet cache used by primary conversations. Sonnet cache warmth depends on the 1-hour TTL covering gaps between user messages.
+
+**Why Haiku heartbeat is still the right default:** Haiku cache reads cost $0.10/MTok (~$2.50/mo for 24 heartbeats/day). This keeps cron (also Haiku) running on cache reads ($0.10/MTok) instead of cache writes ($2/MTok) -- saving ~$8/mo on cron alone. A Sonnet heartbeat ($0.30/MTok reads, ~$7.50/mo) would warm the Sonnet cache too, but the cost often exceeds the savings for light-to-moderate usage. Monitor your cache hit rates via ClawMetry before adding a Sonnet heartbeat.
 
 ### Recommendation 5: Adopt ClawRouter After Phase 1 Stabilization
 
@@ -513,16 +523,16 @@ ClawRouter's routing intelligence is genuinely impressive, and x402 micropayment
 
 | Strategy | Monthly Cost (~$50 baseline) | Caching | Attack Surface | Quality | Complexity |
 |----------|------------------------------|---------|---------------|---------|------------|
-| **Sonnet only, no caching** | ~$50 | None | Minimal | Best | None |
-| **Sonnet + caching** | ~$22 | Full | Minimal | Best | Low |
-| **Sonnet/Haiku split + caching** | ~$14 | Full | Minimal | Good | Low |
-| **Gemini Flash primary** | ~$11 | Partial | +1 provider | Good | Low |
+| **Sonnet only, no caching** | ~$55 | None | Minimal | Best | None |
+| **Sonnet + caching** | ~$15 | Full | Minimal | Best | Low |
+| **Sonnet/Haiku split + caching** | ~$12 | Full | Minimal | Good | Low |
+| **Gemini Flash primary** | ~$7 | Partial | +1 provider | Good | Low |
 | **OpenRouter auto-routing** | ~$16-25 | None | +1 gateway | Variable | Low |
 | **ClawRouter (original)** | ~$10-16 | None | Moderate (equivalent to API keys) | Variable | Medium |
 | **ClawRouter (fork)** | ~$10-16 | None | Low | Variable | Medium |
 | **Ollama local** | ~$0 (electricity) | N/A | None | Limited | High |
 
-**Recommended path:** Sonnet + caching (~$22/mo) → add Haiku for simple tasks (~$14/mo) → layer ClawRouter for intelligent routing + resilience → evaluate Ollama for offline/privacy needs.
+**Recommended path:** Sonnet + caching (~$15/mo) → add Haiku for simple tasks (~$12/mo) → layer ClawRouter for intelligent routing + resilience → evaluate Ollama for offline/privacy needs.
 
 ---
 
