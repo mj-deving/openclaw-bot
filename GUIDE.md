@@ -580,7 +580,7 @@ ProtectKernelModules=true     # Can't load kernel modules (no rootkits)
 ProtectControlGroups=true     # Can't modify cgroups
 RestrictNamespaces=true       # Can't create namespaces (no container escape)
 RestrictRealtime=true         # Can't monopolize CPU
-MemoryDenyWriteExecute=true   # Can't create W+X memory (blocks shellcode)
+MemoryDenyWriteExecute=false   # Must be false — V8 JIT needs W+X memory (see SECURITY.md §1.3)
 
 [Install]
 WantedBy=multi-user.target
@@ -593,6 +593,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable openclaw
 sudo systemctl start openclaw
 ```
+
+> **Going further:** This service file covers the essentials. [Reference/SECURITY.md §1](Reference/SECURITY.md) has an enhanced version with SystemCallFilter (seccomp allowlisting), RestrictAddressFamilies, ProtectProc, AppArmor integration, and a compatibility matrix showing which directives need testing with OpenClaw.
 
 ### 6.3 Verify the Service
 
@@ -663,6 +665,13 @@ Verification (run this after every restart):
 ```bash
 ss -tlnp | grep 18789
 # MUST show 127.0.0.1:18789 — if it shows 0.0.0.0:18789, stop immediately!
+```
+
+Automate this check — there's a known bug where binding failure silently falls back to `0.0.0.0` ([SECURITY.md §10.3](Reference/SECURITY.md)):
+
+```bash
+# Add to crontab — auto-stops the service if gateway escapes loopback
+*/5 * * * * ss -tlnp | grep 18789 | grep -v 127.0.0.1 && logger -t openclaw-security "CRITICAL: Gateway bound to non-loopback!" && sudo systemctl stop openclaw
 ```
 
 ### 7.2 Tool Restrictions
@@ -1483,13 +1492,13 @@ Use the cheapest model that produces good output:
 
 ### 12.4 Security Note
 
-If the `cron` tool is not in your deny list, the AI can create its own scheduled jobs. Monitor periodically:
+If the `cron` tool is not in your deny list, the AI can create its own scheduled jobs — including via prompt injection. A malicious instruction embedded in fetched web content could cause the bot to schedule a recurring exfiltration task that persists across sessions. Monitor periodically:
 
 ```bash
 openclaw cron list   # Check for unexpected jobs
 ```
 
-Add `cron` to your deny list if you want full control over scheduling.
+**Recommendation:** Add `cron` to your deny list (Phase 7.2) and manage schedules exclusively via CLI. The convenience of in-chat scheduling rarely justifies the risk. See [SECURITY.md §14.2](Reference/SECURITY.md) for the full attack chain.
 
 ---
 
@@ -1878,6 +1887,8 @@ mkdir -p ~/.openclaw/pipeline/{inbox,outbox,ack}
 chmod 700 ~/.openclaw/pipeline
 ```
 
+> **Security:** The `chmod 700` is critical — any user who can write to `inbox/` can inject tasks the bot will execute as legitimate messages. Keep pipeline ownership restricted to the `openclaw` user. See [SECURITY.md §14.1](Reference/SECURITY.md) for additional hardening (auditd rules, inotifywait monitoring).
+
 ### How It Works
 
 ```
@@ -1976,6 +1987,8 @@ Each bot is completely isolated — separate config, memory, credentials, and Te
 | **Memory database** | Data exfiltration | File permissions, encrypted disk |
 | **Gateway tool** | AI self-reconfiguration | `gateway` in deny list |
 | **Cron tool** | AI creating rogue scheduled tasks | Deny `cron` or monitor `cron list` |
+| **Indirect prompt injection** | Malicious instructions in fetched content | System prompt hardening, tool deny list, egress filtering |
+| **Pipeline injection** | Unauthorized task submission via inbox/ | `chmod 700`, auditd monitoring |
 | **Cost overrun** | Unbounded token spend | Monitor with `/usage full`, set model tiers |
 
 ### Known CVEs
@@ -1993,10 +2006,13 @@ These are listed not because they're currently exploitable (all patched) but for
 ### Incident Response
 
 1. **Stop:** `sudo systemctl stop openclaw`
-2. **Assess:** Check logs for unauthorized commands
-3. **Rotate:** Change all API keys and tokens
-4. **Audit:** `openclaw security audit --deep`
-5. **Restore:** From known-good backup if needed
+2. **Triage:** `ss -tlnp | grep 18789` (gateway binding), `openclaw cron list` (rogue jobs), `ls ~/.openclaw/pipeline/inbox/` (injected tasks)
+3. **Assess:** `journalctl -u openclaw --since "1 hour ago"` — check for unauthorized commands, unexpected tool calls
+4. **Rotate:** Change all API keys and tokens (Anthropic dashboard + Telegram @BotFather)
+5. **Audit:** `openclaw security audit --deep`
+6. **Restore:** From known-good backup if needed
+
+For a full incident response runbook, see [SECURITY.md §17](Reference/SECURITY.md).
 
 ---
 
@@ -2170,6 +2186,15 @@ ssh -L 18789:127.0.0.1:18789 openclaw@YOUR_VPS_IP
 - [Sandboxing](https://docs.openclaw.ai/gateway/sandboxing.md)
 - [Network Model](https://docs.openclaw.ai/gateway/network-model.md)
 - [Linux/Systemd](https://docs.openclaw.ai/platforms/linux.md)
+
+### Deep Reference Docs
+
+- [Reference/SECURITY.md](Reference/SECURITY.md) — Comprehensive security reference: VPS/OS hardening (§1-8) + Application/LLM security (§9-17), 55 sources
+- [Reference/IDENTITY-AND-BEHAVIOR.md](Reference/IDENTITY-AND-BEHAVIOR.md) — System prompt design, persona patterns, identity-layer security
+- [Reference/SKILLS-AND-TOOLS.md](Reference/SKILLS-AND-TOOLS.md) — Tool permissions, supply chain security, skill vetting
+- [Reference/CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md) — Context management, session persistence
+- [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) — Provider routing, cost optimization, x402 security model
+- [Reference/MEMORY-PLUGIN-RESEARCH.md](Reference/MEMORY-PLUGIN-RESEARCH.md) — mem0 evaluation, memory optimization research
 
 ### Security & CVE Sources
 
