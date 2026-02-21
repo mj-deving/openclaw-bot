@@ -426,7 +426,7 @@ Using Haiku for simple messages (~50% of traffic), Sonnet for complex:
 
 ## 7. Recommendations for This Setup
 
-**Hardware:** 24GB RAM, 8-core CPU, no GPU (Worldstream VPS)
+**Hardware:** 24GB RAM, 8-core CPU, no GPU
 **Current config:** Anthropic primary (Sonnet), Haiku for cron
 **Current spend:** ~$50/mo baseline
 **Philosophy:** Maximum capability, minimum attack surface

@@ -35,6 +35,10 @@ Thumbs.db
 .sessions/
 CLAUDE.local.md
 CLAUDE.md
+Plans/
+
+# Assets (uploaded manually, not needed in repo)
+assets/
 
 # Secrets
 *.pem
