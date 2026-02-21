@@ -28,14 +28,15 @@ A self-hosted AI agent on your own server — web search, shell access, persiste
 |------|--------|---------------|
 | **1: Get It Running** | 1-6 | VPS hardening → Install → Auth → Telegram → First chat → Systemd |
 | **2: Make It Solid** | 7-10 | OpenClaw security → Identity → Memory → Backups |
-| **3: Make It Smart** | 11-13 | Skills → Cron automation → Cost optimization |
+| **3: Make It Smart** | 11-14 | Skills → Cron automation → Cost optimization → Context engineering |
 | **Appendices** | A-G | Architecture, pipeline, multi-bot, threat model, config reference |
 
 ## Repository Structure
 
 ```
 ├── GUIDE.md                      # The full setup guide — how AND why (start here)
-├── Plans/
+├── Reference/
+│   ├── CONTEXT-ENGINEERING.md    # Context management, caching & session persistence
 │   └── MEMORY-PLUGIN-RESEARCH.md # mem0 evaluation + memory optimization research
 ├── src/
 │   ├── config/
@@ -50,6 +51,7 @@ A self-hosted AI agent on your own server — web search, shell access, persiste
 ## References
 
 - **Guide:** [GUIDE.md](GUIDE.md) — complete setup instructions with reasoning behind every decision
-- **Memory research:** [Plans/MEMORY-PLUGIN-RESEARCH.md](Plans/MEMORY-PLUGIN-RESEARCH.md) — why we use built-in memory over external plugins
+- **Context engineering:** [Reference/CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md) — prompt caching, memory tuning, session persistence
+- **Memory research:** [Reference/MEMORY-PLUGIN-RESEARCH.md](Reference/MEMORY-PLUGIN-RESEARCH.md) — why we use built-in memory over external plugins
 - **Official docs:** [docs.openclaw.ai](https://docs.openclaw.ai)
 - **Security:** All configs verified against official schema. CVEs patched in v2026.1.29+.
