@@ -50,6 +50,7 @@ GUIDE.md                          # The deployment guide (2,000 lines)
 AGENTS.md                         # Machine-readable project context for AI agents
 Reference/
   CONTEXT-ENGINEERING.md          # Prompt caching, session persistence, memory tuning
+  COST-AND-ROUTING.md             # Provider pricing, model routing, ClawRouter analysis
   MEMORY-PLUGIN-RESEARCH.md       # Why built-in memory over external plugins (mem0 eval)
   SKILLS-AND-TOOLS.md             # Skill architecture, tool permissions, supply chain security
 src/
@@ -71,6 +72,7 @@ assets/
 
 - **Guide:** [GUIDE.md](GUIDE.md) — complete setup instructions with reasoning behind every decision
 - **Context engineering:** [Reference/CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md) — prompt caching, memory tuning, session persistence
+- **Cost & routing:** [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) — provider pricing, model routing strategies, ClawRouter deep dive
 - **Memory research:** [Reference/MEMORY-PLUGIN-RESEARCH.md](Reference/MEMORY-PLUGIN-RESEARCH.md) — why we use built-in memory over external plugins
 - **Skills & tools:** [Reference/SKILLS-AND-TOOLS.md](Reference/SKILLS-AND-TOOLS.md) — skill creation, tool permissions, security vetting, supply chain risks
 - **Official docs:** [docs.openclaw.ai](https://docs.openclaw.ai)
