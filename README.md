@@ -13,23 +13,16 @@ This guide fills that gap:
 - **Every decision explained.** Not just the commands — the *reasoning*. Why these permissions? Why this auth method? Why deny these tools? Look for the indented "Why?" blocks throughout.
 - **Security as a first-class concern.** SSH hardening, 4-layer permission pipeline, skill supply chain vetting, threat model appendix. Security protects capability — it doesn't prevent it.
 - **Provider-agnostic.** Anthropic, OpenAI, OpenRouter, Ollama (free local models), and 20+ others. Choose your model, choose your provider, change your mind later.
-- **Built from three sources.** The `centminmod/explain-openclaw` repo (199 files of third-party analysis from 5 AI models), web research across security coverage and official docs, and hands-on deployment experience.
 
 ## What You'll Build
 
 A self-hosted AI agent on your own VPS — web search, shell access, persistent memory, scheduled automation, hardened permissions. You own the server, you own the data.
 
-We start with Telegram as the interface because it's the fastest path to a working bot. But OpenClaw connects to any app and service — the security model, memory configuration, skill architecture, and cost patterns you'll learn here transfer everywhere OpenClaw goes.
+We start with Telegram as the interface because it's the fastest path to a working bot. But OpenClaw supports multiple channels — WhatsApp, Discord, iMessage, Slack, and more — and the security model, memory configuration, skill architecture, and cost patterns you'll learn here transfer to any of them.
 
 "Production-ready" means: systemd service management, automated backups, health monitoring, log rotation, and a security posture you can reason about.
 
-## Who This Is For
-
-**New to self-hosting or AI agents?** Every command is copy-pasteable. Every step has a checkpoint. The guide assumes you can SSH into a server and not much else.
-
-**Experienced with deployment?** Skip the explanations, follow the phases, use the reference docs for deep dives on specific topics.
-
-**Veterans?** The threat model appendix, architecture decisions, and supply chain security research are written for you. The reference docs go deep.
+Every command is copy-pasteable. Every step has a checkpoint. Or point your AI agent at [AGENTS.md](AGENTS.md) and let it drive.
 
 ## What You'll Need
 
