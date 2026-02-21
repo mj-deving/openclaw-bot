@@ -1,18 +1,24 @@
-# openclaw-bot
+# OpenClaw Deployment Guide
 
-The most thorough guide to deploying [OpenClaw](https://docs.openclaw.ai) on your own server. Security-first, provider-agnostic, every decision explained.
+A practitioner's reference for deploying [OpenClaw](https://docs.openclaw.ai) on your own server — streamlined setup, security-first defaults, and the reasoning behind every decision.
 
 > *Maximum capability, minimum attack surface.*
 
-## Why This Guide Exists
+## Why This Exists
 
-The official OpenClaw docs explain features well. What doesn't exist is a single resource that covers **end-to-end secure deployment** — from a blank Ubuntu server to a hardened, production-ready AI agent.
+The official OpenClaw docs explain features well. What doesn't exist is a single resource that covers **end-to-end secure deployment** — from a blank Ubuntu server to a hardened, production-ready AI agent — while explaining *why* each choice was made.
 
 This guide fills that gap:
 
-- **Every decision explained.** Not just the commands — the *reasoning*. Why these permissions? Why this auth method? Why deny these tools? Look for the indented "Why?" blocks throughout.
+- **Streamlined with reasoning.** Not just the commands — the *why* behind every decision. Why these permissions? Why this auth method? Why deny these tools? Look for the indented "Why?" blocks throughout.
 - **Security as a first-class concern.** SSH hardening, 4-layer permission pipeline, skill supply chain vetting, threat model appendix. Security protects capability — it doesn't prevent it.
 - **Provider-agnostic.** Anthropic, OpenAI, OpenRouter, Ollama (free local models), and 20+ others. Choose your model, choose your provider, change your mind later.
+
+## A Living Repository
+
+This isn't a static tutorial that decays after publishing. It's updated whenever new insights emerge — deployment learnings, configuration recommendations, utility hacks, cost optimizations, security discoveries. The reference docs capture deep research that informed real decisions on a production bot.
+
+If you're deploying OpenClaw seriously, bookmark it. It'll be different (and better) next time you check.
 
 ## What You'll Build
 
@@ -53,6 +59,7 @@ Reference/
   COST-AND-ROUTING.md             # Provider pricing, model routing, ClawRouter analysis
   MEMORY-PLUGIN-RESEARCH.md       # Why built-in memory over external plugins (mem0 eval)
   SKILLS-AND-TOOLS.md             # Skill architecture, tool permissions, supply chain security
+  IDENTITY-AND-BEHAVIOR.md        # System prompt design, persona patterns, identity-layer security
 src/
   config/
     openclaw.json.example         # Sanitized config template with security annotations
@@ -64,8 +71,6 @@ src/
     auto-update.sh                # Weekly update + security audit
   pipeline/
     send.sh / read.sh / status.sh # Async messaging pipeline utilities
-assets/
-  social-preview.png              # GitHub social preview image
 ```
 
 ## References
@@ -75,4 +80,5 @@ assets/
 - **Cost & routing:** [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) — provider pricing, model routing strategies, ClawRouter deep dive
 - **Memory research:** [Reference/MEMORY-PLUGIN-RESEARCH.md](Reference/MEMORY-PLUGIN-RESEARCH.md) — why we use built-in memory over external plugins
 - **Skills & tools:** [Reference/SKILLS-AND-TOOLS.md](Reference/SKILLS-AND-TOOLS.md) — skill creation, tool permissions, security vetting, supply chain risks
+- **Identity & behavior:** [Reference/IDENTITY-AND-BEHAVIOR.md](Reference/IDENTITY-AND-BEHAVIOR.md) — system prompt design, persona patterns, Telegram constraints, identity-layer security
 - **Official docs:** [docs.openclaw.ai](https://docs.openclaw.ai)
