@@ -574,6 +574,10 @@ NoNewPrivileges=true          # No privilege escalation (no setuid/capabilities)
 ProtectSystem=strict          # Filesystem read-only except listed paths
 ProtectHome=read-only         # Can't modify other users' files
 ReadWritePaths=/home/openclaw/.openclaw /home/openclaw/workspace
+# Protect config and lattice key from bot self-modification (see 7.3).
+# More specific ReadOnlyPaths overrides the broader ReadWritePaths above.
+ReadOnlyPaths=/home/openclaw/.openclaw/openclaw.json
+ReadOnlyPaths=/home/openclaw/.openclaw/workspace/lattice/identity.json
 PrivateTmp=true               # Isolated /tmp (no cross-process tmp attacks)
 ProtectKernelTunables=true    # Can't modify /proc/sys
 ProtectKernelModules=true     # Can't load kernel modules (no rootkits)
@@ -742,7 +746,66 @@ For bulk management, OpenClaw provides **tool groups** you can deny/allow as a u
 >
 > For the full permission model including provider-specific profiles and sandbox policies, see [Reference/SKILLS-AND-TOOLS.md](Reference/SKILLS-AND-TOOLS.md).
 
-### 7.3 Disable Network Discovery
+### 7.3 Shell Bypass Warning
+
+The tool deny list (7.2) only blocks *native* tool invocations. With `exec.security: "full"`, the bot has unrestricted shell access — and shell can do anything the denied tools can:
+
+```bash
+# Denied via tool: "gateway" tool is in the deny list
+# Bypassed via shell: curl the gateway API directly
+curl http://127.0.0.1:18789/api/config
+
+# Denied via tool: "config" tool is restricted
+# Bypassed via shell: edit the config file directly
+echo '"deny": []' >> ~/.openclaw/openclaw.json
+```
+
+> **Why not drop exec.security to "safe"?** Because shell execution is what makes the bot useful — it powers skills, tool chains, and any task requiring system interaction. Removing it eliminates more capability than it adds security. Instead, protect the *targets* of shell abuse:
+>
+> 1. **ReadOnlyPaths** (Phase 6 systemd unit) — kernel-enforced read-only mount on `openclaw.json` and `lattice/identity.json`. The bot can't modify its own config even via shell.
+> 2. **Per-user egress filtering** (7.4) — restricts the `openclaw` user to HTTPS and DNS outbound only, blocking data exfiltration to arbitrary servers.
+> 3. **Config integrity monitoring** — daily cron that checksums critical files and alerts on changes.
+>
+> Together these mean: even if a prompt injection tricks the bot into running shell commands, it can't rewrite its own rules, and it can't send your data to an attacker's server.
+
+### 7.4 Per-User Egress Filtering
+
+The bot only needs outbound HTTPS (port 443) for API calls and DNS (port 53) for resolution. Everything else — HTTP, raw TCP, reverse shells on unusual ports — should be blocked. Unlike the system-wide `ufw default deny outgoing` approach in [SECURITY.md §5.2](Reference/SECURITY.md), per-user rules restrict *only* the bot process while leaving your SSH sessions, system updates, and other users unaffected.
+
+Add these rules to `/etc/ufw/before.rules`, just before the `COMMIT` line:
+
+```bash
+# --- OpenClaw egress filtering (uid 1001) ---
+# Allow new outbound DNS (needed for domain resolution)
+-A ufw-before-output -p udp --dport 53 -m owner --uid-owner 1001 -j ACCEPT
+# Allow new outbound HTTPS (API calls: Anthropic, Telegram, OpenRouter, etc.)
+-A ufw-before-output -p tcp --dport 443 -m owner --uid-owner 1001 -j ACCEPT
+# Log and drop all other new outbound from openclaw
+-A ufw-before-output -m owner --uid-owner 1001 -m conntrack --ctstate NEW -j LOG --log-prefix "[UFW-OPENCLAW-BLOCK] " --log-level 4
+-A ufw-before-output -m owner --uid-owner 1001 -m conntrack --ctstate NEW -j DROP
+# --- End OpenClaw egress filtering ---
+```
+
+> **Why this works:** The existing UFW rules for loopback (`-A ufw-before-output -o lo -j ACCEPT`) and established connections (`-m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`) fire *before* these user-specific rules. Gateway traffic on 127.0.0.1:18789 passes through. Return traffic on existing connections passes through. Only *new* outbound connections from the `openclaw` user are filtered.
+>
+> **Provider flexibility:** The rules allow all HTTPS traffic, not just specific IPs. If you switch from Anthropic to OpenRouter, Gemini, or any other provider, no firewall changes are needed. The trade-off: `curl https://evil.com` still works (it's HTTPS). For domain-level filtering, you'd need a transparent proxy — see [SECURITY.md §5.2](Reference/SECURITY.md) for that option.
+
+After adding the rules:
+
+```bash
+sudo ufw reload
+# Verify: HTTPS should work, HTTP should be blocked
+curl -s -o /dev/null -w "HTTPS: %{http_code}\n" https://api.anthropic.com  # Should return 404
+curl -s -o /dev/null -w "HTTP: %{http_code}\n" --connect-timeout 5 http://httpbin.org/get  # Should timeout (000)
+```
+
+Check blocked attempts in the log:
+
+```bash
+journalctl -k | grep UFW-OPENCLAW-BLOCK
+```
+
+### 7.5 Disable Network Discovery
 
 ```jsonc
 {
@@ -752,7 +815,7 @@ For bulk management, OpenClaw provides **tool groups** you can deny/allow as a u
 
 OpenClaw broadcasts its presence via mDNS by default. Disable it.
 
-### 7.4 Disable Config Writes from Chat
+### 7.6 Disable Config Writes from Chat
 
 ```jsonc
 {
@@ -764,7 +827,7 @@ OpenClaw broadcasts its presence via mDNS by default. Disable it.
 }
 ```
 
-### 7.5 Plugins — Selective Enable
+### 7.7 Plugins — Selective Enable
 
 ```jsonc
 {
@@ -781,7 +844,7 @@ OpenClaw broadcasts its presence via mDNS by default. Disable it.
 }
 ```
 
-### 7.6 Log Redaction
+### 7.8 Log Redaction
 
 Prevent API keys from appearing in logs:
 
@@ -797,7 +860,7 @@ Prevent API keys from appearing in logs:
 }
 ```
 
-### 7.7 File Permissions
+### 7.9 File Permissions
 
 ```bash
 chmod 700 /home/openclaw/.openclaw
@@ -806,7 +869,7 @@ chmod 700 /home/openclaw/.openclaw/credentials
 find /home/openclaw/.openclaw/credentials -type f -exec chmod 600 {} \;
 ```
 
-### 7.8 Run the Security Audit
+### 7.10 Run the Security Audit
 
 ```bash
 openclaw security audit          # Read-only scan
@@ -816,7 +879,7 @@ openclaw security audit --fix    # Auto-fix safe issues
 
 The audit checks 50+ items across 12 categories. Run it after every config change.
 
-### 7.9 SSH Tunnel for Management
+### 7.11 SSH Tunnel for Management
 
 The **only** way to access the gateway remotely. Tailscale is documented as an alternative, but adds another trust boundary (your traffic routes through their coordination server), another service to maintain, and zero capability you don't already have with SSH. If you later want phone access where SSH tunneling is awkward, it's a single config change — `gateway.tailscale.mode: "serve"`.
 
@@ -830,6 +893,8 @@ ssh -L 18789:127.0.0.1:18789 openclaw@YOUR_VPS_IP
 
 - [ ] Gateway bound to loopback only
 - [ ] Tool deny list configured
+- [ ] Shell bypass mitigations in place (ReadOnlyPaths drop-in for config + lattice key)
+- [ ] Per-user egress filtering active (HTTPS + DNS only for openclaw user)
 - [ ] mDNS disabled
 - [ ] Config writes from chat disabled
 - [ ] Log redaction active
@@ -1887,7 +1952,7 @@ mkdir -p ~/.openclaw/pipeline/{inbox,outbox,ack}
 chmod 700 ~/.openclaw/pipeline
 ```
 
-> **Security:** The `chmod 700` is critical — any user who can write to `inbox/` can inject tasks the bot will execute as legitimate messages. Keep pipeline ownership restricted to the `openclaw` user. See [SECURITY.md §14.1](Reference/SECURITY.md) for additional hardening (auditd rules, inotifywait monitoring).
+> **Security:** The `chmod 700` is critical — any user who can write to `inbox/` can inject tasks the bot will execute as legitimate messages. Keep pipeline ownership restricted to the `openclaw` user. **Verify after install:** OpenClaw creates the pipeline directory with `775` permissions by default, so always run `chmod 700` explicitly and verify with `ls -ld ~/.openclaw/pipeline`. See [SECURITY.md §14.1](Reference/SECURITY.md) for additional hardening (auditd rules, inotifywait monitoring).
 
 ### How It Works
 
@@ -1989,6 +2054,7 @@ Each bot is completely isolated — separate config, memory, credentials, and Te
 | **Cron tool** | AI creating rogue scheduled tasks | Deny `cron` or monitor `cron list` |
 | **Indirect prompt injection** | Malicious instructions in fetched content | System prompt hardening, tool deny list, egress filtering |
 | **Pipeline injection** | Unauthorized task submission via inbox/ | `chmod 700`, auditd monitoring |
+| **Shell bypass of deny list** | Bot modifies own config via `exec.security` shell | ReadOnlyPaths drop-in, egress filtering, config integrity cron |
 | **Cost overrun** | Unbounded token spend | Monitor with `/usage full`, set model tiers |
 
 ### Known CVEs

