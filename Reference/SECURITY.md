@@ -1556,6 +1556,12 @@ Tool access flows through four layers, applied in sequence. **Each layer can onl
 Layer 1: Tool Profile → Layer 2: Provider Profiles → Layer 3: Global Deny/Allow → Layer 4: Sandbox Policies
 ```
 
+> **Attribution:** This four-layer model is our organizational framework for OpenClaw's
+> documented permission cascade (`profile → allow/deny → byProvider → per-agent → sandbox`).
+> OpenClaw's docs describe a flat precedence chain, not numbered layers — we've packaged it
+> this way for clarity. The underlying mechanics (each step can only restrict, never expand)
+> are confirmed from [OpenClaw's tools documentation](https://docs.openclaw.ai/tools).
+
 **How the pipeline resolves a tool call:**
 
 1. **Tool Profile** (`tools.profile: "full"`) — Base allowlist. `"full"` enables all native tools. `"coding"` restricts to read/write/exec. `"messaging"` restricts to channel tools. `"minimal"` restricts to read-only.
@@ -1564,7 +1570,7 @@ Layer 1: Tool Profile → Layer 2: Provider Profiles → Layer 3: Global Deny/Al
 
 3. **Global allow/deny lists** (`tools.deny`, `tools.allow`) — Your configuration. Our deny list: `[gateway, nodes, sessions_spawn, sessions_send]`. **Deny always wins** — if a tool appears in both allow and deny, it's denied.
 
-4. **Sandbox policies** — Per-agent overrides that can further restrict but never expand beyond global settings.
+4. **Sandbox policies** (`tools.sandbox.tools.allow/deny`) — Restrict which tools are available when running inside a sandboxed environment (e.g., Docker). These apply after per-agent overrides and can only further restrict, never expand.
 
 **Attack scenario — permission pipeline bypass:**
 
