@@ -252,7 +252,7 @@ openclaw config set provider.model "openrouter/auto"
 **Limitations:**
 - Routing decisions are server-side and opaque -- you can't inspect selection logic
 - Multi-provider routing **invalidates prompt caches** (the bigger win, see Section 5)
-- Model pool shifts between providers -- inconsistent personality for a bot like Atlas
+- Model pool shifts between providers -- inconsistent personality for a bot like openclaw-bot
 - No published accuracy benchmarks for the routing classifier
 
 **Best use case:** Cost discovery and experimentation. Use `:floor` modifier for Lattice heartbeats where personality matters less. For primary conversations, manual model selection gives better consistency.
