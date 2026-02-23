@@ -215,6 +215,21 @@ Workspace files are injected on every message via `resolveBootstrapContextForRun
 | Changing `tool_choice` | Invalidates messages cache |
 | Dynamic content in system prompt | Prevents caching entirely |
 
+### Memory Indexing Internals
+
+OpenClaw's memory system uses a three-tier architecture with SQLite as the indexing backend:
+
+- **Chunking:** Markdown files are split into ~400-token chunks with ~80-token overlap, preserving semantic boundaries
+- **Indexing:** `MemoryIndexManager` class manages both FTS5 virtual tables (for BM25 text search) and vector embeddings in SQLite
+- **Embedding fallback chain:** local model (embeddinggemma-300m) → OpenAI → Gemini — auto-selected based on availability
+- **Hybrid search:** Weighted fusion of vector similarity (0.7) and BM25 text relevance (0.3), with optional MMR re-ranking and temporal decay
+- **Delta sync:** Incremental indexing — only re-indexes chunks that changed since last sync, not the entire memory store
+- **Pre-compaction flush:** Before context overflow triggers auto-compaction, the system flushes important context to memory files, preventing information loss
+
+> **Deep reference:** For full architecture details (three-tier memory model, batch optimization, SQLite schema), see [MEMORY-PLUGIN-RESEARCH.md § OpenClaw Built-in Memory Architecture](MEMORY-PLUGIN-RESEARCH.md).
+>
+> **Source:** [OpenClaw Memory System Deep Dive](https://snowan.gitbook.io/study-notes/ai-blogs/openclaw-memory-system-deep-dive)
+
 ---
 
 ## Sources

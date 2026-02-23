@@ -32,8 +32,7 @@ OpenClaw assembles the bot's "brain" from multiple sources, re-injected on every
 ```
 ┌─────────────────────────────────────────────────┐
 │  Tool schemas (5-10K tokens)                    │  ← Defined by tools.profile + deny list
-│  System prompt (~/.openclaw/agents/main/system.md) │  ← Your persona, rules, identity
-│  Workspace files (~/.openclaw/workspace/*.md)   │  ← Reference content, TOOLS.md, etc.
+│  Workspace files (~/.openclaw/workspace/*.md)   │  ← Identity, rules, reference (AGENTS.md, SOUL.md, etc.)
 │  Skills metadata (1-2K tokens)                  │  ← Injected as compact XML per active skill
 ├─────────────────────────────────────────────────┤
 │  Memory search results (2-4K tokens, varies)    │  ← Retrieved per-query by relevance
@@ -45,7 +44,12 @@ OpenClaw assembles the bot's "brain" from multiple sources, re-injected on every
 
 Everything above the divider is re-sent identically on every message — this is the bootstrap context (~35K tokens total). Everything below changes per message.
 
-> **Why this matters for identity design:** Every word you put in `system.md` or workspace files costs tokens on every single message. Identity decisions are cost decisions. See section 4 for the math.
+> **Note:** OpenClaw's official docs describe the system prompt as "assembled at runtime" from
+> workspace files, tool schemas, and skills metadata. Earlier versions of this document referenced
+> a `~/.openclaw/agents/main/system.md` file — this is not a documented OpenClaw mechanism.
+> Identity is defined entirely through workspace files at `~/.openclaw/workspace/`.
+
+> **Why this matters for identity design:** Every word you put in workspace files costs tokens on every single message. Identity decisions are cost decisions. See section 4 for the math.
 
 ### 1.2 Agent Directory Structure
 
@@ -53,21 +57,26 @@ Everything above the divider is re-sent identically on every message — this is
 ~/.openclaw/
 ├── agents/
 │   └── main/              # Default agent profile
-│       └── system.md      # System prompt — personality, rules, constraints
-├── workspace/             # Brute-force injected into every call
+│       ├── agent/         # Auth profiles, agent config
+│       └── sessions/      # Session transcripts
+├── workspace/             # Bootstrap context — ALL .md files injected every call
+│   ├── AGENTS.md          # Operating instructions, identity, behavior rules
+│   ├── SOUL.md            # Persona, tone, boundaries
+│   ├── IDENTITY.md        # Name, vibe, emoji
+│   ├── USER.md            # Owner profile, preferences
 │   ├── TOOLS.md           # Tool routing guidance
-│   ├── NOTES.md           # Persistent reference material
-│   └── ...                # Any .md file placed here becomes part of context
+│   ├── MEMORY.md          # Curated long-term memory
+│   └── HEARTBEAT.md       # Heartbeat run checklist
 ├── memory/
 │   └── main.sqlite        # Vector + FTS memory database
 └── openclaw.json          # Master config (NOT injected — read at startup only)
 ```
 
 **Key mechanics:**
-- `system.md` is the system prompt. It defines who the bot is.
-- Workspace files are ALL injected, regardless of relevance. Every `.md` file in `~/.openclaw/workspace/` becomes part of every message's context.
+- Workspace files define the bot's identity. Every `.md` file in `~/.openclaw/workspace/` is injected into every message's context as bootstrap.
+- `AGENTS.md` is the primary operating instructions file. `SOUL.md` defines persona and boundaries.
 - Memory is searched per-query — only relevant chunks are injected (default: 6 chunks, minScore 0.35).
-- Skills inject as compact XML snippets into the system prompt area when activated.
+- Skills inject as compact XML snippets into the bootstrap context when activated.
 
 **Config keys that control identity injection:**
 
@@ -86,12 +95,13 @@ The decision framework for where to place identity content:
 
 | Content Type | Where | Why | Cost Impact |
 |-------------|-------|-----|-------------|
-| Name, role, tone, personality | `system.md` | Needed on every message to maintain consistent identity | Part of cached prefix — low cost with caching |
-| Hard security constraints | `system.md` | Must apply to every interaction, no exceptions | Same |
-| Tool routing guidance ("use X for Y") | `system.md` or `workspace/TOOLS.md` | Needed whenever the bot decides which tool to use | Same — both are bootstrap |
+| Name, role, tone, personality | `workspace/SOUL.md` + `IDENTITY.md` | Needed on every message for consistent identity | Part of cached prefix — low cost with caching |
+| Hard security constraints | `workspace/AGENTS.md` | Must apply to every interaction, no exceptions | Same |
+| Operating instructions | `workspace/AGENTS.md` | Core behavioral rules | Same |
+| Tool routing guidance ("use X for Y") | `workspace/TOOLS.md` | Needed whenever the bot decides which tool to use | Same |
+| Output format rules | `workspace/AGENTS.md` or `SOUL.md` | Affects every response | Same |
 | Reference documentation | Memory (`.md` files indexed into `main.sqlite`) | Only needed when relevant — retrieved by search | Zero cost when not retrieved |
 | Project history, past decisions | Memory | Context-dependent, not needed every message | Zero cost when not retrieved |
-| Output format rules | `system.md` | Affects every response | Part of cached prefix |
 | Situational guidance, edge cases | Memory | Only needed in specific situations | Zero cost when not retrieved |
 
 **The decision rule:** "If removing this content from a random message wouldn't break the bot's behavior, it belongs in memory, not workspace."
@@ -254,7 +264,7 @@ At Sonnet 4.6 pricing ($3/MTok input, $0.30/MTok cached):
 
 Prompt caching is prefix-based. Critical implications:
 
-1. **Static only.** No timestamps, session IDs, or dynamic content in system.md or workspace. Any prefix change invalidates the cache. (OpenClaw issue #19534 documents this failure mode.)
+1. **Static only.** No timestamps, session IDs, or dynamic content in workspace files. Any prefix change invalidates the cache. (OpenClaw issue #19534 documents this failure mode.)
 2. **Longer static prefix = more savings.** Counterintuitively, a longer system prompt can be cheaper if it enables caching of more static content.
 3. **Order matters.** All static content (identity, rules, tools, workspace) must come BEFORE dynamic content (memory results, conversation history).
 4. **Minimum cacheable sizes:** Sonnet = 1,024 tokens, Opus/Haiku = 4,096 tokens. Prompts shorter than this won't cache at all.

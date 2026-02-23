@@ -14,6 +14,7 @@
 4. [Self-Hosting vs Cloud Analysis](#4-self-hosting-vs-cloud-analysis)
 5. [Alternative Plugins and Approaches](#5-alternative-plugins-and-approaches)
 6. [Recommendation: 3-Tier Optimization Strategy](#6-recommendation-3-tier-optimization-strategy)
+7. [OpenClaw Built-in Memory Architecture](#7-openclaw-built-in-memory-architecture)
 
 ---
 
@@ -302,7 +303,65 @@ Wait for:
 
 ---
 
+## 7. OpenClaw Built-in Memory Architecture
+
+Understanding the built-in memory system in depth reinforces the "optimize built-in first" strategy from Tier 1 above. This section synthesizes findings from the [OpenClaw Memory System Deep Dive](https://snowan.gitbook.io/study-notes/ai-blogs/openclaw-memory-system-deep-dive) by snowan.
+
+### Three-Tier Memory Model
+
+| Tier | Storage | Lifecycle | Example |
+|------|---------|-----------|---------|
+| **Ephemeral** | `memory/YYYY-MM-DD.md` | Daily logs, auto-created | Today's conversation notes, tool outputs |
+| **Durable** | `MEMORY.md` (workspace) | Curated, long-lived | Key facts, preferences, project context |
+| **Session** | `sessions/YYYY-MM-DD-<slug>.md` | Per-session transcripts | Full conversation archives |
+
+Ephemeral files accumulate daily and are indexed into the SQLite database. Durable memory lives in workspace (injected every message). Session files are indexed but not brute-force injected.
+
+### SQLite Indexing Architecture
+
+The `MemoryIndexManager` class orchestrates all memory operations:
+
+- **FTS5 virtual tables** provide BM25 full-text search with tokenized indexing
+- **Vector columns** store embeddings alongside text for hybrid retrieval
+- **Chunking algorithm:** ~400-token chunks with ~80-token overlap, splitting on semantic boundaries (headers, paragraphs, code blocks)
+- **Delta-based sync:** Only re-indexes chunks that changed since last sync — tracks file modification times and content hashes to avoid redundant embedding calls
+
+### Embedding Provider Chain
+
+Auto-selection with fallback:
+
+1. **Local model** (e.g., embeddinggemma-300m) — preferred for privacy and zero cost
+2. **OpenAI** — cloud fallback if local unavailable
+3. **Gemini** — secondary cloud fallback
+
+Batch optimization reduces embedding API costs by ~50% when using cloud providers (batches of 50+ chunks sent in single API calls rather than one-by-one).
+
+### Pre-Compaction Memory Flush
+
+Critical for information preservation:
+
+1. When context window approaches capacity (~88%), the system detects impending compaction
+2. Before compaction triggers, important context is flushed to memory files (ephemeral tier)
+3. Compaction then summarizes older conversation turns, reducing context size
+4. The flushed content survives in memory and can be retrieved by future searches
+
+This means the system doesn't just discard old context — it saves what matters first, then compresses.
+
+### Implications for Optimization
+
+- **Embedding cache** (`embedding.cache.enabled: true`) avoids redundant embedding calls for previously-indexed chunks
+- **minScore tuning** directly affects recall/precision tradeoff — lower values retrieve more but less relevant chunks
+- **QMD backend** (Tier 2 upgrade path) adds reranking on top of the existing BM25 + vector pipeline
+- **Daily memory files** grow unbounded — the backup script's pruning of old reports (Tier 1) should extend to old daily memory files if they accumulate
+
+> **Cross-reference:** For context injection pipeline and caching mechanics, see [CONTEXT-ENGINEERING.md § Memory Indexing Internals](CONTEXT-ENGINEERING.md).
+
+---
+
 ## Sources
+
+### OpenClaw Memory Architecture
+- [OpenClaw Memory System Deep Dive](https://snowan.gitbook.io/study-notes/ai-blogs/openclaw-memory-system-deep-dive) — snowan's analysis of memory indexing, chunking, and retrieval internals
 
 ### mem0 Platform
 - [mem0ai/mem0 GitHub](https://github.com/mem0ai/mem0) — Main repository (47.7k stars)
