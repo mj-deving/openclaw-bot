@@ -4,6 +4,21 @@ Best practices for choosing providers, optimizing routing, and controlling costs
 
 ---
 
+## Table of Contents
+
+1. [The Big Picture: Four Cost Levers](#the-big-picture-four-cost-levers)
+2. [Provider Pricing Comparison (February 2026)](#1-provider-pricing-comparison-february-2026)
+3. [ClawRouter Deep Dive](#2-clawrouter-deep-dive)
+4. [OpenRouter Auto-Router (NotDiamond)](#3-openrouter-auto-router-notdiamond)
+5. [Manual Routing with OpenClaw (Native Config)](#4-manual-routing-with-openclaw-native-config)
+6. [Caching Economics](#5-caching-economics)
+7. [Monthly Cost Projections](#6-monthly-cost-projections)
+8. [Recommendations for This Setup](#7-recommendations-for-this-setup)
+9. [Strategy Comparison Matrix](#8-strategy-comparison-matrix)
+10. [Sources](#sources)
+
+---
+
 ## The Big Picture: Four Cost Levers
 
 Every token you send or receive has a price. You control cost through four independent mechanisms:

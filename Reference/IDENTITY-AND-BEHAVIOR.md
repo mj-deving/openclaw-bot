@@ -9,6 +9,20 @@ How OpenClaw assembles bot identity, how to design effective system prompts, and
 
 ---
 
+## Table of Contents
+
+1. [How Identity Works in OpenClaw](#1-how-identity-works-in-openclaw)
+2. [System Prompt Engineering](#2-system-prompt-engineering)
+3. [Persona Design](#3-persona-design)
+4. [Identity Cost Tradeoffs](#4-identity-cost-tradeoffs)
+5. [Telegram Behavior](#5-telegram-behavior)
+6. [Identity-Layer Security](#6-identity-layer-security)
+7. [Anti-Patterns](#7-anti-patterns)
+8. [Recommendations for Atlas](#8-recommendations-for-atlas)
+9. [Sources](#sources)
+
+---
+
 ## 1. How Identity Works in OpenClaw
 
 ### 1.1 The Identity Stack
