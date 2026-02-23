@@ -4,6 +4,21 @@ Best practices for managing skills, expanding agent capabilities, vetting third-
 
 ---
 
+## Table of Contents
+
+1. [The Big Picture: Three Extension Mechanisms](#the-big-picture-three-extension-mechanisms)
+2. [Skill Anatomy](#1-skill-anatomy)
+3. [Custom Skill Creation](#2-custom-skill-creation)
+4. [Tool Profiles and Permission Model](#3-tool-profiles-and-permission-model)
+5. [Supply Chain Risk Model](#4-supply-chain-risk-model)
+6. [Security Audit Methodology](#5-security-audit-methodology)
+7. [MCP Server Integration (Future)](#6-mcp-server-integration-future)
+8. [Agent Capability Expansion Patterns](#7-agent-capability-expansion-patterns)
+9. [Priority Recommendations](#priority-recommendations)
+10. [Sources](#sources)
+
+---
+
 ## The Big Picture: Three Extension Mechanisms
 
 OpenClaw agents gain capabilities through three distinct mechanisms. Understanding what each IS prevents dangerous confusion between them.

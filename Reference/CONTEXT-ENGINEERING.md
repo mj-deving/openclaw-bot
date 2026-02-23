@@ -4,6 +4,21 @@ Best practices for optimizing context management, prompt caching, and session co
 
 ---
 
+## Table of Contents
+
+1. [The Big Picture: Where Your Tokens Go](#the-big-picture-where-your-tokens-go)
+2. [Recommendation 1: Enable Prompt Caching (Highest Impact, Lowest Effort)](#recommendation-1-enable-prompt-caching-highest-impact-lowest-effort)
+3. [Recommendation 2: Audit & Trim Workspace Files](#recommendation-2-audit--trim-workspace-files)
+4. [Recommendation 3: Tune Memory Retrieval](#recommendation-3-tune-memory-retrieval)
+5. [Recommendation 4: Session Continuity via Compaction + Memory Flush](#recommendation-4-session-continuity-via-compaction--memory-flush)
+6. [Recommendation 5: Context Pruning Tuning](#recommendation-5-context-pruning-tuning)
+7. [Recommendation 6: Monitor with ClawMetry](#recommendation-6-monitor-with-clawmetry)
+8. [Priority Roadmap](#priority-roadmap)
+9. [OpenClaw Context Internals Reference](#openclaw-context-internals-reference)
+10. [Sources](#sources)
+
+---
+
 ## The Big Picture: Where Your Tokens Go
 
 Every LLM call the OpenClaw bot makes assembles this context stack:
