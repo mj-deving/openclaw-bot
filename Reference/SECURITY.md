@@ -600,7 +600,8 @@ sudo apt install inotify-tools
 
 WATCH_FILES=(
     "/home/openclaw/.openclaw/openclaw.json"
-    "/home/openclaw/.openclaw/agents/main/system.md"
+    "/home/openclaw/.openclaw/workspace/AGENTS.md"
+    "/home/openclaw/.openclaw/workspace/SOUL.md"
     "/etc/openclaw/env"
     "/etc/systemd/system/openclaw.service"
 )
