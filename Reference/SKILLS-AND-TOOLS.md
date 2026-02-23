@@ -256,6 +256,12 @@ Layer 3: Global + per-agent allow/deny lists
 Layer 4: Sandbox-specific policies
 ```
 
+> **Attribution:** This four-layer model is our organizational framework for OpenClaw's
+> documented permission cascade (`profile → allow/deny → byProvider → per-agent → sandbox`).
+> OpenClaw's docs describe a flat precedence chain, not numbered layers — we've packaged it
+> this way for clarity. The underlying mechanics (each step can only restrict, never expand)
+> are confirmed from [OpenClaw's tools documentation](https://docs.openclaw.ai/tools).
+
 **Rule #1: Deny always wins.** At every layer, deny overrides allow.
 
 **Rule #2: Non-empty allow creates implicit deny.** If you specify `allow: ["read", "exec"]`, everything else is implicitly denied.
