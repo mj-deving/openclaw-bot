@@ -299,7 +299,7 @@ openclaw onboard --non-interactive --accept-risk \
   --anthropic-api-key "sk-ant-YOUR-KEY-HERE"
 ```
 
-> **Where does the key go?** The onboard wizard stores API keys in `~/.openclaw/agents/main/agent/auth-profiles.json` (per-agent auth profiles, file permissions 0600). This is readable by the `openclaw` user — and by the bot via shell. For hardened deployments, also store the key in the root-owned env file after onboard runs (see Phase 6, §6.1). The env var takes precedence per [official docs](https://docs.openclaw.ai/gateway/authentication).
+> **Where does the key go?** The onboard wizard stores API keys in `~/.openclaw/agents/main/agent/auth-profiles.json` (per-agent auth profiles, file permissions 0600). This is the single canonical credential location. The bot can read this file via shell (`exec.security: "full"`), so real defenses are at the exfiltration layer: egress firewall (§5), `logging.redactPatterns` for `sk-ant-*` patterns, auditd monitoring (§7), and system prompt instructions against credential output.
 
 **Alternative: manual config** (if not using onboard):
 
@@ -439,7 +439,7 @@ See [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) for the full 
 
 - [ ] `openclaw models status` shows authenticated with your chosen provider
 - [ ] `openclaw chat --once "test"` returns a response
-- [ ] API key stored securely — in `auth-profiles.json` (onboard default) and optionally in `/etc/openclaw/env` (hardened, Phase 6)
+- [ ] API key stored securely — in `auth-profiles.json` (set by onboard, permissions 0600)
 - [ ] *(Optional)* Fallback chain configured: `openclaw models fallbacks list` shows entries
 - [ ] *(Optional)* Model aliases set up: `/model haiku` works in Telegram
 
@@ -529,24 +529,7 @@ openclaw gateway stop
 
 Running OpenClaw as a systemd service means it starts automatically on boot, restarts on crashes, and runs in the background.
 
-### 6.1 Create the Environment File
-
-Secrets go in a root-owned env file as an additional layer of defense. Why? The `openclaw onboard` wizard stores the API key in `~/.openclaw/agents/main/agent/auth-profiles.json` — a file the `openclaw` user (and the bot via shell) can read. By also placing the key in a root-owned env file (0600, loaded by systemd at startup), the env var takes precedence per [official docs](https://docs.openclaw.ai/gateway/authentication), and the env file itself is unreadable by the bot. This doesn't eliminate all access (the key is still in the process environment at runtime), but it removes the disk-readable copy as an attack vector.
-
-```bash
-sudo mkdir -p /etc/openclaw
-sudo tee /etc/openclaw/env > /dev/null << 'EOF'
-ANTHROPIC_API_KEY=sk-ant-YOUR-KEY-HERE
-TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-OPENCLAW_STATE_DIR=/home/openclaw/.openclaw
-OPENCLAW_GATEWAY_PORT=18789
-OPENCLAW_DISABLE_BONJOUR=1
-EOF
-sudo chmod 600 /etc/openclaw/env
-sudo chown root:openclaw /etc/openclaw/env
-```
-
-### 6.2 Create the Systemd Unit
+### 6.1 Create the Systemd Unit
 
 ```ini
 # /etc/systemd/system/openclaw.service
@@ -560,7 +543,6 @@ Type=simple
 User=openclaw
 Group=openclaw
 WorkingDirectory=/home/openclaw
-EnvironmentFile=/etc/openclaw/env
 
 ExecStart=/home/openclaw/.npm-global/bin/openclaw gateway --port 18789
 ExecStop=/bin/kill -SIGTERM $MAINPID
@@ -616,9 +598,9 @@ journalctl -u openclaw -f
 # Send a Telegram message to confirm it works
 ```
 
-### 6.4 Post-Onboard Security Review
+### 6.3 Post-Onboard Security Review
 
-**Run this after every `openclaw onboard` execution.** The onboard wizard rewrites `openclaw.json` and stores credentials in user-readable files. It preserves most security settings, but you should verify:
+**Run this after every `openclaw onboard` execution.** The onboard wizard rewrites `openclaw.json` and may reset security settings. It preserves most settings, but you should verify:
 
 ```bash
 # Quick verification (30 seconds):
@@ -632,7 +614,7 @@ python3 -c 'import json; c=json.load(open("$HOME/.openclaw/openclaw.json")); \
 chmod 600 ~/.openclaw/openclaw.json.bak  # Fix backup permissions (onboard sets 444)
 ```
 
-**For API key rotation specifically:** after running onboard with a new key, also update `/etc/openclaw/env` so the root-owned env var takes precedence over the user-readable `auth-profiles.json`. See [SECURITY.md §16.5](Reference/SECURITY.md) for the full checklist.
+See [SECURITY.md §16.5](Reference/SECURITY.md) for the full post-onboard checklist.
 
 ### ✅ Phase 6 Checkpoint
 
@@ -2086,7 +2068,6 @@ You can run multiple OpenClaw instances on the same VPS — each with its own co
    # Same as the main service but with:
    #   User=openclaw-bot2
    #   WorkingDirectory=/home/openclaw-bot2
-   #   EnvironmentFile=/etc/openclaw/env-bot2
    #   ExecStart=... --port 18790
    ```
 
@@ -2236,7 +2217,7 @@ Complete `openclaw.json` with all recommended settings:
 }
 ```
 
-> **Note:** The `botToken` in the config is how Telegram channel authentication works in OpenClaw — it's read directly from `openclaw.json`. For an additional layer of defense, also set `TELEGRAM_BOT_TOKEN` in your environment file (`/etc/openclaw/env`). This bot-specific config should never be committed to git.
+> **Note:** The `botToken` in the config is how Telegram channel authentication works in OpenClaw — it's read directly from `openclaw.json`. This bot-specific config should never be committed to git.
 
 ---
 
