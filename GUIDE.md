@@ -405,23 +405,51 @@ openclaw models fallbacks add google/gemini-2.5-flash
 
 Aliases let you switch models on the fly — in Telegram, CLI, or config — without typing full model IDs.
 
+**Direct Anthropic** (uses your API key, preserves prompt cache):
+
 ```bash
 openclaw models aliases add opus anthropic/claude-opus-4-6
 openclaw models aliases add sonnet anthropic/claude-sonnet-4-6
 openclaw models aliases add haiku anthropic/claude-haiku-4-5
-openclaw models aliases add flash google/gemini-2.5-flash
 ```
+
+**Via OpenRouter** (requires OpenRouter API key in auth-profiles.json — see §3.2):
+
+```bash
+openclaw models aliases add auto openrouter/auto           # Smart routing (best model per query)
+openclaw models aliases add gpt openrouter/openai/gpt-4o
+openclaw models aliases add gemini openrouter/google/gemini-2.5-pro
+openclaw models aliases add deepseek openrouter/deepseek/deepseek-chat
+openclaw models aliases add flash openrouter/google/gemini-2.5-flash
+```
+
+**Free-tier models via OpenRouter** (zero cost — useful for experimentation and low-stakes queries):
+
+```bash
+openclaw models aliases add free openrouter/free                  # Auto-picks best free model per query
+openclaw models aliases add free1 openrouter/openai/gpt-oss-120b  # 117B MoE, tool calling, strongest free
+openclaw models aliases add free2 openrouter/openai/gpt-oss-20b   # 21B MoE, tool calling, lighter free
+```
+
+> **Free models on OpenRouter:** OpenRouter offers 20+ free models, several with tool/function calling support. The `openrouter/free` router automatically selects the best free model based on your request's requirements (tool calling, vision, etc.). Quality varies — don't expect Claude-level instruction following — but for simple queries, quick lookups, and experimentation they cost literally nothing. See [openrouter.ai/collections/free-models](https://openrouter.ai/collections/free-models) for the current list.
 
 Then switch in Telegram:
 
 ```
-/model opus    # Hard problems, long reasoning
-/model sonnet  # Daily use (default)
-/model haiku   # Simple queries, quick tasks
-/model flash   # Budget mode, cross-provider
+/model opus      # Hard problems, long reasoning (Anthropic, cached)
+/model sonnet    # Daily use — default (Anthropic, cached)
+/model haiku     # Simple queries, cheap (Anthropic, cached)
+/model auto      # Smart routing — best model per query (OpenRouter)
+/model gpt       # GPT-4o (OpenRouter)
+/model gemini    # Gemini 2.5 Pro (OpenRouter)
+/model deepseek  # DeepSeek Chat (OpenRouter)
+/model flash     # Gemini Flash — budget mode (OpenRouter)
+/model free      # Best free model auto-selected (OpenRouter, $0)
+/model free1     # GPT-OSS 120B (OpenRouter, $0)
+/model free2     # GPT-OSS 20B (OpenRouter, $0)
 ```
 
-> **Why?** Manual model switching within the same provider preserves prompt caches. `/model haiku` for a simple question saves tokens without breaking your cache. This is the practical alternative to automated routing — you know which questions are hard.
+> **Why?** Manual model switching within the same provider preserves prompt caches. `/model haiku` for a simple question saves tokens without breaking your cache. This is the practical alternative to automated routing — you know which questions are hard. OpenRouter aliases give you cross-provider access and free-tier options without changing your default (which should stay direct Anthropic for caching benefits — see Phase 13.2).
 
 ### 3.7 ClawRouter (After Phase 1)
 
@@ -442,6 +470,7 @@ See [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) for the full 
 - [ ] API key stored securely — in `auth-profiles.json` (set by onboard, permissions 0600)
 - [ ] *(Optional)* Fallback chain configured: `openclaw models fallbacks list` shows entries
 - [ ] *(Optional)* Model aliases set up: `/model haiku` works in Telegram
+- [ ] *(Optional)* OpenRouter configured: free and paid models accessible via aliases
 
 ---
 
