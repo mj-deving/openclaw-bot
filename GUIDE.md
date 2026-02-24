@@ -895,6 +895,30 @@ ssh -L 18789:127.0.0.1:18789 openclaw@YOUR_VPS_IP
 # Then open: http://localhost:18789
 ```
 
+### 7.12 Model Strength as Security Control
+
+The official OpenClaw security docs recommend using the **strongest available model** for any bot with tools or untrusted inboxes. Larger models follow system instructions more reliably under adversarial pressure — smaller models are more susceptible to prompt injection.
+
+> **Official recommendation:** *"Avoid weaker tiers (Sonnet, Haiku) for tool-enabled or untrusted-inbox bots. Prefer modern, instruction-hardened models (e.g., Anthropic Opus 4.6+)."* — [docs.openclaw.ai/gateway/security](https://docs.openclaw.ai/gateway/security)
+
+**Our posture:** Sonnet (primary) + Haiku (heartbeat). This is a conscious trade-off — cost vs. injection resistance. We compensate with stronger OS-level and architecture-level controls. See [SECURITY.md §12.7](Reference/SECURITY.md) for the full analysis and upgrade triggers.
+
+### 7.13 Application-Level Sandbox (Know Your Options)
+
+OpenClaw provides its own Docker-based sandbox (`agents.defaults.sandbox`) separate from systemd sandboxing. We don't use it (Docker adds complexity for a single-owner bot where systemd provides equivalent isolation), but it's the right choice for multi-user deployments or bots with restricted shell access.
+
+> **When to enable:** If you add group chat access, shared users, or move to `exec.security: "deny"`. See [SECURITY.md §10.7](Reference/SECURITY.md) for config examples and our deviation rationale.
+
+### 7.14 Permission Health Check
+
+```bash
+# Run both tools after any config change or OpenClaw update:
+openclaw doctor                  # File permissions and config health
+openclaw security audit --deep   # Broader security posture + live probing
+```
+
+`openclaw doctor` focuses on file permissions (expects 700/600 on `~/.openclaw/`). `openclaw security audit` covers configuration, gateway binding, tool access, and more. They're complementary — run both. See [SECURITY.md §10.8](Reference/SECURITY.md).
+
 ### ✅ Phase 7 Checkpoint
 
 - [ ] Gateway bound to loopback only
@@ -905,7 +929,10 @@ ssh -L 18789:127.0.0.1:18789 openclaw@YOUR_VPS_IP
 - [ ] Config writes from chat disabled
 - [ ] Log redaction active
 - [ ] File permissions set (700/600)
-- [ ] Security audit passes
+- [ ] Security audit passes (`openclaw security audit --deep`)
+- [ ] Permission health check passes (`openclaw doctor`)
+- [ ] Model strength trade-off documented (Sonnet accepted, upgrade triggers known)
+- [ ] No unsafe content bypass flags enabled (`grep allowUnsafeExternalContent ~/.openclaw/`)
 
 ---
 
