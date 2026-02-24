@@ -638,7 +638,7 @@ python3 -c 'import json; c=json.load(open("$HOME/.openclaw/openclaw.json")); \
   print("deny:", c["tools"]["deny"]); \
   print("exec:", c["tools"]["exec"]); \
   print("bind:", c["gateway"]["bind"])'
-# Expected: deny=[gateway,nodes,sessions_spawn,sessions_send], exec={security:full,ask:off}, bind=loopback
+# Expected: deny=[gateway,nodes,sessions_spawn,sessions_send] (cron NOT denied), exec={security:full,ask:off}, bind=loopback
 
 chmod 600 ~/.openclaw/openclaw.json.bak  # Fix backup permissions (onboard sets 444)
 ```
@@ -1112,6 +1112,9 @@ With `tools.profile: "full"` and targeted denials, the bot can:
 - `gateway` (self-reconfiguration)
 - `nodes` (device invocation)
 - `sessions_spawn`, `sessions_send` (cross-session operations)
+
+**Allowed (not denied):**
+- `cron` — the bot can create and manage its own scheduled jobs when asked. Monitor with `openclaw cron list`. See [§12.4](#124-security-note) for risk assessment.
 
 > **Why deny these specifically?** The `gateway` tool lets the AI reconfigure itself with zero permission checks — it could change its own deny list, enable tools, or modify auth. The `sessions` tools add cross-device attack surface with no benefit for a single bot. These denials are enforced at the orchestration layer (deterministic), not the prompt layer (probabilistic). Even a fully jailbroken model cannot call denied tools.
 
@@ -1745,13 +1748,15 @@ Use the cheapest model that produces good output:
 
 ### 12.4 Security Note
 
-If the `cron` tool is not in your deny list, the AI can create its own scheduled jobs — including via prompt injection. A malicious instruction embedded in fetched web content could cause the bot to schedule a recurring exfiltration task that persists across sessions. Monitor periodically:
+The cron tool is **not** in the deny list — the bot can create and manage its own scheduled jobs. This is intentional: it allows the bot to set up reporting and pipeline-check jobs when asked, without requiring CLI access (which needs gateway device pairing).
+
+**Risk:** A prompt injection could cause the bot to schedule a rogue recurring task. **Mitigation:** Monitor periodically:
 
 ```bash
-openclaw cron list   # Check for unexpected jobs
+openclaw cron list   # Check for unexpected jobs — run after any untrusted interaction
 ```
 
-**Recommendation:** Add `cron` to your deny list (Phase 7.2) and manage schedules exclusively via CLI. The convenience of in-chat scheduling rarely justifies the risk. See [SECURITY.md §14.2](Reference/SECURITY.md) for the full attack chain.
+If you prefer the bot cannot self-schedule, add `cron` to your deny list (Phase 7.2) and manage schedules exclusively via CLI. See [SECURITY.md §14.2](Reference/SECURITY.md) for the full attack chain.
 
 ---
 
@@ -2277,7 +2282,7 @@ Each bot is completely isolated — separate config, memory, credentials, and Te
 | **mDNS discovery** | Network reconnaissance | mDNS disabled |
 | **Memory database** | Data exfiltration | File permissions, encrypted disk |
 | **Gateway tool** | AI self-reconfiguration | `gateway` in deny list |
-| **Cron tool** | AI creating rogue scheduled tasks | Deny `cron` or monitor `cron list` |
+| **Cron tool** | AI creating rogue scheduled tasks | Allowed — monitor with `openclaw cron list` after untrusted interactions |
 | **Indirect prompt injection** | Malicious instructions in fetched content | System prompt hardening, tool deny list, egress filtering |
 | **Pipeline injection** | Unauthorized task submission via inbox/ | `chmod 700`, auditd monitoring |
 | **Shell bypass of deny list** | Bot modifies own config via `exec.security` shell | ReadOnlyPaths drop-in, egress filtering, config integrity cron |
