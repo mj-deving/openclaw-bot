@@ -638,7 +638,7 @@ python3 -c 'import json; c=json.load(open("$HOME/.openclaw/openclaw.json")); \
   print("deny:", c["tools"]["deny"]); \
   print("exec:", c["tools"]["exec"]); \
   print("bind:", c["gateway"]["bind"])'
-# Expected: deny=[gateway,nodes,sessions_spawn,sessions_send] (cron NOT denied), exec={security:full,ask:off}, bind=loopback
+# Expected: deny=[gateway,nodes,sessions_spawn,sessions_send], allow=[cron], exec={security:full,ask:off}, bind=loopback
 
 chmod 600 ~/.openclaw/openclaw.json.bak  # Fix backup permissions (onboard sets 444)
 ```
@@ -873,13 +873,17 @@ OpenClaw broadcasts its presence via mDNS by default. Disable it.
     "slots": { "memory": "memory-core" },
     "entries": {
       "telegram": { "enabled": true },
-      "device-pair": { "enabled": true },
+      "device-pair": { "enabled": false },
       "memory-core": { "enabled": true },
       "memory-lancedb": { "enabled": false }
     }
   }
 }
 ```
+
+> **Why `device-pair` is disabled:** The device-pair plugin is designed for multi-device setups where iOS/Android/macOS nodes connect to the gateway network. For a single-bot, single-user, loopback-only gateway, it adds no security value — the gateway is only reachable from localhost. The actual access controls are: loopback binding (gateway not internet-facing), Telegram DM pairing (controls who can message the bot), tool deny list (controls what the bot can do), and gateway auth token (protects the WS connection). Disabling device-pair also resolves the CLI→gateway RPC catch-22 where pairing approval commands themselves require gateway access.
+>
+> If you later connect external nodes (iOS/Android), re-enable this plugin and use `openclaw nodes approve` to manage device access.
 
 ### 7.8 Log Redaction
 
@@ -1113,8 +1117,8 @@ With `tools.profile: "full"` and targeted denials, the bot can:
 - `nodes` (device invocation)
 - `sessions_spawn`, `sessions_send` (cross-session operations)
 
-**Allowed (not denied):**
-- `cron` — the bot can create and manage its own scheduled jobs when asked. Monitor with `openclaw cron list`. See [§12.4](#124-security-note) for risk assessment.
+**Explicitly allowed** (via `tools.allow`):
+- `cron` — not part of any profile including `"full"`, so must be explicitly allowed. The bot can create and manage its own scheduled jobs when asked. Monitor with `openclaw cron list`. See [§12.4](#124-security-note) for risk assessment.
 
 > **Why deny these specifically?** The `gateway` tool lets the AI reconfigure itself with zero permission checks — it could change its own deny list, enable tools, or modify auth. The `sessions` tools add cross-device attack surface with no benefit for a single bot. These denials are enforced at the orchestration layer (deterministic), not the prompt layer (probabilistic). Even a fully jailbroken model cannot call denied tools.
 
@@ -1748,7 +1752,7 @@ Use the cheapest model that produces good output:
 
 ### 12.4 Security Note
 
-The cron tool is **not** in the deny list — the bot can create and manage its own scheduled jobs. This is intentional: it allows the bot to set up reporting and pipeline-check jobs when asked, without requiring CLI access (which needs gateway device pairing).
+The cron tool is **explicitly allowed** via `tools.allow: ["cron"]`. This is required because `group:automation` tools (cron, gateway) are not part of any standard profile — not even `"full"`. Simply removing `cron` from the deny list is not sufficient; it must be in the allow list to appear in the bot's tool surface. The bot can then create and manage its own scheduled jobs when asked, without requiring CLI access.
 
 **Risk:** A prompt injection could cause the bot to schedule a rogue recurring task. **Mitigation:** Monitor periodically:
 
@@ -1756,7 +1760,7 @@ The cron tool is **not** in the deny list — the bot can create and manage its 
 openclaw cron list   # Check for unexpected jobs — run after any untrusted interaction
 ```
 
-If you prefer the bot cannot self-schedule, add `cron` to your deny list (Phase 7.2) and manage schedules exclusively via CLI. See [SECURITY.md §14.2](Reference/SECURITY.md) for the full attack chain.
+If you prefer the bot cannot self-schedule, remove `cron` from `tools.allow` and manage schedules exclusively via CLI. See [SECURITY.md §14.2](Reference/SECURITY.md) for the full attack chain.
 
 ---
 
@@ -2282,7 +2286,7 @@ Each bot is completely isolated — separate config, memory, credentials, and Te
 | **mDNS discovery** | Network reconnaissance | mDNS disabled |
 | **Memory database** | Data exfiltration | File permissions, encrypted disk |
 | **Gateway tool** | AI self-reconfiguration | `gateway` in deny list |
-| **Cron tool** | AI creating rogue scheduled tasks | Allowed — monitor with `openclaw cron list` after untrusted interactions |
+| **Cron tool** | AI creating rogue scheduled tasks | Explicitly allowed via `tools.allow` — monitor with `openclaw cron list` after untrusted interactions |
 | **Indirect prompt injection** | Malicious instructions in fetched content | System prompt hardening, tool deny list, egress filtering |
 | **Pipeline injection** | Unauthorized task submission via inbox/ | `chmod 700`, auditd monitoring |
 | **Shell bypass of deny list** | Bot modifies own config via `exec.security` shell | ReadOnlyPaths drop-in, egress filtering, config integrity cron |
@@ -2354,6 +2358,7 @@ Complete `openclaw.json` with all recommended settings:
 
   "tools": {
     "profile": "full",
+    "allow": ["cron"],
     "deny": ["gateway", "nodes", "sessions_spawn", "sessions_send"],
     "web": {
       "search": { "enabled": true },
@@ -2402,7 +2407,7 @@ Complete `openclaw.json` with all recommended settings:
     "slots": { "memory": "memory-core" },
     "entries": {
       "telegram": { "enabled": true },
-      "device-pair": { "enabled": true },
+      "device-pair": { "enabled": false },
       "memory-core": { "enabled": true },
       "memory-lancedb": { "enabled": false }
     }
