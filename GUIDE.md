@@ -287,27 +287,27 @@ If you're using Anthropic with a Claude Max subscription, you might see the `set
 
 ### 3.2 Configure Your Provider
 
-Pick your provider and run the matching commands:
+The recommended way to set up authentication is the onboard wizard. It handles provider config, model selection, and credential storage:
 
-**Anthropic:**
+```bash
+# Interactive (recommended for first setup):
+openclaw onboard
+
+# Non-interactive (for scripting / key rotation):
+openclaw onboard --non-interactive --accept-risk \
+  --auth-choice apiKey \
+  --anthropic-api-key "sk-ant-YOUR-KEY-HERE"
+```
+
+> **Where does the key go?** The onboard wizard stores API keys in `~/.openclaw/agents/main/agent/auth-profiles.json` (per-agent auth profiles, file permissions 0600). This is readable by the `openclaw` user — and by the bot via shell. For hardened deployments, also store the key in the root-owned env file after onboard runs (see Phase 6, §6.1). The env var takes precedence per [official docs](https://docs.openclaw.ai/gateway/authentication).
+
+**Alternative: manual config** (if not using onboard):
+
 ```bash
 openclaw config set provider.name anthropic
-openclaw config set provider.apiKey "sk-ant-YOUR-KEY-HERE"
 openclaw config set provider.model "claude-sonnet-4"
-```
-
-**OpenAI:**
-```bash
-openclaw config set provider.name openai
-openclaw config set provider.apiKey "sk-YOUR-KEY-HERE"
-openclaw config set provider.model "gpt-4o"
-```
-
-**OpenRouter:**
-```bash
-openclaw config set provider.name openrouter
-openclaw config set provider.apiKey "sk-or-YOUR-KEY-HERE"
-openclaw config set provider.model "openrouter/auto"
+# Note: API key should be set via onboard or environment variable,
+# not via config set (there is no provider.apiKey config path).
 ```
 
 > **OpenRouter's `auto` model** is powered by [NotDiamond](https://openrouter.ai/docs/guides/routing/routers/auto-router) — it analyzes your prompt and routes to the optimal model from a curated set. No extra cost. Also available: `openrouter/auto:floor` (cheapest) and `openrouter/auto:nitro` (fastest).
@@ -439,7 +439,7 @@ See [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) for the full 
 
 - [ ] `openclaw models status` shows authenticated with your chosen provider
 - [ ] `openclaw chat --once "test"` returns a response
-- [ ] API key stored securely (we'll lock down permissions in Phase 7)
+- [ ] API key stored securely — in `auth-profiles.json` (onboard default) and optionally in `/etc/openclaw/env` (hardened, Phase 6)
 - [ ] *(Optional)* Fallback chain configured: `openclaw models fallbacks list` shows entries
 - [ ] *(Optional)* Model aliases set up: `/model haiku` works in Telegram
 
@@ -531,7 +531,7 @@ Running OpenClaw as a systemd service means it starts automatically on boot, res
 
 ### 6.1 Create the Environment File
 
-Secrets go in a root-owned env file, not in `openclaw.json`. Why? The JSON config is readable by the `openclaw` user — and the AI agent has file-read tools. A root-owned env file (0600, loaded by systemd at startup) means the agent can't read its own API keys from disk. Defense in depth.
+Secrets go in a root-owned env file as an additional layer of defense. Why? The `openclaw onboard` wizard stores the API key in `~/.openclaw/agents/main/agent/auth-profiles.json` — a file the `openclaw` user (and the bot via shell) can read. By also placing the key in a root-owned env file (0600, loaded by systemd at startup), the env var takes precedence per [official docs](https://docs.openclaw.ai/gateway/authentication), and the env file itself is unreadable by the bot. This doesn't eliminate all access (the key is still in the process environment at runtime), but it removes the disk-readable copy as an attack vector.
 
 ```bash
 sudo mkdir -p /etc/openclaw
@@ -616,12 +616,31 @@ journalctl -u openclaw -f
 # Send a Telegram message to confirm it works
 ```
 
+### 6.4 Post-Onboard Security Review
+
+**Run this after every `openclaw onboard` execution.** The onboard wizard rewrites `openclaw.json` and stores credentials in user-readable files. It preserves most security settings, but you should verify:
+
+```bash
+# Quick verification (30 seconds):
+diff ~/.openclaw/openclaw.json.bak ~/.openclaw/openclaw.json  # Review changes
+python3 -c 'import json; c=json.load(open("$HOME/.openclaw/openclaw.json")); \
+  print("deny:", c["tools"]["deny"]); \
+  print("exec:", c["tools"]["exec"]); \
+  print("bind:", c["gateway"]["bind"])'
+# Expected: deny=[gateway,nodes,sessions_spawn,sessions_send], exec={security:full,ask:off}, bind=loopback
+
+chmod 600 ~/.openclaw/openclaw.json.bak  # Fix backup permissions (onboard sets 444)
+```
+
+**For API key rotation specifically:** after running onboard with a new key, also update `/etc/openclaw/env` so the root-owned env var takes precedence over the user-readable `auth-profiles.json`. See [SECURITY.md §16.5](Reference/SECURITY.md) for the full checklist.
+
 ### ✅ Phase 6 Checkpoint
 
 - [ ] Service starts on boot (`systemctl is-enabled openclaw` → enabled)
 - [ ] Gateway bound to 127.0.0.1:18789 (NOT 0.0.0.0)
 - [ ] Telegram messages work through the service
 - [ ] Service restarts on failure (`systemctl show openclaw -p Restart` → on-failure)
+- [ ] Post-onboard security review passed (if onboard was run)
 
 ---
 
@@ -2217,7 +2236,7 @@ Complete `openclaw.json` with all recommended settings:
 }
 ```
 
-> **Note:** Remove `botToken` from the config and use the environment file (`/etc/openclaw/env`) instead. Secrets should never be in config files that might get committed to git.
+> **Note:** The `botToken` in the config is how Telegram channel authentication works in OpenClaw — it's read directly from `openclaw.json`. For an additional layer of defense, also set `TELEGRAM_BOT_TOKEN` in your environment file (`/etc/openclaw/env`). This bot-specific config should never be committed to git.
 
 ---
 
