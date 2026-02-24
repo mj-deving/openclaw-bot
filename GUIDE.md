@@ -1248,9 +1248,10 @@ We also evaluated external memory plugins (mem0, memory-lancedb, ClawHub communi
   "agents": {
     "defaults": {
       "memorySearch": {
-        "sources": ["memory"],
+        "sources": ["memory", "sessions"],        // Index both memory files AND session transcripts
         "provider": "local",
         "store": { "vector": { "enabled": true } },
+        "experimental": { "sessionMemory": true }, // Enable session transcript indexing
         "query": {
           "maxResults": 6,
           "minScore": 0.35,
@@ -1271,8 +1272,11 @@ We also evaluated external memory plugins (mem0, memory-lancedb, ClawHub communi
 **What this does:**
 - **Hybrid search** — combines semantic similarity (vectors) with keyword matching (FTS) for better retrieval
 - **Local embeddings** — `embeddinggemma-300m` runs on your VPS, no API calls needed
+- **Session transcript indexing** — the bot can recall past conversations, not just explicit memory files
 - **Temporal decay** — older memories gradually fade unless re-accessed (30-day half-life)
 - **MMR diversity** — prevents returning multiple near-identical memories
+
+> **Why index sessions?** Without session indexing, the bot only remembers what's been explicitly written to memory files. With it enabled, the bot can semantically search its own conversation history — dramatically improving recall for "what did we discuss about X?" style questions. The `experimental.sessionMemory` flag enables background indexing of session transcripts (delta sync: triggers after 100KB or 50 new messages).
 
 ### 9.4 Local Embeddings
 
@@ -1298,11 +1302,59 @@ openclaw memory index --force
 openclaw memory status --deep
 ```
 
+### 9.6 Context Persistence (Memory Flush)
+
+Without this, the bot loses knowledge when its context window fills up. OpenClaw's auto-compaction summarizes and discards older messages — but anything not explicitly saved is gone. Memory flush fixes this by giving the bot a chance to write important context to durable memory *before* compaction throws it away.
+
+```jsonc
+{
+  "agents": {
+    "defaults": {
+      "compaction": {
+        "reserveTokensFloor": 20000,       // Buffer preserved before compaction triggers
+        "memoryFlush": {
+          "enabled": true,                  // THE key setting — enable pre-compaction flush
+          "softThresholdTokens": 4000       // Additional safety margin for flush activation
+        }
+      }
+    }
+  }
+}
+```
+
+**How it works:**
+
+```
+  Context window (200K tokens)
+  ┌────────────────────────────────────────────────────────┐
+  │ ████████████████████████████████████░░░░░░░░░░░░░░░░░░ │
+  │ ◄──────── conversation ────────────►◄── reserve(20K) ►│
+  │                                     ▲                  │
+  │                          flush triggers here           │
+  │                          at ~176K tokens               │
+  └────────────────────────────────────────────────────────┘
+
+  Trigger: contextWindow - reserveTokensFloor - softThresholdTokens
+         = 200,000 - 20,000 - 4,000 = 176,000 tokens
+```
+
+When the session reaches ~176K tokens:
+1. OpenClaw injects a silent system message asking the bot to save important context
+2. The bot writes durable notes to `memory/YYYY-MM-DD.md` (daily append-only files)
+3. If nothing important to save, the bot responds `NO_REPLY` (silent, no user-visible output)
+4. Compaction then proceeds — summarizing older messages with the knowledge that important stuff was saved first
+
+> **Why this matters:** Without memory flush, compaction is a one-way door. The summary captures the gist but loses details — specific decisions, exact configurations, nuanced preferences. With flush enabled, the bot autonomously preserves what matters before the door closes. This is the cross-session continuity mechanism.
+
+> **One flush per compaction cycle** to avoid spam. Skipped in read-only sandbox mode.
+
 ### ✅ Phase 9 Checkpoint
 
-- [ ] Memory config in `openclaw.json`
-- [ ] `openclaw memory status --deep` shows healthy
+- [ ] Memory config in `openclaw.json` (hybrid search, local embeddings, session indexing)
+- [ ] `openclaw memory status` shows healthy (sources: memory + sessions)
 - [ ] Local embeddings working (no external API calls)
+- [ ] Memory flush enabled (`compaction.memoryFlush.enabled: true`)
+- [ ] Force initial index: `openclaw memory index --force`
 
 ---
 
@@ -1695,8 +1747,13 @@ Establish a baseline before making changes. Run `/usage full` daily for a week.
 The bot's system prompt and bootstrap context (~35K tokens) are re-sent on every single message. Without caching, you're paying full input price for the same content hundreds of times per day. One config change fixes this:
 
 ```bash
-openclaw config set agents.defaults.models.anthropic/claude-sonnet-4.params.cacheRetention long
+# Check your actual model string first:
+openclaw config get agents.defaults.models
+# Then set caching on it (example uses the current Sonnet version):
+openclaw config set agents.defaults.models.anthropic/claude-sonnet-4-20250514.params.cacheRetention long
 ```
+
+> **Model strings change after `openclaw onboard`.** Always check `openclaw config get agents.defaults.models` for the exact key before running config set commands. The model string includes the version date (e.g., `claude-sonnet-4-20250514`), not just the family name.
 
 Or in `openclaw.json`:
 
@@ -1705,7 +1762,7 @@ Or in `openclaw.json`:
   "agents": {
     "defaults": {
       "models": {
-        "anthropic/claude-sonnet-4": {
+        "anthropic/claude-sonnet-4-20250514": {  // Check your actual model string
           "params": {
             "cacheRetention": "long"  // 60-minute TTL, refreshes free on every hit
           }
@@ -1772,16 +1829,10 @@ Use the cheapest model that produces acceptable output for each cron job. Set `-
 
 ### 13.4 Context Optimization
 
-Reduce the token volume per message to compound savings on top of caching:
+Reduce the token volume per message to compound savings on top of caching. Memory flush config is covered in [Phase 9.6](#96-context-persistence-memory-flush) — the settings below focus on pruning.
 
 ```jsonc
 {
-  "compaction": {
-    "memoryFlush": {
-      "enabled": true,
-      "softThresholdTokens": 40000
-    }
-  },
   "contextPruning": {
     "mode": "cache-ttl",
     "ttl": "6h",
@@ -1790,7 +1841,7 @@ Reduce the token volume per message to compound savings on top of caching:
 }
 ```
 
-> **Why these values?** `softThresholdTokens: 40000` flushes conversation history to memory before context gets expensive. `contextPruning` with a 6-hour TTL drops stale context automatically. Together they keep each message lean without losing continuity.
+> **Why these values?** Memory flush (Phase 9.6) handles persisting context before compaction. `contextPruning` with a 6-hour TTL drops stale context automatically, keeping each message lean. Together they reduce per-message token volume without losing continuity.
 
 ### 13.5 ClawRouter (Phase 2 Optimization)
 
@@ -1934,20 +1985,7 @@ Two mechanisms keep context alive across conversations:
 /compact Focus on decisions and open questions
 ```
 
-**Memory flush** — Runs before compaction to persist important facts to `memory/` files before they get summarized away. This is your cross-session continuity mechanism:
-
-```jsonc
-{
-  "compaction": {
-    "memoryFlush": {
-      "enabled": true,              // Persist context before compaction discards it
-      "softThresholdTokens": 40000  // Trigger at 40K tokens
-    }
-  }
-}
-```
-
-Without memory flush, compaction permanently discards older context. With it, key facts survive in memory files and get retrieved in future conversations when relevant.
+**Memory flush** — Runs before compaction to persist important facts to `memory/` files before they get summarized away. This is your cross-session continuity mechanism. Full configuration and explanation in [Phase 9.6](#96-context-persistence-memory-flush). The default trigger fires at ~176K tokens (200K context - 20K reserve - 4K soft threshold).
 
 ### 14.5 Context Pruning
 
