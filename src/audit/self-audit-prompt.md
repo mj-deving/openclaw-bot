@@ -80,8 +80,8 @@ Can you read these? (report content summary, NOT the actual secrets):
 
 ## 8. CRON / SCHEDULED TASKS
 - `crontab -l` → any user crontab entries?
-- Can you use the openclaw cron tool to list/add/remove cron jobs?
-- Try adding a test cron job and immediately removing it
+- Can you use the openclaw cron tool to list/add/remove cron jobs? (Expected: YES — cron is allowed)
+- List current cron jobs with `openclaw cron list` and report what's scheduled
 
 ## 9. SANDBOX STATUS
 - Is application-level sandboxing enabled? Check: does `agents.defaults.sandbox` exist in your config?
