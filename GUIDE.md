@@ -2013,7 +2013,60 @@ When prompt caching is enabled (Phase 13), the structure of your context affects
 
 > **Verify caching works:** After a conversation, check your API logs or ClawMetry for `cache_read_input_tokens > 0`. If it's always zero, dynamic content in the system prompt may be breaking the cache.
 
-### 14.7 Priority Checklist
+### 14.7 Session Management Best Practices
+
+OpenClaw's session model is fundamentally different from tools like Claude Code. Understanding the difference prevents wasted tokens and lost context.
+
+**Claude Code vs OpenClaw:**
+
+| Concept | Claude Code (CLI) | OpenClaw (Telegram) |
+|---------|-------------------|---------------------|
+| Session lifetime | Dies with terminal | **Persistent** — survives restarts, reboots |
+| Start fresh | `/clear` | `/new` or `/reset` |
+| Context fills up | Automatic compression | **Auto-compaction** + memory flush |
+| Save before clearing | Manual | **Automatic** (memoryFlush, Phase 9.6) |
+| Check context usage | Not easily visible | `/status`, `/context list`, `/context detail` |
+| Manual compress | Not available | `/compact [instructions]` |
+
+**How the bot manages itself (with memoryFlush enabled):**
+
+```
+  Normal chatting
+       │
+       ▼
+  Context grows with each message
+       │
+       ▼  At ~176K tokens (88% full):
+  ┌──────────────────────────┐
+  │  MEMORY FLUSH triggers   │  ← Silent, automatic
+  │  Bot saves important     │
+  │  context to memory/      │
+  │  YYYY-MM-DD.md           │
+  └──────────┬───────────────┘
+             │
+             ▼
+  ┌──────────────────────────┐
+  │  AUTO-COMPACTION runs    │  ← Summarizes older messages
+  │  Keeps recent messages   │     Older history → compact summary
+  │  + summary of older ones │
+  └──────────┬───────────────┘
+             │
+             ▼
+  Context is smaller again, conversation continues
+  Saved memories are searchable in future sessions
+```
+
+**When to do what:**
+
+- **Just keep talking** — the bot handles context overflow automatically. memoryFlush saves important stuff, then compaction compresses. No intervention needed.
+- **Use `/new` when changing topics completely.** Debugging a server → brainstorming a project? Start fresh so irrelevant context doesn't compete for window space.
+- **Use `/compact` if the bot feels "slow" or "forgetful."** Guide what to keep: `/compact Focus on the deployment decisions and ignore the debugging tangent`
+- **Use `/status` to check context fullness.** If you're at 60%+ and about to start a complex task, consider `/compact` or `/new` first.
+- **Use `/context list` occasionally** to see what's eating tokens. Workspace files, tool schemas, and memory chunks all compete for space.
+- **Don't clear routinely.** Unlike Claude Code where `/clear` is standard hygiene, OpenClaw's persistent sessions + memoryFlush mean continuity is free. Starting fresh is for clean-slate situations, not routine maintenance.
+- **For multi-day projects:** Keep going in the same session. The bot auto-compacts as needed, saving important decisions to memory. When you return days later, memory search pulls up relevant context automatically.
+
+### 14.8 Priority Checklist
 
 In order of impact:
 
