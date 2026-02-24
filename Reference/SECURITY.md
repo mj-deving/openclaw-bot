@@ -1559,11 +1559,11 @@ Layer 1: Tool Profile → Layer 2: Provider Profiles → Layer 3: Global Deny/Al
 
 **How the pipeline resolves a tool call:**
 
-1. **Tool Profile** (`tools.profile: "full"`) — Base allowlist. `"full"` enables all native tools. `"coding"` restricts to read/write/exec. `"messaging"` restricts to channel tools. `"minimal"` restricts to read-only.
+1. **Tool Profile** (`tools.profile: "full"`) — Base allowlist. `"full"` enables all native tools **except `group:automation`** (cron, gateway). `"coding"` restricts to read/write/exec. `"messaging"` restricts to channel tools. `"minimal"` restricts to read-only.
 
 2. **Provider-specific profiles** (`tools.byProvider`) — Can restrict tools based on which LLM provider handles the request. Example: deny `exec` for all Haiku requests while allowing it for Sonnet.
 
-3. **Global allow/deny lists** (`tools.deny`, `tools.allow`) — Your configuration. Our deny list: `[gateway, nodes, sessions_spawn, sessions_send]`. Note: `cron` is deliberately **not** denied — the bot can manage its own schedule. **Deny always wins** — if a tool appears in both allow and deny, it's denied.
+3. **Global allow/deny lists** (`tools.deny`, `tools.allow`) — Your configuration. Our deny list: `[gateway, nodes, sessions_spawn, sessions_send]`. Our allow list: `["cron"]` — this is required because `group:automation` tools are not part of any profile, including `"full"`. Simply removing `cron` from the deny list is not sufficient; it must be explicitly allowed. **Deny always wins** — if a tool appears in both allow and deny, it's denied.
 
 4. **Sandbox policies** (`tools.sandbox.tools.allow/deny`) — Restrict which tools are available when running inside a sandboxed environment (e.g., Docker). These apply after per-agent overrides and can only further restrict, never expand.
 
@@ -2066,10 +2066,10 @@ The lattice cron runs the bot on a schedule with full capabilities:
 **Mitigations:**
 - `timeout: 180` — hard cap at 3 minutes. A rogue session can't run indefinitely.
 - `isolated: true` — session context is separate from your main conversation. Injection in a cron session doesn't contaminate your chat history.
-- **Current posture:** `cron` is allowed (not in deny list) so the bot can set up scheduled jobs when asked. This is a deliberate trade-off — convenience of in-session scheduling vs. risk of injection-created rogue jobs. Monitor with `openclaw cron list` after untrusted interactions.
-- To lock down: add `cron` to the deny list and manage schedules exclusively via CLI:
+- **Current posture:** `cron` is explicitly allowed via `tools.allow: ["cron"]` so the bot can set up scheduled jobs when asked. This is a deliberate trade-off — convenience of in-session scheduling vs. risk of injection-created rogue jobs. Note: `group:automation` tools are not part of any profile including `"full"` — removing `cron` from the deny list alone is not sufficient. Monitor with `openclaw cron list` after untrusted interactions.
+- To lock down: remove `cron` from `tools.allow` and manage schedules exclusively via CLI:
   ```jsonc
-  { "tools": { "deny": ["gateway", "nodes", "sessions_spawn", "sessions_send", "cron"] } }
+  { "tools": { "allow": [], "deny": ["gateway", "nodes", "sessions_spawn", "sessions_send"] } }
   ```
 
 **Monitoring cron sessions:**
@@ -2293,9 +2293,9 @@ Monitor Anthropic's API documentation for this feature.
 # 1. Diff the config against the backup
 diff ~/.openclaw/openclaw.json.bak ~/.openclaw/openclaw.json
 
-# 2. Verify tool deny list is intact
-python3 -c 'import json; c=json.load(open("/home/openclaw/.openclaw/openclaw.json")); print("deny:", c["tools"]["deny"])'
-# Expected: ['gateway', 'nodes', 'sessions_spawn', 'sessions_send'] (cron intentionally NOT denied)
+# 2. Verify tool allow/deny lists are intact
+python3 -c 'import json; c=json.load(open("/home/openclaw/.openclaw/openclaw.json")); print("allow:", c["tools"].get("allow",[])); print("deny:", c["tools"]["deny"])'
+# Expected: allow=['cron'], deny=['gateway', 'nodes', 'sessions_spawn', 'sessions_send']
 
 # 3. Verify exec policy unchanged
 python3 -c 'import json; c=json.load(open("/home/openclaw/.openclaw/openclaw.json")); print("exec:", c["tools"]["exec"])'
@@ -2447,7 +2447,7 @@ These are listed for version pinning awareness, attack pattern understanding, an
 | **Process visibility** | Process listing, signal capability | Checks cross-process isolation |
 | **Sensitive files** | Config, lattice keys, memory DB, pipeline messages | Inventories credential exposure within scope |
 | **Config modification** | Direct write attempts to config, workspace | Tests ReadOnlyPaths enforcement |
-| **Cron/scheduling** | Crontab access, cron tool availability | Confirms bot can't self-schedule |
+| **Cron/scheduling** | Crontab access, cron tool availability | Confirms cron tool access matches `tools.allow` config |
 
 **How to use:**
 
@@ -2496,7 +2496,7 @@ Ordered by security impact vs. effort. Do the high-impact, low-effort items firs
 |----------|---------|------|--------|--------|-------|
 | **15** | §10.3 | Gateway binding verification cron | 5 min | High | Critical silent-fallback detection |
 | **16** | §14.1 | Pipeline directory permissions | 2 min | Medium | chmod 700, auditd rule |
-| **17** | §14.2 | Add `cron` to deny list | 2 min | Medium | Prevents self-scheduling |
+| **17** | §14.2 | Remove `cron` from `tools.allow` | 2 min | Medium | Prevents self-scheduling (deny list alone is insufficient) |
 | **18** | §16.2 | Verify API key hardening (egress, redact, auditd) | 10 min | High | Done — all three layers deployed |
 | **19** | §12.4 | System prompt security patterns | 30 min | Medium | Identity anchoring, boundaries |
 | **20** | §17.2 | Document incident response | 15 min | Medium | Write runbook, test |

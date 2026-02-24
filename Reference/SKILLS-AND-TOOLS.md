@@ -278,7 +278,7 @@ Layer 4: Sandbox-specific policies
 | `group:memory` | memory_search, memory_get |
 | `group:web` | web_search, web_fetch |
 | `group:ui` | browser, canvas |
-| `group:automation` | cron, gateway |
+| `group:automation` | cron, gateway — **not included in any profile** (requires explicit `tools.allow`) |
 | `group:messaging` | Message tools per channel |
 | `group:nodes` | Node operations |
 | `group:openclaw` | All built-ins (excludes provider plugins) |
