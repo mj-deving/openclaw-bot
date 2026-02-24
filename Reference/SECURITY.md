@@ -2479,12 +2479,12 @@ Ordered by security impact vs. effort. Do the high-impact, low-effort items firs
 | **2** | §2 | Kernel sysctl hardening | 10 min | High | Drop-in file, apply, done |
 | **3** | §5.3 | Fail2ban tuning | 10 min | High | Drop-in config change |
 | **4** | §5.5 | SSH hardening | 10 min | High | Drop-in config + test |
-| **5** | §7 | Audit logging (auditd) | 20 min | Very High | Install, rules, test |
+| **5** | §7 | Audit logging (auditd) | 20 min | Very High | Done — rules loaded, immutable flag set |
 | **6** | §4.2 | cgroup resource limits | 5 min | Medium | Already in service file |
 | **7** | §3.2 | AIDE file integrity | 20 min | High | Install, configure, init |
 | **8** | §8.2 | Lynis weekly scans | 10 min | Medium | Install, cron job |
 | **9** | §6.3 | Disable swap | 2 min | Medium | One command |
-| **10** | §5.2 | Egress firewall (Option A) | 15 min | High | Test thoroughly first |
+| **10** | §5.2 | Egress firewall (Option A) | 15 min | High | Done — per-user rules for UID 1001 (HTTPS + DNS only) |
 | **11** | §4.4 | AppArmor profile | 60 min | Medium | Start in complain mode |
 | **12** | §6.2 | LUKS encryption | Varies | Medium | Best at provisioning time |
 | **13** | §3.3 | inotifywait real-time | 15 min | Low | Supplement to AIDE |
@@ -2497,7 +2497,7 @@ Ordered by security impact vs. effort. Do the high-impact, low-effort items firs
 | **15** | §10.3 | Gateway binding verification cron | 5 min | High | Critical silent-fallback detection |
 | **16** | §14.1 | Pipeline directory permissions | 2 min | Medium | chmod 700, auditd rule |
 | **17** | §14.2 | Add `cron` to deny list | 2 min | Medium | Prevents self-scheduling |
-| **18** | §16.2 | Verify API key hardening (egress, redact, auditd) | 10 min | High | redactPatterns done; egress + auditd not yet |
+| **18** | §16.2 | Verify API key hardening (egress, redact, auditd) | 10 min | High | Done — all three layers deployed |
 | **19** | §12.4 | System prompt security patterns | 30 min | Medium | Identity anchoring, boundaries |
 | **20** | §17.2 | Document incident response | 15 min | Medium | Write runbook, test |
 | **21** | §12.7 | Evaluate model strength trade-off | 30 min | High | Review Sonnet vs. Opus for tool-enabled bot |

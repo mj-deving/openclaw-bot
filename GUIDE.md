@@ -770,10 +770,11 @@ echo '"deny": []' >> ~/.openclaw/openclaw.json
 > **Why not drop exec.security to "safe"?** Because shell execution is what makes the bot useful — it powers skills, tool chains, and any task requiring system interaction. Removing it eliminates more capability than it adds security. Instead, protect the *targets* of shell abuse:
 >
 > 1. **ReadOnlyPaths** (Phase 6 systemd unit) — kernel-enforced read-only mount on `openclaw.json` and `lattice/identity.json`. The bot can't modify its own config even via shell.
-> 2. **Per-user egress filtering** (7.4) — restricts the `openclaw` user to HTTPS and DNS outbound only, blocking data exfiltration to arbitrary servers.
+> 2. **Per-user egress filtering** (§7.4) — restricts the `openclaw` user to HTTPS and DNS outbound only, blocking data exfiltration to arbitrary servers.
 > 3. **Config integrity monitoring** — daily cron that checksums critical files and alerts on changes.
+> 4. **auditd kernel audit logging** (§7.15) — records all file access and command execution at the kernel level. Immutable rules prevent an attacker from silently disabling the audit trail.
 >
-> Together these mean: even if a prompt injection tricks the bot into running shell commands, it can't rewrite its own rules, and it can't send your data to an attacker's server.
+> Together these mean: even if a prompt injection tricks the bot into running shell commands, it can't rewrite its own rules, it can't send your data to an attacker's server, and every action leaves a forensic trail.
 
 ### 7.4 Per-User Egress Filtering
 
@@ -920,12 +921,79 @@ openclaw security audit --deep   # Broader security posture + live probing
 
 `openclaw doctor` focuses on file permissions (expects 700/600 on `~/.openclaw/`). `openclaw security audit` covers configuration, gateway binding, tool access, and more. They're complementary — run both. See [SECURITY.md §10.8](Reference/SECURITY.md).
 
+### 7.15 Audit Logging (auditd)
+
+With `exec.security: "full"`, every file access and command execution should leave a kernel-level forensic trail that even root-level compromise can't silently erase. auditd provides this — it records at the kernel level, independent of application logging. Combined with immutable rules, an attacker can't turn it off without rebooting the server.
+
+**Install and enable:**
+
+```bash
+sudo apt install -y auditd audispd-plugins
+sudo systemctl enable auditd
+sudo systemctl start auditd
+```
+
+**Create rules file** at `/etc/audit/rules.d/99-openclaw.rules`:
+
+```bash
+# /etc/audit/rules.d/99-openclaw.rules
+
+# API key access — alert on read, write, or attribute change
+-w /home/openclaw/.openclaw/agents/main/agent/auth-profiles.json -p rwa -k openclaw-creds
+
+# Config changes — alert on write or attribute changes
+-w /home/openclaw/.openclaw/openclaw.json -p wa -k openclaw-config
+
+# Identity/workspace changes — alert on modifications to agent directory
+-w /home/openclaw/.openclaw/agents/ -p wa -k openclaw-identity
+
+# Systemd service tampering
+-w /etc/systemd/system/openclaw.service -p wa -k openclaw-service
+
+# Make rules immutable — even root can't change until reboot
+# IMPORTANT: Apply this LAST, only after testing all rules
+-e 2
+```
+
+For the full ruleset including SSH config, user accounts, privilege escalation, and suspicious binary monitoring, see [SECURITY.md §7.3](Reference/SECURITY.md).
+
+**Configure log rotation** in `/etc/audit/auditd.conf`:
+
+```
+max_log_file = 50        # 50 MB per file
+max_log_file_action = ROTATE
+num_logs = 10            # 500 MB total cap
+space_left = 75
+space_left_action = SYSLOG
+admin_space_left = 50
+admin_space_left_action = HALT
+```
+
+**Load and verify:**
+
+```bash
+# Load rules (test WITHOUT -e 2 first, then enable immutable)
+sudo augenrules --load
+
+# Verify rules are loaded
+sudo auditctl -l
+
+# Verify immutable flag
+sudo auditctl -s | grep enabled    # Should show "enabled 2"
+
+# Search credential access events
+sudo ausearch --input /var/log/audit/audit.log -k openclaw-creds
+```
+
+> **Note:** On Ubuntu 24.04, `ausearch` may require the explicit `--input /var/log/audit/audit.log` flag to find events. This is a known quirk — events are being captured regardless.
+
 ### ✅ Phase 7 Checkpoint
 
 - [ ] Gateway bound to loopback only
 - [ ] Tool deny list configured
 - [ ] Shell bypass mitigations in place (ReadOnlyPaths drop-in for config + lattice key)
 - [ ] Per-user egress filtering active (HTTPS + DNS only for openclaw user)
+- [ ] Audit logging active (auditd with OpenClaw rules and immutable flag)
 - [ ] mDNS disabled
 - [ ] Config writes from chat disabled
 - [ ] Log redaction active
