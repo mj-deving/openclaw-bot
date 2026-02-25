@@ -2051,6 +2051,68 @@ When prompt caching is enabled (Phase 13), the structure of your context affects
 
 > **Verify caching works:** After a conversation, check your API logs or ClawMetry for `cache_read_input_tokens > 0`. If it's always zero, dynamic content in the system prompt may be breaking the cache.
 
+**How to verify cache hits from session transcripts:**
+
+ClawMetry's web dashboard shows aggregate stats, but for per-model cache breakdowns you can parse the session transcript files directly. Each API call stores a `usage` block with `cacheRead` and `cacheWrite` token counts.
+
+```bash
+# Quick check — does any session have cache hits?
+grep -l "cacheRead" ~/.openclaw/agents/main/sessions/*.jsonl
+
+# Parse a single session's cache stats
+python3 -c "
+import sys, json
+cr = cw = ci = co = calls = 0
+for line in open(sys.argv[1]):
+    try:
+        d = json.loads(line)
+        u = d.get('message',{}).get('usage')
+        if u:
+            ci += u.get('input',0); co += u.get('output',0)
+            cr += u.get('cacheRead',0); cw += u.get('cacheWrite',0)
+            calls += 1
+    except: pass
+total = ci + cr + cw
+ratio = cr / total * 100 if total > 0 else 0
+print(f'Calls: {calls}  Cache read: {cr:,}  Cache write: {cw:,}  Hit ratio: {ratio:.1f}%')
+" ~/.openclaw/agents/main/sessions/SESSION_ID.jsonl
+
+# Aggregate across ALL sessions with per-model breakdown
+cat ~/.openclaw/agents/main/sessions/*.jsonl | python3 -c "
+import sys, json
+models = {}
+for line in sys.stdin:
+    try:
+        d = json.loads(line)
+        if d.get('type') == 'model_change': cur = d.get('modelId','?')
+        u = d.get('message',{}).get('usage')
+        if u:
+            m = d['message'].get('model', cur if 'cur' in dir() else '?')
+            s = models.setdefault(m, [0,0,0,0,0])
+            s[0] += u.get('input',0); s[1] += u.get('output',0)
+            s[2] += u.get('cacheRead',0); s[3] += u.get('cacheWrite',0); s[4] += 1
+    except: pass
+for m, s in sorted(models.items()):
+    t = s[0]+s[2]+s[3]; r = s[2]/t*100 if t else 0
+    print(f'{m:25s}  calls={s[4]:>3}  cache_read={s[2]:>10,}  hit_ratio={r:.1f}%')
+"
+```
+
+**Example output** (real data from our deployment, Feb 2026):
+
+```
+claude-haiku-4-5           calls= 38  cache_read=   524,969  hit_ratio=80.4%
+claude-opus-4-6            calls= 56  cache_read= 1,092,663  hit_ratio=92.8%
+claude-sonnet-4-6          calls= 12  cache_read=   178,063  hit_ratio=90.0%
+```
+
+**What the numbers mean:**
+- **Cache hit ratio 80-95%** = caching working well. Workspace files and system prompt are being reused across turns.
+- **Cache hit ratio < 50%** = something is breaking the cache prefix. Check for dynamic content in workspace files (timestamps, counters).
+- **Cache hit ratio 0%** = caching not enabled, or every message is a new session (e.g., cron jobs with isolated sessions won't accumulate cache hits within a single run).
+
+> **ClawMetry API access:** ClawMetry authenticates API requests via query parameter: `curl http://127.0.0.1:8900/api/overview?token=YOUR_GATEWAY_TOKEN`. The token is stored in `~/.clawmetry-gateway.json`. Useful endpoints: `/api/health`, `/api/overview`, `/api/sessions`.
+
 ### 14.7 Session Management Best Practices
 
 OpenClaw's session model is fundamentally different from tools like Claude Code. Understanding the difference prevents wasted tokens and lost context.
