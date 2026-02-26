@@ -544,6 +544,8 @@ Once paired, **only your Telegram account can talk to the bot.**
 
 This is your bot. It's running your chosen AI model on your own server, talking to you through Telegram, fully under your control.
 
+> **Debugging tip:** If a tool fails, the bot shows a short error by default. Send `/verbose on` to see full tool error details — invaluable when diagnosing shell failures, web fetch issues, or memory search problems. Reset with `/verbose off`.
+
 **Before continuing:** Stop the gateway for now. We'll set it up as a proper service next.
 
 ```bash
@@ -1762,6 +1764,17 @@ openclaw cron list   # Check for unexpected jobs — run after any untrusted int
 
 If you prefer the bot cannot self-schedule, remove `cron` from `tools.allow` and manage schedules exclusively via CLI. See [SECURITY.md §14.2](Reference/SECURITY.md) for the full attack chain.
 
+### 12.5 Cron Reliability (v2026.2.22+)
+
+OpenClaw's cron system received major reliability improvements. Key behaviors to know:
+
+- **Fresh session IDs** — Each cron run gets a clean session. No context leakage between runs.
+- **Auth propagation** — Cron sessions inherit the correct auth profile (e.g., Haiku uses its own API key).
+- **Watchdog timer** — The scheduler keeps polling even if a run stalls, preventing missed firing windows.
+- **Manual run timeout** — `openclaw cron run <jobId>` enforces the same per-job timeout as scheduled runs.
+- **Concurrent runs** — Configure `cron.maxConcurrentRuns` to allow parallel job execution (default: 1).
+- **Delivery status split** — `lastRunStatus` and `lastDeliveryStatus` tracked separately for better diagnostics.
+
 ---
 
 ## Phase 13 — Cost Management & Optimization
@@ -1826,6 +1839,8 @@ Or in `openclaw.json`:
 
 See [CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md) for cache mechanics, the known cache-read-always-0 bug (OpenClaw issue #19534), and session persistence strategies.
 
+> **Official docs (v2026.2.23):** OpenClaw now has published prompt-caching documentation covering `cacheRetention`, per-agent `params` merge behavior, and Bedrock/OpenRouter caching specifics. Check [docs.openclaw.ai](https://docs.openclaw.ai) for the authoritative reference.
+
 ### 13.3 Model Tiering
 
 Not every message needs your most expensive model. Route simple tasks to cheap models and save the heavy hitter for what matters.
@@ -1848,6 +1863,8 @@ The heartbeat keeps caches warm — it doesn't need intelligence, just presence.
 ```
 
 > **Why Haiku?** Prompt cache is **model-specific** — a Haiku heartbeat warms the Haiku cache (used by cron), not the Sonnet cache (used by conversations). Sonnet cache warmth relies on the 1-hour TTL covering gaps between user messages. The Haiku heartbeat at $0.10/MTok reads (~$2.50/mo) keeps cron running on cheap cache reads instead of expensive writes — saving more than it costs. See [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) Recommendation 4 for the full tradeoff analysis.
+
+> **DM delivery blocked (v2026.2.24):** Heartbeat delivery to direct/DM targets (Telegram user chat IDs) is now blocked — only group/channel targets receive outbound heartbeat messages. The delivery default also changed from `last` to `none` (opt-in). If you run heartbeat with `--no-deliver` (recommended), this doesn't affect you. But if you later enable delivery, only group targets will work.
 
 **Manual model switching (most practical for personal use):**
 
@@ -2048,6 +2065,7 @@ When prompt caching is enabled (Phase 13), the structure of your context affects
 - **Static content first, dynamic content last.** Tool schemas and system prompt are cached as a prefix. Memory chunks and conversation history change — they go after.
 - **Never modify earlier conversation turns.** The cache depends on prefix stability. Append-only conversations maximize cache hits.
 - **Avoid dynamic content in workspace files.** Timestamps, session IDs, or counters that change per-call break the cache prefix, potentially causing zero cache hits (see [OpenClaw issue #19534](https://github.com/openclaw/openclaw/issues/19534)).
+- **Bootstrap file caching (v2026.2.23):** OpenClaw now caches the assembled bootstrap content and only rebuilds it when workspace files actually change. This reduces unnecessary cache invalidations — even if the gateway restarts, the bootstrap prefix stays stable as long as your workspace files haven't been modified.
 
 > **Verify caching works:** After a conversation, check your API logs or ClawMetry for `cache_read_input_tokens > 0`. If it's always zero, dynamic content in the system prompt may be breaking the cache.
 
@@ -2119,6 +2137,7 @@ OpenClaw's session model is fundamentally different from tools like Claude Code.
 - **Use `/context list` occasionally** to see what's eating tokens. Workspace files, tool schemas, and memory chunks all compete for space.
 - **Don't clear routinely.** Unlike Claude Code where `/clear` is standard hygiene, OpenClaw's persistent sessions + memoryFlush mean continuity is free. Starting fresh is for clean-slate situations, not routine maintenance.
 - **For multi-day projects:** Keep going in the same session. The bot auto-compacts as needed, saving important decisions to memory. When you return days later, memory search pulls up relevant context automatically.
+- **Clean up old transcripts** when disk space grows. Since v2026.2.23, `openclaw sessions cleanup` supports per-agent targeting and disk budgets (`session.maintenance.maxDiskBytes` / `highWaterBytes`). Transcript JSONL files accumulate indefinitely otherwise.
 
 ### 14.8 Priority Checklist
 
@@ -2469,6 +2488,13 @@ ss -tlnp | grep 18789              # Verify binding after restart
 ```bash
 crontab -l | grep backup
 ls -lt ~/.openclaw/backups/ | head -5
+```
+
+### Search Memory (CLI)
+
+```bash
+openclaw memory search --query "What do you know about cron jobs?"
+openclaw memory status --deep    # Index health and chunk counts
 ```
 
 ### Emergency Shutdown
