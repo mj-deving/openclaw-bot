@@ -372,5 +372,5 @@ tail -20 ~/.openclaw/logs/pai-notify.log
 
 - **HTTP endpoint (Layer 2+):** Add a `localhost:PORT/task` HTTP endpoint to the bridge for synchronous task submission. Coexists with file-based queue — HTTP writes to the same directory.
 - **Sender-side validation:** `--strict` mode in `pai-submit.sh` to verify that `--project` maps to an existing directory before submitting.
-- **Complexity classifier:** Gregor auto-escalates to Isidore based on token estimate, task type, or user request.
+- ~~**Complexity classifier:**~~ **Implemented.** Gregor auto-escalates to Isidore based on task type (security review, architecture, multi-file refactoring, deep analysis). Rules in `~/.openclaw/workspace/AGENTS.md` under `## Partner & Delegation`.
 - **PRD-driven overnight workflow:** Gregor queues PRD files as tasks before Marius's 5-hour Max subscription window, Isidore processes autonomously.
