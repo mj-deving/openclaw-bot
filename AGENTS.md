@@ -40,6 +40,9 @@ This repository contains the most thorough guide to deploying OpenClaw on a self
 | `src/pai-pipeline/pai-submit.sh` | Bash | 109 | PAI pipeline: submit task to Isidore Cloud | [utility] |
 | `src/pai-pipeline/pai-result.sh` | Bash | 179 | PAI pipeline: read results with wait/ack modes | [utility] |
 | `src/pai-pipeline/pai-status.sh` | Bash | 106 | PAI pipeline: dashboard (human + JSON output) | [utility] |
+| `src/pai-pipeline/pai-result-notify.sh` | Bash | ~160 | PAI pipeline: result notification to Gregor's inbox | [utility] |
+| `src/pai-pipeline/pai-result-watcher.py` | Python | ~100 | PAI pipeline: inotify watcher for results/ | [utility] |
+| `src/pai-pipeline/pai-notify.service` | systemd | 20 | PAI pipeline: watcher service unit | [config] |
 | `assets/social-preview.png` | PNG | — | GitHub social preview image (1280x640) | [asset] |
 
 ## Architecture

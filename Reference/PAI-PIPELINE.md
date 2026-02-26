@@ -272,10 +272,105 @@ This is a **different pipeline** from OpenClaw's built-in `~/.openclaw/pipeline/
 
 Both pipelines coexist. They serve different purposes and don't interact.
 
+## Layer 4 — Result Notification
+
+When Isidore Cloud writes a result to `results/`, a long-running inotify watcher detects the new file and triggers a notification script. The script reads the result, formats a message, and drops it into Gregor's internal pipeline inbox for processing on the next `pipeline-check` cron cycle.
+
+```
+Result appears in results/
+        │
+        ▼
+  pai-result-watcher.py    Python inotify watcher (systemd user service)
+  (IN_CREATE event)        detects new file, debounces 2s
+        │
+        ▼
+  pai-result-notify.sh     reads un-notified results
+        │                  writes notification to ~/.openclaw/pipeline/inbox/
+        │                  creates .notified-<taskId> marker
+        ▼
+  pipeline-check cron      Gregor processes notification on next cycle
+```
+
+### Components
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `pai-result-watcher.py` | `~/scripts/` (VPS) | inotify watcher: detects new result files |
+| `pai-result-notify.sh` | `~/scripts/` (VPS) | Notification script: reads results, writes inbox messages |
+| `pai-notify.service` | `~/.config/systemd/user/` | systemd user service (Type=simple, Restart=on-failure) |
+
+### Why inotify watcher instead of systemd path unit?
+
+systemd user-level path units (`PathChanged=`) cannot watch directories under `/var/lib/` — the user manager's process doesn't inherit supplementary groups added after it started, and user units can't call `setgroups()`. A Python inotify watcher using ctypes works reliably because it runs as a child of the user manager with the correct group membership (after the user manager is restarted to pick up the `pai` group).
+
+### Marker files
+
+After notifying about a result, the script creates a hidden marker file alongside it:
+
+```
+results/abc123.json           ← the result (untouched)
+results/.notified-abc123      ← marker (empty, prevents re-notification)
+```
+
+Markers are pruned automatically — files older than 7 days are deleted on every notification pass. Manual cleanup: `pai-result-notify.sh --cleanup`.
+
+### Notification format
+
+The notification written to Gregor's inbox matches the internal pipeline schema (`src/pipeline/send.sh`):
+
+```json
+{
+  "id": "20260226-184500-a1b2c3d4",
+  "from": "pai-pipeline",
+  "to": "bot",
+  "timestamp": "2026-02-26T18:45:00Z",
+  "type": "notification",
+  "subject": "PAI Result Ready: 20260226-183045-abc12345",
+  "body": "Task ID: ...\nStatus: completed\n...\n--- Summary ---\n...",
+  "priority": "normal",
+  "replyTo": null
+}
+```
+
+Error results (`status: "error"`) get `priority: "high"` and subject prefix `PAI Result FAILED`.
+
+### Latency
+
+| Segment | Latency |
+|---------|---------|
+| Result appears → notification in inbox | ~100-500ms (systemd inotify + script) |
+| Notification in inbox → Gregor reads it | Up to 30 min (pipeline-check cron interval) |
+
+To reduce end-to-end latency, increase the pipeline-check cron frequency:
+```bash
+openclaw cron edit pipeline-check --cron "*/5 14-21 * * *"  # 5-min checks
+```
+
+### Troubleshooting
+
+```bash
+# Check watcher service status
+systemctl --user status pai-notify.service
+
+# Check service logs
+journalctl --user -u pai-notify --since "1 hour ago"
+
+# Restart watcher
+systemctl --user restart pai-notify.service
+
+# Dry run (no writes)
+~/scripts/pai-result-notify.sh --dry-run
+
+# View notification log
+tail -20 ~/.openclaw/logs/pai-notify.log
+
+# Clean up old markers
+~/scripts/pai-result-notify.sh --cleanup
+```
+
 ## Future Enhancements
 
 - **HTTP endpoint (Layer 2+):** Add a `localhost:PORT/task` HTTP endpoint to the bridge for synchronous task submission. Coexists with file-based queue — HTTP writes to the same directory.
 - **Sender-side validation:** `--strict` mode in `pai-submit.sh` to verify that `--project` maps to an existing directory before submitting.
-- **Result notification:** systemd path unit or cron job that watches `results/` and pushes completed results to Gregor's Telegram interface.
 - **Complexity classifier:** Gregor auto-escalates to Isidore based on token estimate, task type, or user request.
 - **PRD-driven overnight workflow:** Gregor queues PRD files as tasks before Marius's 5-hour Max subscription window, Isidore processes autonomously.
