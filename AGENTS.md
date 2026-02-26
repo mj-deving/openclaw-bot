@@ -51,9 +51,9 @@ This repository contains the most thorough guide to deploying OpenClaw on a self
 
 Two AI agents run on the same VPS as separate Linux users, communicating through a shared filesystem pipeline:
 
-- **Gregor** (`openclaw` user) — OpenClaw/Sonnet via OpenRouter. Always-on Telegram bot for routine tasks.
+- **Gregor** (`openclaw` user) — OpenClaw/Sonnet via OpenRouter. Always-on Telegram bot for routine tasks. Auto-escalates complex tasks (security reviews, architecture, multi-file refactoring) to Isidore Cloud via PAI pipeline.
 - **Isidore Cloud** (`isidore_cloud` user) — Claude Code/Opus. On-demand heavy computation via `claude -p` bridge.
-- **PAI Pipeline** (`/var/lib/pai-pipeline/`) — Shared directory with `pai` group permissions (2770 setgid). See `Reference/PAI-PIPELINE.md`.
+- **PAI Pipeline** (`/var/lib/pai-pipeline/`) — Shared directory with `pai` group permissions (2770 setgid). Includes complexity classifier for auto-escalation. See `Reference/PAI-PIPELINE.md`.
 
 ### Architecture Decisions
 
