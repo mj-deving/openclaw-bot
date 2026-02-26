@@ -470,13 +470,13 @@ Items extracted from changelogs that may influence our configuration.
 
 Changelog items that need reflection in GUIDE.md.
 
-| Section | What Changed | Source |
-|---------|-------------|--------|
-| Phase 8 (Heartbeat) | DM delivery blocked; delivery default now `none` | v2026.2.24 #1, #3 |
-| Phase 5 (Commands) | `/verbose on` required for tool error details | v2026.2.22 #2 |
-| Phase 12 (Cron) | Multiple cron reliability improvements; `cron.maxConcurrentRuns` | v2026.2.22 #13-24 |
-| Phase 14 (Context) | Session maintenance: `openclaw sessions cleanup` | v2026.2.23 #11 |
-| Phase 14 (Context) | Bootstrap file caching reduces cache invalidations | v2026.2.23 #5 |
-| Phase 13 (Cost) | Official prompt-caching docs published | v2026.2.23 #20 |
-| Appendix (CLI) | `openclaw memory search --query` syntax added | v2026.2.24 #26 |
-| Appendix (CLI) | Doctor hints corrected to valid commands | v2026.2.24 #27 |
+| Section | What Changed | Source | Status |
+|---------|-------------|--------|--------|
+| Phase 13.3 (Heartbeat) | DM delivery blocked; delivery default now `none` | v2026.2.24 #1, #3 | APPLIED |
+| Phase 5 (Commands) | `/verbose on` required for tool error details | v2026.2.22 #2 | APPLIED |
+| Phase 12.5 (Cron) | Multiple cron reliability improvements; `cron.maxConcurrentRuns` | v2026.2.22 #13-24 | APPLIED |
+| Phase 14.7 (Context) | Session maintenance: `openclaw sessions cleanup` | v2026.2.23 #11 | APPLIED |
+| Phase 14.6 (Context) | Bootstrap file caching reduces cache invalidations | v2026.2.23 #5 | APPLIED |
+| Phase 13.2 (Cost) | Official prompt-caching docs published | v2026.2.23 #20 | APPLIED |
+| Appendix F (CLI) | `openclaw memory search --query` syntax added | v2026.2.24 #26 | APPLIED |
+| Appendix (CLI) | Doctor hints corrected to valid commands | v2026.2.24 #27 | N/A — no incorrect hints found |
