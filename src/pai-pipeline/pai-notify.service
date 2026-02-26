@@ -1,0 +1,34 @@
+# pai-notify.service — Watch PAI pipeline results and notify Gregor
+# Install to: ~/.config/systemd/user/pai-notify.service
+#
+# Long-running inotify watcher (Type=simple). Detects new result files
+# in /var/lib/pai-pipeline/results/ and runs pai-result-notify.sh to
+# deliver notifications to Gregor's internal pipeline inbox.
+#
+# Uses a Python inotify watcher instead of a systemd path unit because
+# user-level systemd cannot watch /var/lib/ directories.
+
+[Unit]
+Description=PAI pipeline result notification watcher
+Documentation=https://github.com/mj-deving/openclaw-bot
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/scripts/pai-result-watcher.py
+Restart=on-failure
+RestartSec=10
+
+# Ensure scripts are findable
+Environment=PATH=/usr/bin:/usr/local/bin:/bin:%h/scripts
+
+# Logging to journal (journalctl --user -u pai-notify)
+StandardOutput=journal
+StandardError=journal
+
+# Security: pai group permissions (2770 setgid) are the access boundary.
+# Note: if inotify fails with EACCES, the systemd user manager may need
+# restarting to pick up the pai group: systemctl --user daemon-reexec
+# or terminate all sessions and let linger restart.
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,9 @@
+# pai-notify.path — DEPRECATED
+#
+# systemd user path units cannot watch /var/lib/ directories due to
+# namespace restrictions in user-level systemd instances.
+#
+# Replaced by pai-result-watcher.py (Python inotify) running as a
+# Type=simple service in pai-notify.service.
+#
+# This file is kept for reference only. Do not install.
