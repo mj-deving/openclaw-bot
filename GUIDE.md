@@ -1839,7 +1839,59 @@ Or in `openclaw.json`:
 
 See [CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md) for cache mechanics, the known cache-read-always-0 bug (OpenClaw issue #19534), and session persistence strategies.
 
-> **Official docs (v2026.2.23):** OpenClaw now has published prompt-caching documentation covering `cacheRetention`, per-agent `params` merge behavior, and Bedrock/OpenRouter caching specifics. Check [docs.openclaw.ai](https://docs.openclaw.ai) for the authoritative reference.
+**`cacheRetention` values** (from [official docs](https://docs.openclaw.ai/reference/prompt-caching.md)):
+
+| Value | TTL | When to use |
+|-------|-----|-------------|
+| `"none"` | Disabled | Bursty notifier agents, cron jobs that don't benefit from warm cache |
+| `"short"` | ~5 minutes | Low-traffic agents, experimentation |
+| `"long"` | ~1 hour | Primary conversational agents (recommended) |
+
+Legacy `cacheControlTtl` values (`5m` → `short`, `1h` → `long`) still work but `cacheRetention` is the current key.
+
+**Provider-specific caching behavior:**
+
+- **Anthropic (direct API):** Full `cacheRetention` support. Without explicit config, Anthropic models default to `"short"`.
+- **OpenRouter Anthropic models:** OpenClaw automatically injects `cache_control` on system/developer prompt blocks for `openrouter/anthropic/*` model refs. This means your OpenRouter Sonnet/Haiku fallback gets prompt caching too — the routing tradeoff above is less severe when staying within Anthropic models across providers.
+- **Bedrock:** Anthropic Claude models (`amazon-bedrock/*anthropic.claude*`) pass through `cacheRetention`. Non-Anthropic Bedrock models (Nova, Mistral) are forced to `cacheRetention: "none"` at runtime — setting it has no effect.
+- **Other providers:** `cacheRetention` has no effect if the provider lacks cache support.
+
+**Per-agent cache overrides:**
+
+Settings merge in precedence order: `agents.defaults.models["provider/model"].params` is the base, then `agents.list[].params` overrides by key. This lets you disable caching on specific agents without affecting the default:
+
+```jsonc
+{
+  "agents": {
+    "defaults": {
+      "models": {
+        "anthropic/claude-sonnet-4-20250514": {
+          "params": { "cacheRetention": "long" }   // Default: all agents cache
+        }
+      }
+    },
+    "list": [{
+      "id": "alerts",
+      "params": { "cacheRetention": "none" }       // Override: this agent skips cache
+    }]
+  }
+}
+```
+
+**Cache diagnostics** — if cache hits seem wrong, enable trace logging:
+
+```jsonc
+{
+  "diagnostics": {
+    "cacheTrace": {
+      "enabled": true,
+      "filePath": "~/.openclaw/logs/cache-trace.jsonl"
+    }
+  }
+}
+```
+
+Or via environment: `OPENCLAW_CACHE_TRACE=1`. The trace log records every cache read/write event per API call — look for high `cacheWrite` on most turns (volatile system prompts) or zero `cacheRead` (config mismatch).
 
 ### 13.3 Model Tiering
 
