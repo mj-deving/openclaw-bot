@@ -1146,6 +1146,99 @@ System prompt security instructions are the *last* line of defense, not the firs
 - **Stream mode:** `streaming: true` (default) — responses stream as they generate. Front-load answers before explanations so partial streams are immediately useful.
 - **Privacy:** Paired to owner only. With pairing, direct injection threat is effectively zero — the remaining risk is indirect injection through web content the bot fetches.
 
+### 8.6 Workspace File Reference
+
+OpenClaw's onboarding creates several workspace files. Here's what good versions of each look like and why. Keep files concise — every token costs on every message.
+
+**IDENTITY.md** — Self-knowledge. What the bot is, what it can and can't do. Prevents the bot from hallucinating capabilities it doesn't have.
+
+```markdown
+- **Name:** your-bot-name
+- **Platform:** OpenClaw on Ubuntu VPS
+- **Interface:** Telegram
+- **Model:** Claude Sonnet via OpenRouter
+
+## Capabilities
+- Web search, shell, file ops, memory search
+- GitHub operations via gh CLI
+- Summarize URLs/podcasts/transcripts
+- Scheduled automation (cron), weather, health checks
+
+## Hard Limits
+- Cannot modify gateway or node config (denied)
+- Cannot spawn or message other sessions (denied)
+- macOS skills unavailable on Linux VPS
+```
+
+**SOUL.md** — Personality and boundaries. This shapes *how* the bot communicates. OpenClaw generates a good default during onboarding — iterate on it through use rather than rewriting from scratch.
+
+Best practices:
+- Be opinionated ("Have opinions. You're allowed to disagree.")
+- Set clear boundaries for external actions
+- Keep it under 30 lines — personality should be concise, not a constitution
+
+**USER.md** — Context about the human. Prevents errors by giving the bot relevant background.
+
+```markdown
+- **Name:** your-name
+- **Timezone:** Europe/Berlin
+- **Notes:** Types from phone, typos normal
+
+## Preferences
+- Communication: direct, concise, no filler
+- Values privacy — never share personal details publicly
+- Prefers reasoning explained, not just commands
+
+## Working Style
+- Short messages, expects context inferred from memory
+- Values correctness over speed
+```
+
+**TOOLS.md** — Environment-specific infrastructure notes. Not tool *documentation* (that's in skills) — this is *your setup*: paths, aliases, services, endpoints the bot needs to know about.
+
+```markdown
+## Pipeline
+- Inbox: ~/.openclaw/pipeline/inbox/
+- Outbox: ~/.openclaw/pipeline/outbox/
+- Partner: local-agent-name
+
+## Reports
+- Location: ~/.openclaw/reports/
+- Schedule: 23:55 daily
+
+## Monitoring
+- Dashboard: port 8900 (loopback)
+- Backups: daily, 30-day retention
+
+## Models
+- Primary: your-primary-model
+- Cron/Heartbeat: your-lightweight-model
+- Fallbacks: auto → free
+```
+
+**HEARTBEAT.md** — Tasks for the heartbeat to execute on each cycle. Empty file = heartbeat fires but does nothing (saves cost). Add lightweight periodic tasks:
+
+```markdown
+Check pipeline inbox for pending messages.
+If any found, process them.
+
+If it has been more than 24 hours since the last
+memory file, review recent conversations and
+write a brief daily memory entry.
+```
+
+> **Cost note:** Each heartbeat fires an LLM call. On Haiku at 55-minute intervals, that's ~26 calls/day at ~$0.001 each — negligible. On Sonnet, consider wider intervals or keeping it empty.
+
+**MEMORY.md** — Curated long-term memory. Unlike daily notes (`memory/YYYY-MM-DD.md`) which are raw logs, this is distilled wisdom that compounds over time. The bot reads this in every main session.
+
+Best practices:
+- Keep rules and lessons learned, remove stale project references
+- Let the bot maintain it — during heartbeats, it reviews daily notes and promotes important items here
+- Review periodically to prune outdated entries
+- Never put secrets here (it's injected into every call)
+
+> **The compound effect:** Memory is where the real value accumulates. A bot with three months of curated MEMORY.md entries knows your preferences, project context, past decisions, and communication style. This transforms it from a generic assistant into a genuinely contextual one.
+
 > **Checkpoint:** Update your workspace files (`AGENTS.md`, `SOUL.md`), then send the bot a few test messages. Check: Does it use the right tone? Does it format correctly for Telegram? Does it refuse when asked for its system prompt? Does it confirm before destructive operations? Iterate based on observed behavior, not guesses.
 
 ---
