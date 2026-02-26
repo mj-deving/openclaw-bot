@@ -2633,3 +2633,71 @@ ssh -L 18789:127.0.0.1:18789 openclaw@YOUR_VPS_IP
 ---
 
 *Config schemas verified against [docs.openclaw.ai/gateway/configuration-reference.md](https://docs.openclaw.ai/gateway/configuration-reference.md).*
+
+---
+
+## Appendix H — Supervisory Control
+
+A lightweight supervisory architecture where the bot operates autonomously on the VPS (Sonnet/Haiku) while a local operator reviews daily reports and handles delegated work.
+
+### Components
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| Daily reports | `~/.openclaw/reports/*.md` | Bot writes structured summaries (7 sections) |
+| Delegation protocol | Pipeline outbox | Bot queues tasks exceeding its scope |
+| Local audit script | `src/audit/audit.sh` | Pull reports from VPS over SSH |
+| Workspace guidance | `~/.openclaw/workspace/AGENTS.md` | Teaches the bot when/how to report and delegate |
+
+### Deployed State
+
+**VPS directories:**
+```
+~/.openclaw/reports/       # chmod 700, daily report markdown files
+~/.openclaw/pipeline/      # inbox/outbox/ack, async messaging
+```
+
+**Workspace file:** `AGENTS.md` contains:
+- `## Capabilities & Constraints` — tool permissions, hard constraints, Telegram formatting
+- `## Partner & Delegation` — when to delegate, how to write delegation messages
+- Daily report template (7 sections: Conversations, Autonomous Activity, Tool Usage, Decisions & Actions, Delegation Needed, Anomalies, Resource Usage)
+
+**Active cron jobs:**
+- `daily-report` — 23:55 Berlin, Haiku, writes report to `~/.openclaw/reports/`
+- `pipeline-check` — every 30 min during 14:00–21:00 Berlin, Haiku, checks pipeline inbox
+
+### Local Audit Script
+
+```bash
+./src/audit/audit.sh --today              # Today's report
+./src/audit/audit.sh --yesterday          # Yesterday's report
+./src/audit/audit.sh --date 2026-02-24    # Specific date
+./src/audit/audit.sh --week               # Last 7 report filenames
+./src/audit/audit.sh --delegations        # Pending delegations
+./src/audit/audit.sh --all                # All report filenames
+```
+
+### Daily Workflow
+
+```bash
+# Morning check (~10 seconds):
+./src/audit/audit.sh --yesterday          # What happened?
+./src/audit/audit.sh --delegations        # Anything need me?
+./src/pipeline/read.sh --peek             # Any pipeline messages?
+
+# Respond to a delegation:
+./src/pipeline/send.sh task "Research results" "$(cat local-research.md)"
+```
+
+### Cost Impact
+
+| Component | Monthly Cost |
+|-----------|-------------|
+| Workspace tokens (~450 tokens, cached) | ~$0.01 |
+| Daily report cron (Haiku, 1x/day) | ~$0.30 |
+| Pipeline-check cron (Haiku, ~14x/day) | ~$0.35 |
+| **Total additional** | **~$0.66/mo** |
+
+### Report Retention
+
+Daily reports are pruned after 90 days by the backup script (`src/scripts/backup.sh`). Backups of config and memory are pruned after 30 days.
