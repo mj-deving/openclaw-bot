@@ -64,6 +64,7 @@ Reference/
   CONTEXT-ENGINEERING.md          # Prompt caching, session persistence, memory tuning
   SECURITY-PATCHES.md             # Version-specific security patches and action status
   UPGRADE-NOTES.md                # Comprehensive changelog across OpenClaw releases
+  PAI-PIPELINE.md                 # Cross-agent pipeline: Gregor ↔ Isidore Cloud architecture
 
 src/
   config/
@@ -75,7 +76,11 @@ src/
     verify-binding.sh             # Gateway binding verification
     auto-update.sh                # Weekly update + security audit
   pipeline/
-    send.sh / read.sh / status.sh # Async messaging pipeline utilities
+    send.sh / read.sh / status.sh # Async messaging pipeline (local → bot)
+  pai-pipeline/
+    pai-submit.sh                 # Cross-agent task submission (Gregor → Isidore Cloud)
+    pai-result.sh                 # Result reader with wait/ack modes
+    pai-status.sh                 # Pipeline dashboard (human + JSON output)
   audit/
     audit.sh                      # Security audit prompts and tooling
 ```
@@ -94,8 +99,9 @@ Deep research documents that informed real deployment decisions. Each started as
 | [Context Engineering](Reference/CONTEXT-ENGINEERING.md) | 245 | Prompt caching strategies, cache-TTL pruning, token economics |
 | [Security Patches](Reference/SECURITY-PATCHES.md) | 107 | Version-specific patches with action status tags |
 | [Upgrade Notes](Reference/UPGRADE-NOTES.md) | 480 | Changelog across OpenClaw releases with deployment impact |
+| [PAI Pipeline](Reference/PAI-PIPELINE.md) | 280 | Cross-agent pipeline: Gregor ↔ Isidore Cloud architecture, schemas, security model |
 
 ## Links
 
 - **Official docs:** [docs.openclaw.ai](https://docs.openclaw.ai)
-- **OpenClaw GitHub:** [github.com/nichochar/open-claw](https://github.com/nichochar/open-claw)
+- **OpenClaw npm:** [npmjs.com/package/openclaw](https://www.npmjs.com/package/openclaw)

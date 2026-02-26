@@ -20,6 +20,7 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+Screenshot*.png
 
 # Claude Code runtime
 .claude/cache/
