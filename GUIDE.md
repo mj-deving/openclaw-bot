@@ -421,6 +421,7 @@ openclaw models aliases add gpt openrouter/openai/gpt-4o
 openclaw models aliases add gemini openrouter/google/gemini-2.5-pro
 openclaw models aliases add deepseek openrouter/deepseek/deepseek-chat
 openclaw models aliases add flash openrouter/google/gemini-2.5-flash
+openclaw models aliases add or-haiku openrouter/anthropic/claude-haiku-4-5  # Haiku via OpenRouter (when direct Anthropic credits unavailable)
 ```
 
 **Free-tier models via OpenRouter** (zero cost — useful for experimentation and low-stakes queries):
@@ -1805,6 +1806,8 @@ openclaw config set agents.defaults.models.anthropic/claude-sonnet-4-20250514.pa
 ```
 
 > **Model strings change after `openclaw onboard`.** Always check `openclaw config get agents.defaults.models` for the exact key before running config set commands. The model string includes the version date (e.g., `claude-sonnet-4-20250514`), not just the family name.
+>
+> **`config set` quoting gotcha:** `openclaw config set` can embed literal quote characters into JSON keys if the value is double-quoted in certain shell contexts. This produces a garbled key like `"openrouter/anthropic/claude-haiku-4-5"` (with quotes as part of the key) instead of the clean `openrouter/anthropic/claude-haiku-4-5`. Always verify with `openclaw models list` after config changes. If a model shows "not allowed" despite being configured, check the raw JSON for embedded quotes.
 
 Or in `openclaw.json`:
 
@@ -1986,11 +1989,14 @@ pipx install clawmetry
 mkdir -p ~/.config/systemd/user
 cat > ~/.config/systemd/user/clawmetry.service << 'EOF'
 [Unit]
-Description=ClawMetry Dashboard
+Description=ClawMetry - OpenClaw Observability Dashboard
+After=network.target
 
 [Service]
-ExecStart=%h/.local/bin/clawmetry --port 8900 --host 127.0.0.1
+Type=simple
+ExecStart=%h/.local/bin/clawmetry --data-dir %h/.openclaw --workspace %h/.openclaw/workspace --port 8900 --host 127.0.0.1 --metrics-file %h/.openclaw/.clawmetry-metrics.json --no-debug
 Restart=on-failure
+RestartSec=10
 
 [Install]
 WantedBy=default.target
@@ -2004,6 +2010,8 @@ loginctl enable-linger $(whoami)
 # ssh -L 8900:127.0.0.1:8900 openclaw@YOUR_VPS_IP
 # Then open: http://localhost:8900
 ```
+
+> **Why `--metrics-file` outside workspace?** ClawMetry persists metrics via atomic write (`.tmp` → rename). Gateway restarts briefly disrupt the workspace directory, causing save failures. Storing the metrics file in `~/.openclaw/` (the data dir) avoids this.
 
 ---
 
