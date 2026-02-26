@@ -40,7 +40,7 @@ Upgraded 2026-02-25 from v2026.2.21-2. Gateway restarted, cron jobs verified.
    - **Impact:** If we ever enable cron delivery, it won't leak into conversation threads. **BENEFITS**
 
 6. **Cron in `coding` tool profile** — `cron` included in coding profile via `/tools/invoke` when explicitly allowed by gateway policy.
-   - **Impact:** May mean `tools.allow: ["cron"]` is now handled differently. Our explicit allow should still work, but test if the allow is now redundant. **INVESTIGATE**
+   - **Impact:** Investigated: `tools.allow: ["cron"]` is **NOT redundant**. Official docs confirm `group:automation` tools (cron, gateway) are outside all profiles including `"full"`. The .24 change only means the coding profile can *surface* cron via tool-invoke if the gateway policy already allows it — the explicit `tools.allow` is still what grants access. **RESOLVED — keep current config**
 
 7. **Messaging tool dedupe** — Fixes duplicate Telegram sends from `delivery-mirror` transcript entries in proactive runs (heartbeat/cron/exec-event).
    - **Impact:** Our cron jobs won't produce duplicate Telegram messages if delivery is enabled. **BENEFITS**
@@ -459,7 +459,7 @@ Items extracted from changelogs that may influence our configuration.
 
 | Decision | Source | Status | Priority |
 |----------|--------|--------|----------|
-| `tools.allow: ["cron"]` may be redundant | v2026.2.24 #6 | INVESTIGATE | Medium |
+| `tools.allow: ["cron"]` is NOT redundant — `group:automation` outside all profiles | v2026.2.24 #6 | RESOLVED | Medium |
 | `security.trust_model.multi_user_heuristic` | v2026.2.24 #35 | CONSIDER | Low |
 | Per-agent `params.cacheRetention` for cron | v2026.2.23 #4 | CONSIDER | Low |
 | `openclaw sessions cleanup` for transcript hygiene | v2026.2.23 #11 | CONSIDER | Medium |

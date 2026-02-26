@@ -46,4 +46,13 @@ if [ "$PRUNED" -gt 0 ]; then
     log "Pruned $PRUNED backup files older than 30 days"
 fi
 
+# Prune daily reports older than 90 days
+REPORTS_DIR="$HOME/.openclaw/reports"
+if [ -d "$REPORTS_DIR" ]; then
+    PRUNED_REPORTS=$(find "$REPORTS_DIR" -name "*.md" -mtime +90 -delete -print | wc -l)
+    if [ "$PRUNED_REPORTS" -gt 0 ]; then
+        log "Pruned $PRUNED_REPORTS report files older than 90 days"
+    fi
+fi
+
 log "Backup complete"
