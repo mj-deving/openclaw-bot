@@ -81,6 +81,9 @@ src/
     pai-submit.sh                 # Cross-agent task submission (Gregor → Isidore Cloud)
     pai-result.sh                 # Result reader with wait/ack modes
     pai-status.sh                 # Pipeline dashboard (human + JSON output)
+    pai-escalation-submit.sh      # Auto-escalation handler (Layer 5)
+    pai-reverse-handler.sh        # Reverse-task processor via openclaw agent (Layer 6)
+    pai-reverse-watcher.py        # inotify watcher for reverse-tasks/
   audit/
     audit.sh                      # Security audit prompts and tooling
 ```

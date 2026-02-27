@@ -11,24 +11,29 @@ The PAI pipeline enables two AI agents running as separate Linux users on the sa
 ## Architecture
 
 ```
-┌──────────────────┐         ┌──────────────────────┐
-│  Gregor           │         │  Isidore Cloud        │
-│  (openclaw user)  │         │  (isidore_cloud user) │
-│  OpenClaw/Sonnet  │         │  Claude Code/Opus     │
-│  Always-on        │         │  On-demand             │
-└────────┬─────────┘         └──────────┬─────────────┘
-         │                              │
-         │  pai-submit.sh               │  bridge watcher
-         │  writes task JSON            │  polls tasks/
-         ▼                              ▼
-    ┌─────────────────────────────────────────┐
-    │  /var/lib/pai-pipeline/                  │
-    │  ├── tasks/    ← pending tasks           │
-    │  ├── results/  ← completed results       │
-    │  └── ack/      ← processed originals     │
-    │                                           │
-    │  Owned: root:pai  Mode: 2770 (setgid)    │
-    └─────────────────────────────────────────┘
+┌──────────────────┐                        ┌──────────────────────┐
+│  Gregor           │  ── Forward Pipeline ──>│  Isidore Cloud        │
+│  (openclaw user)  │                        │  (isidore_cloud user) │
+│  OpenClaw/Sonnet  │  <── Reverse Pipeline ──│  Claude Code/Opus     │
+│  Always-on        │                        │  On-demand             │
+└────────┬─────────┘                        └──────────┬─────────────┘
+         │                                             │
+         │  pai-submit.sh (forward)                    │  bridge watcher
+         │  openclaw agent (reverse)                   │  polls tasks/ + writes reverse-tasks/
+         ▼                                             ▼
+    ┌──────────────────────────────────────────────────────┐
+    │  /var/lib/pai-pipeline/                               │
+    │  ├── tasks/          ← Gregor → Isidore (forward)     │
+    │  ├── results/        ← Isidore → Gregor (forward)     │
+    │  ├── ack/            ← processed forward tasks         │
+    │  ├── reverse-tasks/  ← Isidore → Gregor (reverse)     │
+    │  ├── reverse-results/← Gregor → Isidore (reverse)     │
+    │  ├── reverse-ack/    ← processed reverse tasks         │
+    │  ├── workflows/      ← multi-step workflow state       │
+    │  └── artifacts/      ← shared build artifacts          │
+    │                                                        │
+    │  Owned: root:pai  Mode: 2770 (setgid)                  │
+    └──────────────────────────────────────────────────────┘
 ```
 
 ### Flow
@@ -51,7 +56,7 @@ sudo usermod -aG pai openclaw
 sudo usermod -aG pai isidore_cloud
 
 # Create pipeline directory with setgid
-sudo mkdir -p /var/lib/pai-pipeline/{tasks,results,ack}
+sudo mkdir -p /var/lib/pai-pipeline/{tasks,results,ack,reverse-tasks,reverse-results,reverse-ack,workflows,artifacts}
 sudo chown -R root:pai /var/lib/pai-pipeline
 sudo chmod -R 2770 /var/lib/pai-pipeline
 ```
@@ -368,9 +373,198 @@ tail -20 ~/.openclaw/logs/pai-notify.log
 ~/scripts/pai-result-notify.sh --cleanup
 ```
 
+## Layer 5 — Auto-Escalation (Two-Stage Classification)
+
+Gregor's `pipeline-check` cron job evaluates incoming messages for complexity and automatically escalates complex tasks to Isidore Cloud. This uses a **two-stage pattern**: AI classifies, deterministic scripts execute.
+
+```
+Message arrives in ~/.openclaw/pipeline/inbox/
+        │
+        ▼
+  pipeline-check cron           Haiku evaluates complexity
+  (every N min, Berlin TZ)      using rules from AGENTS.md
+        │
+   ┌────┴────┐
+   │         │
+ SIMPLE    COMPLEX
+   │         │
+   ▼         ▼
+ Handle    Copy to ~/.openclaw/pipeline/escalate/
+ locally   Move original to ack/
+   │         │
+   ▼         ▼
+  Done     pai-escalation.path      systemd path unit detects new file
+              │
+              ▼
+           pai-escalation.service   oneshot: runs pai-escalation-submit.sh
+              │
+              ▼
+           pai-escalation-submit.sh extracts body/priority/project from JSON
+              │                     calls pai-submit.sh
+              ▼
+           Task appears in /var/lib/pai-pipeline/tasks/
+```
+
+### Why two stages?
+
+Haiku in OpenClaw cron sessions cannot reliably execute shell commands — it "role-plays" running them and fabricates plausible output (e.g., reporting "permission denied" for commands that would succeed). The two-stage pattern separates classification (AI is good at this) from execution (scripts are reliable at this).
+
+### Components
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `pai-escalation.path` | `~/.config/systemd/user/` | Watches `~/.openclaw/pipeline/escalate/` for new files |
+| `pai-escalation.service` | `~/.config/systemd/user/` | Oneshot: triggered by path unit, runs submit script |
+| `pai-escalation-submit.sh` | `~/scripts/` | Reads escalated JSON, extracts fields, calls `pai-submit.sh` |
+
+### Why systemd path unit works here
+
+Unlike `/var/lib/`, the `~/.openclaw/pipeline/escalate/` directory is inside the user's home — systemd user-level path units CAN watch home directories. This avoids the Python inotify workaround needed for `/var/lib/pai-pipeline/`.
+
+### Cron prompt
+
+The pipeline-check cron classifies messages using rules from `~/.openclaw/workspace/AGENTS.md`:
+
+```
+Check ~/.openclaw/pipeline/inbox/ for pending messages. For each message:
+
+1. EVALUATE COMPLEXITY using the auto-escalation rules in AGENTS.md
+   (section: PAI Pipeline). Messages involving security review, architecture
+   decisions, multi-file refactoring, deep analysis, complex debugging, or
+   anything beyond Sonnet depth are COMPLEX.
+
+2. IF COMPLEX: COPY the file to ~/.openclaw/pipeline/escalate/ (same filename).
+   Then move the original to ~/.openclaw/pipeline/ack/. A separate watcher
+   will handle the actual PAI submission. Do NOT run pai-submit.sh yourself.
+
+3. IF SIMPLE: Handle locally (answer, summarize, or acknowledge). Move
+   processed message to ~/.openclaw/pipeline/ack/.
+
+Always move every processed message to ack/ regardless of path taken.
+```
+
+### Troubleshooting
+
+```bash
+# Check escalation path unit
+systemctl --user status pai-escalation.path
+
+# Check escalation service (shows last trigger)
+systemctl --user status pai-escalation.service
+
+# View escalation log
+tail -20 ~/.openclaw/logs/pai-escalation.log
+
+# Manual test: place a file in escalate/
+cp test.json ~/.openclaw/pipeline/escalate/
+```
+
+## Layer 6 — Reverse Pipeline (Isidore Cloud → Gregor)
+
+The reverse pipeline enables Isidore Cloud to delegate tasks back to Gregor. This completes the bidirectional communication loop — Gregor can escalate to Isidore (forward), and Isidore can delegate back to Gregor (reverse).
+
+```
+Isidore Cloud writes task to reverse-tasks/
+        │
+        ▼
+  pai-reverse-watcher.py     Python inotify watcher (systemd user service)
+  (IN_CREATE event)          detects new file, debounces 2s
+        │
+        ▼
+  pai-reverse-handler.sh     reads task JSON, extracts prompt
+        │                    calls: openclaw agent --session-id reverse-<taskId>
+        │                           --message "$prompt" --json
+        ▼
+  Result written to reverse-results/<taskId>.json
+  Original moved to reverse-ack/<taskId>.json
+        │
+        ▼
+  Isidore Cloud's bridge consumes result from reverse-results/
+```
+
+### Components
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `pai-reverse-watcher.py` | `~/scripts/` (VPS) | inotify watcher for `reverse-tasks/` |
+| `pai-reverse-handler.sh` | `~/scripts/` (VPS) | Processes tasks via `openclaw agent` gateway CLI |
+| `pai-reverse.service` | `~/.config/systemd/user/` | systemd user service (Type=simple, Restart=on-failure) |
+
+### Why inotify (not systemd path unit)?
+
+Same reason as Layer 4: `/var/lib/pai-pipeline/reverse-tasks/` is outside the user's home directory. Systemd user-level path units cannot watch it. Python ctypes inotify works.
+
+### Reverse-Task Schema (Isidore Cloud → Gregor)
+
+Written to `/var/lib/pai-pipeline/reverse-tasks/<id>.json`:
+
+```json
+{
+  "id": "a7593ac4-8899-40bc-9d81-c474c247d6c3",
+  "from": "isidore_cloud",
+  "to": "gregor",
+  "timestamp": "2026-02-27T08:32:43.757Z",
+  "type": "delegate",
+  "priority": "normal",
+  "prompt": "Verify that all TypeScript files have correct headers...",
+  "context": {
+    "workflow_id": "2ada7b66-...",
+    "step_id": "step-004"
+  }
+}
+```
+
+### Reverse-Result Schema (Gregor → Isidore Cloud)
+
+Written to `/var/lib/pai-pipeline/reverse-results/<taskId>.json`:
+
+```json
+{
+  "taskId": "a7593ac4-8899-40bc-9d81-c474c247d6c3",
+  "status": "completed",
+  "summary": "All 14 files have correct headers. tsc --noEmit passed.",
+  "usage": { "input_tokens": 12400, "output_tokens": 800 },
+  "session_id": "reverse-a7593ac4-...",
+  "timestamp": "2026-02-27T08:35:12Z",
+  "context": { "workflow_id": "2ada7b66-...", "step_id": "step-004" }
+}
+```
+
+### How `openclaw agent` works
+
+The handler uses `openclaw agent --session-id <id> --message <prompt> --json` to submit the task to Gregor's gateway for processing. Each reverse-task gets an isolated session (prefixed `reverse-`) to prevent cross-contamination.
+
+This is the Gregor-side equivalent of `claude -p` on Isidore Cloud's side — programmatic one-shot agent execution through the gateway.
+
+### Security notes
+
+- Reverse-tasks come from `isidore_cloud` (trusted). Gregor processes them through its normal security stack (tools.profile, deny list, exec.security).
+- Gregor cannot access `isidore_cloud`'s home directory — tasks asking to read/write `/home/isidore_cloud/...` will fail. This is correct behavior (Linux user isolation).
+- The handler script does all file I/O deterministically (bash + python3). `openclaw agent` only processes the prompt text — no LLM-driven shell execution.
+
+### Troubleshooting
+
+```bash
+# Check watcher service
+systemctl --user status pai-reverse.service
+
+# Check service logs
+journalctl --user -u pai-reverse --since "1 hour ago"
+
+# Restart watcher
+systemctl --user restart pai-reverse.service
+
+# Dry run handler (no execution)
+~/scripts/pai-reverse-handler.sh --dry-run
+
+# View handler log
+tail -20 ~/.openclaw/logs/pai-reverse.log
+```
+
 ## Future Enhancements
 
 - **HTTP endpoint (Layer 2+):** Add a `localhost:PORT/task` HTTP endpoint to the bridge for synchronous task submission. Coexists with file-based queue — HTTP writes to the same directory.
 - **Sender-side validation:** `--strict` mode in `pai-submit.sh` to verify that `--project` maps to an existing directory before submitting.
-- ~~**Complexity classifier:**~~ **Implemented.** Gregor auto-escalates to Isidore based on task type (security review, architecture, multi-file refactoring, deep analysis). Rules in `~/.openclaw/workspace/AGENTS.md` under `## Partner & Delegation`.
+- ~~**Complexity classifier:**~~ **Implemented (Layer 5).** Two-stage auto-escalation: Haiku classifies → deterministic script submits. Rules in `~/.openclaw/workspace/AGENTS.md` under `## Partner & Delegation`.
+- ~~**Reverse pipeline:**~~ **Implemented (Layer 6).** Isidore Cloud can delegate tasks back to Gregor via `reverse-tasks/`. inotify watcher + `openclaw agent` gateway CLI.
 - **PRD-driven overnight workflow:** Gregor queues PRD files as tasks before Marius's 5-hour Max subscription window, Isidore processes autonomously.
