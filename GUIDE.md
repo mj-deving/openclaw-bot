@@ -46,6 +46,7 @@ OpenClaw is an open-source AI agent gateway that bridges multiple messaging plat
 - [E — Configuration Reference](#appendix-e--configuration-reference)
 - [F — Runbook: Common Operations](#appendix-f--runbook-common-operations)
 - [G — References](#appendix-g--references)
+- [H — PAI Pipeline (Cross-Agent)](#appendix-h--pai-pipeline-cross-agent)
 
 ---
 
@@ -2425,6 +2426,8 @@ openclaw cron add \
 
 Pipeline scripts for send/read/status are included in `src/pipeline/`.
 
+> **Cross-agent pipeline:** For the PAI pipeline that enables Gregor and Isidore Cloud to delegate tasks to each other (bidirectional, across Linux users), see [Appendix H](#appendix-h--pai-pipeline-cross-agent) and [Reference/PAI-PIPELINE.md](Reference/PAI-PIPELINE.md).
+
 ---
 
 ## Appendix C — Running Multiple Bots
@@ -2802,3 +2805,81 @@ A lightweight supervisory architecture where the bot operates autonomously on th
 ### Report Retention
 
 Daily reports are pruned after 90 days by the backup script (`src/scripts/backup.sh`). Backups of config and memory are pruned after 30 days.
+
+---
+
+## Appendix H — PAI Pipeline (Cross-Agent)
+
+The PAI pipeline enables two AI agents running as separate Linux users on the same VPS to exchange work bidirectionally through a shared filesystem. This is different from the internal pipeline (Appendix B), which handles human → bot messaging via SSH.
+
+> **Full reference:** [Reference/PAI-PIPELINE.md](Reference/PAI-PIPELINE.md) — schemas, security model, troubleshooting, and all 6 layers.
+
+### What It Does
+
+- **Forward pipeline (Gregor → Isidore Cloud):** Gregor submits complex tasks that need Opus-grade processing. Isidore's bridge service picks them up, processes via `claude -p`, and writes results.
+- **Reverse pipeline (Isidore Cloud → Gregor):** Isidore delegates tasks back to Gregor. An inotify watcher detects new files and processes them via `openclaw agent`.
+- **Auto-escalation:** Gregor's cron job classifies incoming messages by complexity and automatically routes complex ones to Isidore.
+
+### Setup
+
+```bash
+# 1. Create shared group and pipeline directory
+sudo groupadd pai
+sudo usermod -aG pai openclaw
+sudo usermod -aG pai isidore_cloud
+sudo mkdir -p /var/lib/pai-pipeline/{tasks,results,ack,reverse-tasks,reverse-results,reverse-ack,workflows,artifacts}
+sudo chown -R root:pai /var/lib/pai-pipeline
+sudo chmod -R 2770 /var/lib/pai-pipeline
+
+# 2. Deploy scripts (as openclaw user)
+# Forward pipeline: pai-submit.sh, pai-result.sh, pai-status.sh
+# Result notification: pai-result-watcher.py, pai-result-notify.sh
+# Auto-escalation: pai-escalation-submit.sh + systemd units
+# Reverse pipeline: pai-reverse-watcher.py, pai-reverse-handler.sh
+# All scripts go to ~/scripts/, systemd units to ~/.config/systemd/user/
+
+# 3. Enable systemd services
+systemctl --user daemon-reload
+systemctl --user enable --now pai-notify.service      # Result notification watcher
+systemctl --user enable --now pai-escalation.path     # Auto-escalation watcher
+systemctl --user enable --now pai-reverse.service     # Reverse-task watcher
+
+# 4. Create escalation staging directory
+mkdir -p ~/.openclaw/pipeline/escalate
+chmod 700 ~/.openclaw/pipeline/escalate
+```
+
+### Architecture (6 Layers)
+
+| Layer | Direction | What It Does | Key Script |
+|-------|-----------|-------------|------------|
+| 1 | — | Shared directory with setgid permissions | (infrastructure) |
+| 2 | Forward | Bridge watcher on Isidore Cloud's side | (my-pai-cloud-solution repo) |
+| 3 | Forward | Sender scripts: submit, result, status | `pai-submit.sh` |
+| 4 | Forward | Result notification to Gregor's inbox | `pai-result-watcher.py` |
+| 5 | Forward | Auto-escalation: cron classifies → systemd routes | `pai-escalation-submit.sh` |
+| 6 | Reverse | Reverse-task watcher: inotify → `openclaw agent` | `pai-reverse-handler.sh` |
+
+### Verification
+
+```bash
+# Check all three watchers are running
+systemctl --user status pai-notify pai-reverse pai-escalation.path
+
+# Test forward pipeline
+pai-submit.sh "What time is it?" --project openclaw-bot
+pai-result.sh --wait --latest
+
+# Test auto-escalation (send complex message via internal pipeline)
+src/pipeline/send.sh task "Security Review" "Perform a threat model analysis of the pipeline permissions"
+# → pipeline-check cron classifies as COMPLEX → escalate/ → pai-submit.sh
+
+# Check reverse-task watcher
+journalctl --user -u pai-reverse --since "1 hour ago"
+```
+
+### Key Design Decisions
+
+- **Why two separate watchers?** systemd user-level path units can watch `~/` (escalation uses `PathChanged`) but cannot watch `/var/lib/` (result notification and reverse-tasks use Python inotify). Two different mechanisms for two different directory locations.
+- **Why two-stage escalation?** Haiku in cron sessions cannot reliably execute shell commands — it "role-plays" running them instead. Separating classification (AI) from execution (deterministic scripts) is the robust pattern.
+- **Why `openclaw agent` for reverse tasks?** It's the Gregor-side equivalent of `claude -p` — programmatic one-shot execution through the gateway without needing cron or inbox polling.
