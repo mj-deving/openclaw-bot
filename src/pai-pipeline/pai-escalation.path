@@ -1,0 +1,14 @@
+# pai-escalation.path - Watch for files in pipeline/escalate/
+# Triggers pai-escalation.service when new files appear.
+# This works because escalate/ is inside the user's home directory.
+
+[Unit]
+Description=Watch pipeline escalate directory for new files
+Documentation=https://github.com/mj-deving/openclaw-bot
+
+[Path]
+PathChanged=%h/.openclaw/pipeline/escalate
+MakeDirectory=yes
+
+[Install]
+WantedBy=default.target

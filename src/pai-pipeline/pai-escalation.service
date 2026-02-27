@@ -1,0 +1,11 @@
+# pai-escalation.service - Submit escalated pipeline messages to PAI pipeline
+# Triggered by pai-escalation.path when files appear in escalate/
+
+[Unit]
+Description=Submit escalated pipeline messages to PAI pipeline
+Documentation=https://github.com/mj-deving/openclaw-bot
+
+[Service]
+Type=oneshot
+ExecStart=%h/scripts/pai-escalation-submit.sh
+Environment=PATH=%h/.npm-global/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin:%h/scripts
