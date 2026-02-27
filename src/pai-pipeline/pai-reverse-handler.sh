@@ -99,6 +99,7 @@ with open(sys.argv[2], 'w') as fh:
     agent_exit=0
 
     agent_output=$(openclaw agent \
+        --local \
         --session-id "$session_id" \
         --message "$prompt" \
         --json \
