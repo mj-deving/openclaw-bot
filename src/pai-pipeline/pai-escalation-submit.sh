@@ -58,6 +58,13 @@ with open(sys.argv[1]) as fh:
 print(d.get('project', 'openclaw-bot'))
 " "$f" 2>/dev/null) || project="openclaw-bot"
 
+    task_type=$(python3 -c "
+import json, sys
+with open(sys.argv[1]) as fh:
+    d = json.load(fh)
+print(d.get('type', 'request'))
+" "$f" 2>/dev/null) || task_type="request"
+
     if [ -z "$body" ]; then
         log "ERROR: Empty body in $fname, moving to ack"
         mv "$f" "$ACK_DIR/$fname"
@@ -65,8 +72,8 @@ print(d.get('project', 'openclaw-bot'))
     fi
 
     # Submit to PAI pipeline
-    log "Escalating: $fname (priority=$priority, project=$project)"
-    if "$PAI_SUBMIT" "$body" --project "$project" --priority "$priority" 2>>"$LOG_FILE"; then
+    log "Escalating: $fname (priority=$priority, project=$project, type=$task_type)"
+    if "$PAI_SUBMIT" "$body" --project "$project" --priority "$priority" --type "$task_type" 2>>"$LOG_FILE"; then
         log "SUCCESS: $fname escalated to PAI pipeline"
     else
         log "ERROR: pai-submit.sh failed for $fname (exit $?)"
