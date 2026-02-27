@@ -111,7 +111,7 @@ PYEOF
     else
         # Real run: read result, write notification to inbox, create marker
         python3 - "$result_file" "$INBOX_DIR" << 'PYEOF'
-import json, sys, os
+import json, sys, os, glob
 from datetime import datetime, timezone
 import hashlib
 
@@ -134,16 +134,38 @@ error_msg = r.get("error")
 usage = r.get("usage", r.get("token_usage", {}))
 session_id = r.get("session_id")
 result_timestamp = r.get("timestamp", "unknown")
+structured = r.get("structured", {})
+branch = r.get("branch")
+
+# --- Check original task type from ack/ directory ---
+# The task file is moved to ack/ after bridge picks it up, with same taskId prefix
+ack_dir = "/var/lib/pai-pipeline/ack"
+original_type = "request"  # default
+for ack_file in glob.glob(os.path.join(ack_dir, f"{task_id}*.json")):
+    try:
+        with open(ack_file) as af:
+            orig = json.load(af)
+        original_type = orig.get("type", "request")
+        break
+    except (json.JSONDecodeError, IOError):
+        pass
+
+is_orchestrate = (original_type == "orchestrate")
 
 # Truncate summary for notification
 if len(summary) > 300:
     summary = summary[:297] + "..."
 
-# Errors get high priority
-priority = "high" if status == "error" else "normal"
+# Priority: errors are high, follow_up_needed is high, else normal
+follow_up_needed = False
+if isinstance(structured, dict):
+    follow_up_needed = structured.get("follow_up_needed", False)
+priority = "high" if (status == "error" or follow_up_needed) else "normal"
 
 # Build subject line
-if status == "error":
+if is_orchestrate:
+    subject = f"PAI Workflow Initiated: {task_id}"
+elif status == "error":
     subject = f"PAI Result FAILED: {task_id}"
 elif status == "completed":
     subject = f"PAI Result Ready: {task_id}"
@@ -156,20 +178,50 @@ body_lines = [
     f"Status: {status}",
     f"Completed: {result_timestamp}",
 ]
-if usage:
-    inp = usage.get("input_tokens", usage.get("input", 0))
-    out = usage.get("output_tokens", usage.get("output", 0))
-    if inp or out:
-        body_lines.append(f"Tokens: {inp} in / {out} out")
-if session_id:
-    body_lines.append(f"Session: {session_id} (resumable with --session)")
-body_lines.append("")
-body_lines.append("--- Summary ---")
-body_lines.append(summary)
-if error_msg:
+if is_orchestrate:
+    body_lines.append(f"Type: orchestrate")
     body_lines.append("")
-    body_lines.append("--- Error ---")
-    body_lines.append(str(error_msg))
+    body_lines.append("--- Workflow Initiated ---")
+    body_lines.append("This task has been decomposed into a multi-step workflow.")
+    body_lines.append("Progress and completion will be reported via Telegram.")
+    body_lines.append("Use pai-workflow-status.sh to check workflow progress.")
+else:
+    if usage:
+        inp = usage.get("input_tokens", usage.get("input", 0))
+        out = usage.get("output_tokens", usage.get("output", 0))
+        if inp or out:
+            body_lines.append(f"Tokens: {inp} in / {out} out")
+    if session_id:
+        body_lines.append(f"Session: {session_id} (resumable with --session)")
+    if branch:
+        body_lines.append(f"Branch: {branch}")
+    body_lines.append("")
+    body_lines.append("--- Summary ---")
+    body_lines.append(summary)
+    if error_msg:
+        body_lines.append("")
+        body_lines.append("--- Error ---")
+        body_lines.append(str(error_msg))
+    # Structured field enrichment (one-shot results)
+    if isinstance(structured, dict) and structured:
+        artifacts = structured.get("artifacts", [])
+        if artifacts:
+            body_lines.append("")
+            body_lines.append("--- Artifacts ---")
+            for a in artifacts:
+                body_lines.append(f"  - {a}")
+        recs = structured.get("recommendations_for_sender")
+        if recs:
+            body_lines.append("")
+            body_lines.append("--- Recommendations ---")
+            body_lines.append(str(recs))
+    if follow_up_needed:
+        body_lines.append("")
+        body_lines.append("*** FOLLOW-UP NEEDED: Isidore Cloud flagged this result for your review. ***")
+        suggested = structured.get("suggested_next_prompt") if isinstance(structured, dict) else None
+        if suggested:
+            body_lines.append(f"Suggested next: {suggested}")
+
 body_lines.append("")
 body_lines.append(f"Full result: pai-result.sh {task_id}")
 body_lines.append(f"Acknowledge: pai-result.sh {task_id} --ack")
@@ -198,6 +250,10 @@ message = {
     "body": body,
     "priority": priority,
     "replyTo": None,
+    "workflow_initiated": is_orchestrate,
+    "structured": structured if isinstance(structured, dict) else {},
+    "branch": branch,
+    "follow_up_needed": follow_up_needed,
 }
 
 # Write to inbox
@@ -206,7 +262,8 @@ with open(inbox_path, "w") as f:
     json.dump(message, f, indent=2)
 os.chmod(inbox_path, 0o660)
 
-print(f"NOTIFIED: [{status}] {task_id} -> {filename}")
+label = "WORKFLOW" if is_orchestrate else status
+print(f"NOTIFIED: [{label}] {task_id} -> {filename}")
 PYEOF
 
         # Create marker only if python3 succeeded
