@@ -152,6 +152,15 @@ with open(path, "w") as f:
 # Ensure group-readable/writable (setgid handles group ownership)
 os.chmod(path, 0o660)
 
+# Rename file to match the JSON id field if they differ
+json_id = task.get("id", "")
+if json_id and f"{json_id}.json" != filename:
+    new_path = os.path.join(tasks_dir, f"{json_id}.json")
+    os.rename(path, new_path)
+    os.chmod(new_path, 0o660)
+    path = new_path
+    filename = f"{json_id}.json"
+
 print(f"Task submitted: {task_id}")
 print(f"File: {path}")
 print(f"Type: {task_type} | Priority: {priority} | Mode: {mode} | Timeout: {timeout_minutes}m")

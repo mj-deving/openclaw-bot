@@ -144,9 +144,29 @@ fi
 RESULT_FILE="${RESULTS_DIR}/${TASK_ID}.json"
 
 if [[ ! -f "$RESULT_FILE" ]]; then
-    echo "No result found for task: ${TASK_ID}" >&2
-    echo "Task may still be processing. Use: pai-result.sh --wait ${TASK_ID}" >&2
-    exit 1
+    # Prefix fallback: find results whose filename starts with the given ID
+    PREFIX_MATCHES=()
+    while IFS= read -r -d '' match; do
+        PREFIX_MATCHES+=("$match")
+    done < <(find "$RESULTS_DIR" -maxdepth 1 -name "${TASK_ID}*.json" -print0 2>/dev/null | sort -z)
+
+    if [[ ${#PREFIX_MATCHES[@]} -eq 1 ]]; then
+        RESULT_FILE="${PREFIX_MATCHES[0]}"
+        TASK_ID=$(basename "$RESULT_FILE" .json)
+        echo "(Exact match not found — using prefix match: ${TASK_ID})"
+        echo ""
+    elif [[ ${#PREFIX_MATCHES[@]} -gt 1 ]]; then
+        echo "No exact match for '${TASK_ID}', but found ${#PREFIX_MATCHES[@]} prefix matches:" >&2
+        for m in "${PREFIX_MATCHES[@]}"; do
+            echo "  $(basename "$m" .json)" >&2
+        done
+        echo "Specify the full task ID." >&2
+        exit 1
+    else
+        echo "No result found for task: ${TASK_ID}" >&2
+        echo "Task may still be processing. Use: pai-result.sh --wait ${TASK_ID}" >&2
+        exit 1
+    fi
 fi
 
 python3 -c "
