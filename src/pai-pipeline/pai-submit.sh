@@ -130,7 +130,7 @@ if context_content:
 task = {
     "id": task_id,
     "from": "gregor",
-    "to": "isidore-cloud",
+    "to": "isidore_cloud",
     "timestamp": timestamp,
     "type": task_type,
     "priority": priority,
@@ -139,11 +139,10 @@ task = {
     "session_id": session_id,
     "prompt": prompt,
     "context": context,
-    "constraints": {
-        "max_turns": max_turns,
-        "timeout_minutes": timeout_minutes
-    }
+    "max_turns": max_turns,
+    "timeout_minutes": timeout_minutes,
 }
+
 
 path = os.path.join(tasks_dir, filename)
 with open(path, "w") as f:
