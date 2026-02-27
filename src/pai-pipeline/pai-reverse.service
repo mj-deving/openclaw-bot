@@ -1,0 +1,29 @@
+# pai-reverse.service - Watch for reverse-tasks from Isidore Cloud
+# Install to: ~/.config/systemd/user/pai-reverse.service
+#
+# Long-running inotify watcher (Type=simple). Detects new reverse-task
+# files in /var/lib/pai-pipeline/reverse-tasks/ and runs
+# pai-reverse-handler.sh to process them via the OpenClaw gateway.
+#
+# Uses a Python inotify watcher instead of a systemd path unit because
+# user-level systemd cannot watch /var/lib/ directories.
+
+[Unit]
+Description=PAI pipeline reverse-task watcher (Isidore Cloud -> Gregor)
+Documentation=https://github.com/mj-deving/openclaw-bot
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/scripts/pai-reverse-watcher.py
+Restart=on-failure
+RestartSec=10
+
+# Ensure openclaw CLI and scripts are findable
+Environment=PATH=%h/.npm-global/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin:%h/scripts
+
+# Logging to journal (journalctl --user -u pai-reverse)
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
