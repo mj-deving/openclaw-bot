@@ -561,10 +561,72 @@ systemctl --user restart pai-reverse.service
 tail -20 ~/.openclaw/logs/pai-reverse.log
 ```
 
+## Layer 7 — Overnight PRD Queue
+
+Queue-based system for batch PRD execution during Marius's Claude Max 5-hour window. Queues PRD files before bed, processes them sequentially overnight, delivers a morning report.
+
+### Architecture
+
+- **`pai-overnight.sh`** (VPS, `~/scripts/`) — Queue coordinator with subcommands: `init`, `advance`, `status`, `report`, `cancel`, `resume`
+- **`pai-overnight-local.sh`** (local) — Transfers PRDs to VPS staging via scp, proxies all subcommands via ssh
+- **Advance cron** (`*/5 * * * *`) — Checks current task, submits next when done, generates morning report on completion
+- **Directory** (`/var/lib/pai-pipeline/overnight/`) — `queue.json` manifest, `staging/` for PRD files, `archive/` for past runs
+
+### Design Decisions
+
+- **Cron over watcher:** `*/5` cron (not inotify) because one line vs. new systemd service, auto-recovers if crashes, proven pattern from workflow-monitor
+- **Sequential, not parallel:** One task at a time to avoid bridge rate limiter (3/5min → 60min backoff). 5-minute cron interval naturally spaces submissions
+- **Fail-forward:** Failed tasks don't block the queue. Each is marked failed and advance moves to next item
+- **5-hour Max window timeout:** Tasks running >5 hours are assumed to have hit the Max window ceiling and are marked failed
+- **flock:** Prevents overlapping cron invocations from racing on queue.json
+
+### Queue Lifecycle
+
+```
+pai-overnight-local.sh plan1.md plan2.md --project openclaw-bot
+  → scp PRDs to VPS /var/lib/pai-pipeline/overnight/staging/
+  → ssh pai-overnight.sh init → builds queue.json, submits first task
+
+*/5 cron → pai-overnight.sh advance
+  → checks results/ for current task (with prefix fallback)
+  → if done: mark completed/failed, submit next
+  → if all done: write morning report to Gregor inbox, archive queue
+```
+
+Item status: `pending` → `running` → `completed` | `failed` | `cancelled`
+Queue status: `initialized` → `running` → `completed` | `cancelled`
+
+### Prerequisites
+
+The bridge has a hardcoded 5-minute timeout. PRD tasks routinely take 10-120 minutes. The bridge must read `constraints.timeout_minutes` from the task JSON instead of using the global default. Without this fix, every overnight task gets killed after 5 minutes.
+
+### Usage
+
+```bash
+# From local machine — queue PRDs
+src/pai-pipeline/pai-overnight-local.sh ~/.claude/MEMORY/WORK/*/PRD-*.md --project openclaw-bot
+
+# Check progress
+src/pai-pipeline/pai-overnight-local.sh --status
+
+# Morning report
+src/pai-pipeline/pai-overnight-local.sh --report
+
+# Cancel active queue
+src/pai-pipeline/pai-overnight-local.sh --cancel
+
+# Resume failed item
+src/pai-pipeline/pai-overnight-local.sh --resume
+
+# On VPS directly
+pai-overnight.sh status --json
+pai-overnight.sh report
+```
+
 ## Future Enhancements
 
 - **HTTP endpoint (Layer 2+):** Add a `localhost:PORT/task` HTTP endpoint to the bridge for synchronous task submission. Coexists with file-based queue — HTTP writes to the same directory.
 - **Sender-side validation:** `--strict` mode in `pai-submit.sh` to verify that `--project` maps to an existing directory before submitting.
 - ~~**Complexity classifier:**~~ **Implemented (Layer 5).** Two-stage auto-escalation: Haiku classifies → deterministic script submits. Rules in `~/.openclaw/workspace/AGENTS.md` under `## Partner & Delegation`.
 - ~~**Reverse pipeline:**~~ **Implemented (Layer 6).** Isidore Cloud can delegate tasks back to Gregor via `reverse-tasks/`. inotify watcher + `openclaw agent` gateway CLI.
-- **PRD-driven overnight workflow:** Gregor queues PRD files as tasks before Marius's 5-hour Max subscription window, Isidore processes autonomously.
+- ~~**PRD-driven overnight workflow:**~~ **Implemented (Layer 7).** Sequential PRD queue with cron advance, fail-forward, morning report to Gregor inbox.

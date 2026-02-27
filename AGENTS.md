@@ -49,6 +49,8 @@ This repository contains the most thorough guide to deploying OpenClaw on a self
 | `src/pai-pipeline/pai-reverse-handler.sh` | Bash | ~170 | PAI pipeline: reverse-task processor via `openclaw agent` (Layer 6) | [utility] |
 | `src/pai-pipeline/pai-reverse-watcher.py` | Python | ~90 | PAI pipeline: inotify watcher for reverse-tasks/ | [utility] |
 | `src/pai-pipeline/pai-reverse.service` | systemd | 20 | PAI pipeline: reverse-task watcher service | [config] |
+| `src/pai-pipeline/pai-overnight.sh` | Bash | ~340 | PAI pipeline: overnight PRD queue coordinator (Layer 7) | [utility] |
+| `src/pai-pipeline/pai-overnight-local.sh` | Bash | ~100 | PAI pipeline: local helper for overnight queue | [utility] |
 | `assets/social-preview.png` | PNG | — | GitHub social preview image (1280x640) | [asset] |
 
 ## Architecture
@@ -59,7 +61,7 @@ Two AI agents run on the same VPS as separate Linux users, communicating through
 
 - **Gregor** (`openclaw` user) — OpenClaw/Sonnet via OpenRouter. Always-on Telegram bot for routine tasks. Auto-escalates complex tasks (security reviews, architecture, multi-file refactoring) to Isidore Cloud via PAI pipeline.
 - **Isidore Cloud** (`isidore_cloud` user) — Claude Code/Opus. On-demand heavy computation via `claude -p` bridge.
-- **PAI Pipeline** (`/var/lib/pai-pipeline/`) — Bidirectional shared directory with `pai` group permissions (2770 setgid). Forward: Gregor → Isidore (tasks/results). Reverse: Isidore → Gregor (reverse-tasks/reverse-results). Includes auto-escalation (Layer 5) and reverse-task watcher (Layer 6). See `Reference/PAI-PIPELINE.md`.
+- **PAI Pipeline** (`/var/lib/pai-pipeline/`) — Bidirectional shared directory with `pai` group permissions (2770 setgid). Forward: Gregor → Isidore (tasks/results). Reverse: Isidore → Gregor (reverse-tasks/reverse-results). Overnight: sequential PRD queue (overnight/). Includes auto-escalation (Layer 5), reverse-task watcher (Layer 6), and overnight queue (Layer 7). See `Reference/PAI-PIPELINE.md`.
 
 ### Architecture Decisions
 
