@@ -70,7 +70,10 @@ print(json.dumps({
         python3 -c "
 import json, sys
 result = {
+    'id': f'result-{sys.argv[1]}',
     'taskId': sys.argv[1],
+    'from': 'gregor',
+    'to': 'isidore_cloud',
     'status': 'error',
     'error': 'Empty prompt in reverse-task',
     'timestamp': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
@@ -113,12 +116,18 @@ agent_json = sys.argv[2]
 result_path = sys.argv[3]
 task_file = sys.argv[4]
 
-# Parse agent output (may be JSON or plain text)
+# Parse agent output (openclaw agent --json format)
 try:
     agent_data = json.loads(agent_json)
-    summary = agent_data.get('response', agent_data.get('summary', agent_json[:500]))
-    usage = agent_data.get('usage', {})
-    session_id = agent_data.get('sessionId', agent_data.get('session_id'))
+    # Extract response text from openclaw payloads structure
+    payloads = (agent_data.get('result') or {}).get('payloads', [])
+    if payloads:
+        summary = '\n'.join(p.get('text', '') for p in payloads if p.get('text'))
+    else:
+        summary = agent_data.get('summary', agent_json[:500])
+    meta = (agent_data.get('result') or {}).get('meta', {}).get('agentMeta', {})
+    usage = meta.get('usage', {})
+    session_id = meta.get('sessionId', agent_data.get('session_id'))
 except (json.JSONDecodeError, TypeError):
     summary = agent_json[:500]
     usage = {}
@@ -129,9 +138,12 @@ with open(task_file) as fh:
     original = json.load(fh)
 
 result = {
+    'id': f'result-{task_id}',
     'taskId': task_id,
+    'from': 'gregor',
+    'to': original.get('from', 'isidore_cloud'),
     'status': 'completed',
-    'summary': summary,
+    'result': summary,
     'usage': usage,
     'session_id': session_id,
     'timestamp': datetime.now(timezone.utc).isoformat(),
@@ -159,10 +171,13 @@ with open(task_file) as fh:
     original = json.load(fh)
 
 result = {
+    'id': f'result-{task_id}',
     'taskId': task_id,
+    'from': 'gregor',
+    'to': original.get('from', 'isidore_cloud'),
     'status': 'error',
     'error': f'openclaw agent exited with code {exit_code}',
-    'output': output[:500] if output else None,
+    'result': output[:500] if output else None,
     'timestamp': datetime.now(timezone.utc).isoformat(),
     'context': original.get('context', {})
 }
