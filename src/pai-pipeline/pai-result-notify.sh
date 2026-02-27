@@ -152,9 +152,10 @@ for ack_file in glob.glob(os.path.join(ack_dir, f"{task_id}*.json")):
 
 is_orchestrate = (original_type == "orchestrate")
 
-# Truncate summary for notification
-if len(summary) > 300:
-    summary = summary[:297] + "..."
+# Truncate summary for notification (2000 chars keeps total body under Telegram's 4096 limit)
+original_len = len(summary)
+if original_len > 2000:
+    summary = summary[:1970] + f"\n\n...[truncated, {original_len} chars total — run: pai-result.sh {task_id}]"
 
 # Priority: errors are high, follow_up_needed is high, else normal
 follow_up_needed = False
