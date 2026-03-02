@@ -1611,12 +1611,54 @@ chmod +x ~/scripts/auto-update.sh
 (crontab -l 2>/dev/null; echo "0 4 * * 0 /home/openclaw/scripts/auto-update.sh >> /home/openclaw/.openclaw/logs/update.log 2>&1") | crontab -
 ```
 
+### 10.6 Database Maintenance
+
+OpenClaw's SQLite database (`~/.openclaw/memory/main.sqlite`) accumulates embedding cache entries and session chunks indefinitely. Without maintenance, this leads to a compaction loop — the bot spends all its time compacting context instead of responding. See [Clelp's writeup](https://clelp.ai/blog/fixing-openclaw-compaction-loop) for a real-world incident.
+
+**Two preventive fixes (apply immediately after install):**
+
+1. **Switch to WAL journal mode** — better performance under frequent access:
+   ```bash
+   python3 -c "
+   import sqlite3
+   conn = sqlite3.connect('$HOME/.openclaw/memory/main.sqlite')
+   conn.execute('PRAGMA journal_mode=WAL;')
+   conn.close()
+   print('WAL mode enabled')
+   "
+   ```
+
+2. **Set explicit pruning config** — prevent aggressive defaults from causing compaction loops. In `~/.openclaw/openclaw.json`, add:
+   ```jsonc
+   {
+     "context": {
+       "pruning": {
+         "ttl": 7200,              // 2 hours (seconds) — don't go below this
+         "keepLastAssistants": 8   // Retain last 8 bot responses through pruning
+       }
+     }
+   }
+   ```
+   Low values (TTL=30min, keepLastAssistants=3) create a feedback loop: rapid pruning → constant compaction → more pruning.
+
+**Warning signs of compaction loop:**
+- "Compacting context..." appearing every few seconds
+- `/reset` not helping
+- Multi-minute response times
+- `main.sqlite` exceeding 300MB
+
+**Critical gotcha:** OpenClaw stores `updated_at` as millisecond timestamps. Cleanup queries must multiply `unixepoch()` by 1000 — see `Reference/DATABASE-MAINTENANCE.md` for safe queries.
+
+> **Full reference:** `Reference/DATABASE-MAINTENANCE.md` — root causes, remediation steps, health check queries, size thresholds, and Gregor's baseline audit.
+
 ### ✅ Phase 10 Checkpoint
 
 - [ ] Daily backups running (`crontab -l` shows backup entry)
 - [ ] Binding verification running every 5 minutes
 - [ ] Log rotation configured
 - [ ] Auto-update scheduled weekly
+- [ ] SQLite in WAL journal mode
+- [ ] Context pruning explicitly configured (TTL >= 2h, keepLastAssistants >= 8)
 
 ---
 
@@ -2202,15 +2244,16 @@ Tool results (file reads, web searches) are the fastest-growing context consumer
 
 ```jsonc
 {
-  "contextPruning": {
-    "mode": "cache-ttl",
-    "ttl": "6h",                    // Tool results expire after 6 hours
-    "keepLastAssistants": 3         // Always keep the last 3 responses
+  "context": {
+    "pruning": {
+      "ttl": 7200,                    // 2 hours (seconds) — minimum recommended
+      "keepLastAssistants": 8         // Keep the last 8 responses through pruning
+    }
   }
 }
 ```
 
-If the bot does heavy tool use, consider a shorter TTL. If conversations are long but tool-light, the defaults work fine.
+**Warning:** Low values (TTL < 2h, keepLastAssistants < 5) can trigger a compaction loop — see Phase 10.6 and `Reference/DATABASE-MAINTENANCE.md`. The bot enters a cycle of pruning, reindexing, and compacting instead of responding.
 
 ### 14.6 Cache-Friendly Architecture
 
