@@ -20,9 +20,12 @@ The `embedding_cache` table has no expiration logic. Every embedding ever genera
 ### 2. Aggressive Context Pruning
 Low TTL + low `keepLastAssistants` creates a feedback loop: rapid pruning triggers constant compaction, which triggers more pruning. Clelp had TTL=30min and `keepLastAssistants=3`.
 
-**Recommended config:**
-- `context.pruning.ttl` = 2 hours (minimum)
-- `context.pruning.keepLastAssistants` = 8
+**Recommended config** (path: `agents.defaults.contextPruning` in `openclaw.json`):
+- `ttl` = `"2h"` (minimum — string format, not seconds)
+- `keepLastAssistants` = 8
+- `mode` = `"cache-ttl"`
+
+**Warning:** Do NOT use a top-level `"context"` key — OpenClaw rejects unrecognized root keys and the entire config becomes invalid.
 
 ### 3. Orphaned Session Files
 `.jsonl` transcript files in the sessions directory can accumulate without corresponding active sessions, consuming index overhead during context lookups.
@@ -125,8 +128,8 @@ SELECT COUNT(*) FROM chunks WHERE source='sessions';
 | Embedding cache | 198 rows, 3.08 MB | Healthy (oldest: Feb 20, newest: Mar 2) |
 | Session chunks | 84 | Low |
 | Orphaned `.jsonl` files | 0 | Clean |
-| Context pruning TTL | 7200s (2 hours) | Applied 2026-03-02 |
-| Context pruning keepLastAssistants | 8 | Applied 2026-03-02 |
+| `agents.defaults.contextPruning.ttl` | `"2h"` | Applied 2026-03-02 |
+| `agents.defaults.contextPruning.keepLastAssistants` | 8 | Applied 2026-03-02 |
 
 **Top tables by size:**
 - `embedding_cache`: 3.2 MB (40% of DB)

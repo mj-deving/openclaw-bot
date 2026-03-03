@@ -57,6 +57,53 @@ Updated per upgrade cycle. Entries marked with action status.
 
 ---
 
+## v2026.3.2
+
+Covers both v2026.3.1 and v2026.3.2 security items (upgraded directly from v2026.2.26).
+
+### Critical / Config-Relevant
+
+| Item | Impact | Our Action |
+|------|--------|------------|
+| **`tools.allow` → `tools.alsoAllow`** (BREAKING) — `tools.allow` now rejects unknown entries and disables allowlist | Our `tools.allow: ["cron"]` broke on upgrade. Migrated to `tools.alsoAllow`. | APPLIED |
+| **TOCTOU symlink race in `writeFileWithinRoot`** (GHSA-x82f-27x3-q89c) — open-without-truncate, `O_EXCL` create, post-open validation, out-of-root cleanup | Critical host filesystem protection fix. Node.js lacks `openat(2)` so fix is defense-in-depth. | BENEFITS US |
+| **Sandbox media staging symlink escape** — root-scoped safe writes replace direct copies for local + SCP attachments | Blocks out-of-workspace overwrite via media/inbound alias traversal. | BENEFITS US |
+| **Webhook auth-before-body parsing** — BlueBubbles, Google Chat handlers authenticate before reading body; size + timeout budgets | Prevents unauthenticated slow-body DoS. Our Telegram webhook is polling-based, but defense-in-depth. | BENEFITS US |
+| **Prompt spoofing hardening** — runtime events routed through trusted system context; `[System Message]` markers neutralized | Directly relevant: Telegram-facing bot gets stronger prompt injection resistance. | BENEFITS US |
+| **Gateway canonicalization hardening** — plugin route paths decoded to canonical fixpoint; auth enforced on encoded `/api/channels/*` variants | Prevents auth bypass via encoded path variants on our loopback gateway. | BENEFITS US |
+| **Cross-agent sandbox inheritance** — blocks sandboxed→unsandboxed subagent spawning via `sessions_spawn` | Prevents sandbox bypass. We don't use sandbox, but defense-in-depth. | BENEFITS US |
+| **Exec approval cwd revalidation** — working directory identity checked before execution, fails closed on drift | Prevents stale approval exploitation in exec operations. | BENEFITS US |
+| **Post-compaction audit injection removed** — Layer 3 fake system message referencing `WORKFLOW_AUTO.md` deleted | Was a prompt injection vector. Removed entirely. | BENEFITS US |
+| **Config backups 0600** — owner-only permissions on rotated config backups; orphan `.bak.*` cleaned | API keys in backups no longer world-readable. | BENEFITS US |
+| **HTTP 529 → rate_limit** — provider overload classified as rate_limit, triggers failover | OpenRouter 529 errors trigger our fallback chain. | BENEFITS US |
+
+### Security Fixes (Auto-Applied)
+
+- Security/fs-safe: same-directory temp writes + atomic rename + post-write inode revalidation
+- Security/Browser: fd-verified output writes replacing check-then-rename pattern
+- Security/Bootstrap: reject symlink/hardlink alias bootstrap files resolving outside workspace
+- Security/ACP sandbox: fail-closed guardrails for `sessions_spawn` with `runtime="acp"`
+- Security/Sandbox workspace: read-only `/workspace` bind mounts when `workspaceAccess != rw`
+- Security/Docker: explicit `OPENCLAW_SANDBOX` opt-in parsing; deferred docker.sock exposure
+- Security/Gateway WS: plaintext `ws://` loopback-only by default; break-glass via `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS`
+- Security/Gateway: loopback origin tied to socket address not Host header; bounded regex evaluation
+- Security/Plugin HTTP: explicit auth required for route registration; ownership guards on duplicates
+- Security/Webhook: exact path matches for voice-call webhooks (not prefix matches)
+- Security/Web SSRF: DNS pinning kept for untrusted `web_fetch` when proxy env vars set
+- Security/Node camera: SSRF-guarded fetch with redirect checks for `camera.snap`/`camera.clip`
+- Security/Exec argv: approval-bound wrapper argv semantics preserved post-hardening
+- Security/Exec allowlist: regex metacharacters escaped in path-pattern literals (fixes `/usr/bin/g++` crash)
+- Security/Skills archive: unified tar safety checks, compressed-size limits, TOCTOU detection
+- Security/Skills workspace: `symlink_escape` warning in `openclaw security audit`
+- Security/Prompt: stop injecting runtime events into user-role prompt text
+- Security/Webchat: filter `NO_REPLY` tokens from `chat.history` responses
+- Security/macOS: `Umask=077` in LaunchAgent plists
+- Security/Config: owner-only permissions on config backup rotation
+- Security/Feishu: webhook rate-limiting with stale-window pruning; reaction verification hardened
+- Security/Docker: container path permissions normalized to 755/644
+
+---
+
 ## v2026.2.22
 
 ### Critical / Config-Relevant
@@ -105,3 +152,7 @@ Updated per upgrade cycle. Entries marked with action status.
 | Fallback chain now reliable | v2026.2.24 — traversal fix | APPLIED |
 | Per-agent cache params possible | v2026.2.23 — `params` overrides | FUTURE |
 | Session cleanup available | v2026.2.23 — `sessions cleanup` | FUTURE |
+| `tools.allow` → `tools.alsoAllow` migration | v2026.3.2 — allowlist key renamed | APPLIED |
+| Monitor compaction loop regression (#32106) | v2026.3.1 — `softThresholdTokens=4000` | INVESTIGATE |
+| `openclaw config validate` as pre-restart check | v2026.3.2 — config validation CLI | APPLIED |
+| ACP dispatch now default-on | v2026.3.2 — set `false` if unwanted | NOTED |

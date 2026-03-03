@@ -453,6 +453,190 @@ Upgraded 2026-02-25 from v2026.2.21-2. Gateway restarted, cron jobs verified.
 
 ---
 
+## v2026.3.2
+
+Upgraded 2026-03-03 from v2026.2.26 (skipping v2026.3.1). Gateway restarted, Telegram connection verified via doctor.
+
+### Breaking Changes
+
+1. **`tools.allow` renamed to `tools.alsoAllow`** — The `tools.allow` allowlist key now rejects unknown entries and disables the allowlist entirely. Must migrate to `tools.alsoAllow` for additive tool enablement (e.g., `cron` outside the profile).
+   - **Impact:** Our `tools.allow: ["cron"]` broke on upgrade — gateway logged `tools.allow allowlist contains unknown entries (cron)`. Migrated to `tools.alsoAllow: ["cron"]`. **APPLIED**
+
+2. **`tools.profile` default → `messaging`** — New installs default to `messaging` profile instead of broad coding/system access.
+   - **Impact:** Our existing `tools.profile: "full"` is preserved. Only affects new onboarding. **NONE**
+
+3. **ACP dispatch enabled by default** — `acp.dispatch.enabled` now defaults to `true`.
+   - **Impact:** We don't use ACP. No immediate impact, but set `acp.dispatch.enabled: false` if ACP dispatch causes unexpected behavior. **NOTED**
+
+4. **Plugin SDK `registerHttpHandler()` removed** — Replaced by `registerHttpRoute()`.
+   - **Impact:** We use no custom plugins. **NONE**
+
+### Telegram
+
+5. **Telegram streaming default → `partial`** — New installs get live preview streaming out of the box.
+   - **Impact:** Existing config with explicit streaming value unaffected. If we ever re-onboard, streaming will default to `partial`. **NOTED**
+
+6. **Telegram restart polling teardown** — Stops Telegram bot instance when polling cycle exits so SIGUSR1 restarts fully tear down old long-poll loops. Reduces post-restart `getUpdates` 409 conflict storms.
+   - **Impact:** Our restarts should have fewer 409 conflicts. **BENEFITS**
+
+7. **Telegram plugin command validation** — Validates and normalizes plugin command name/description at registration. Guards native menu normalization preventing crashes from malformed specs.
+   - **Impact:** More robust command registration. **BENEFITS**
+
+8. **Telegram models picker compact callbacks** — Falls back to compact callback payloads for long model buttons, avoiding Telegram 64-byte callback truncation.
+   - **Impact:** Model selection buttons work reliably. **BENEFITS**
+
+### Cron & Heartbeat
+
+9. **Cron session reaper reliability** — Moves cron session reaper sweeps into `onTimer` `finally` block. Keeps pruning active even when timer ticks fail.
+   - **Impact:** Prevents stale isolated cron sessions from accumulating — directly relevant to our compaction loop prevention. **BENEFITS**
+
+10. **Cron `HEARTBEAT_OK` suppression** — Two separate fixes (#32093, #32131) suppress `HEARTBEAT_OK` ack noise from reaching user chat in isolated announce mode.
+    - **Impact:** If heartbeat delivery is ever enabled, internal ack tokens won't leak to Telegram. **BENEFITS**
+
+11. **Cron store migration** — Normalizes legacy cron jobs with string schedules and old-format fields on load.
+    - **Impact:** Prevents schedule-error loops from old persisted stores. **BENEFITS**
+
+12. **Cron delivery mode `none` disables messaging tool** — When `delivery.mode` is `"none"`, the agent messaging tool is disabled. Cron editor sends explicit `delivery: { mode: "none" }` for both add and update.
+    - **Impact:** Cron runs with `none` delivery can't accidentally send messages. **BENEFITS**
+
+13. **Heartbeat model hot-reload** — `models.*` and `agents.defaults.model` config changes are now heartbeat hot-reload triggers.
+    - **Impact:** Can change Gregor's model without full gateway restart. **BENEFITS**
+
+14. **Lightweight bootstrap for automation** — Opt-in `--light-context` for cron and `agents.*.heartbeat.lightContext` for heartbeat. Heartbeat keeps only `HEARTBEAT.md`, cron skips bootstrap-file injection.
+    - **Impact:** Can reduce token cost for heartbeat/cron runs. **CONSIDER**
+
+### Providers (OpenRouter)
+
+15. **HTTP 529 → rate_limit classification** — Provider overload (HTTP 529, common with Anthropic-compatible APIs) now classified as `rate_limit`, triggering model failover.
+    - **Impact:** OpenRouter 529 errors (overload) now trigger our fallback chain instead of hard failure. **BENEFITS**
+
+16. **OpenRouter x-ai compatibility** — Skips `reasoning.effort` injection for `x-ai/*` models (e.g., Grok) on OpenRouter.
+    - **Impact:** If we ever route through Grok, reasoning params won't break. **NOTED**
+
+### Memory & Context
+
+17. **Ollama memory embeddings** — `memorySearch.provider` and `memorySearch.fallback` now accept `"ollama"`.
+    - **Impact:** Alternative to our local `embeddinggemma-300m`. Could simplify memory config. **CONSIDER**
+
+18. **Bootstrap file refactoring** — New truncation strategy: 70/20/10 split (head/tail/marker) for oversized files. Documented caps: `bootstrapMaxChars` (20k/file), `bootstrapTotalMaxChars` (150k total).
+    - **Impact:** Better handling of large workspace files in context. **BENEFITS**
+
+19. **Task continuity across compaction** — New `TASKS.md` ledger for task state persistence across compaction boundaries with post-compaction recovery.
+    - **Impact:** Agent tasks survive compaction. **BENEFITS**
+
+20. **Compaction identifier preservation policy** — New policy for preserving identifiers through compaction.
+    - **Impact:** Key context identifiers survive compaction. **BENEFITS**
+
+### Agents & Sessions
+
+21. **Claude 4.6 adaptive thinking default** — `adaptive` is now the default thinking level for Claude 4.6 models. Other reasoning-capable models stay at `low`.
+    - **Impact:** If we route through Anthropic Claude directly, thinking adapts to task complexity. Not relevant for OpenRouter Sonnet. **NOTED**
+
+22. **Thinking fallback retry** — When providers reject unsupported thinking levels, retries with `think=off` instead of hard failing.
+    - **Impact:** Prevents agent hangs during model/provider fallback chains. **BENEFITS**
+
+23. **Subagent completion typed events** — Ad-hoc completion handoff replaced with typed `task_completion` events, rendered consistently across surfaces.
+    - **Impact:** Internal change. More reliable subagent completion. **BENEFITS**
+
+24. **Session lifecycle redesign** — TTL model replaced with broader lifecycle management. `idleHours` + `maxAgeHours` model.
+    - **Impact:** Session management improved internally. **BENEFITS**
+
+25. **Subagent input validation** — Rejects malformed `agentId` inputs (error messages, path-like strings) preventing synthetic agent IDs.
+    - **Impact:** Prevents ghost workspace paths from bad inputs. **BENEFITS**
+
+### CLI
+
+26. **`openclaw config validate`** — New command validates config before gateway startup. Reports detailed invalid-key paths.
+    - **Impact:** Catches the exact class of misconfiguration that previously caused crashes (e.g., `context` vs `agents.defaults.contextPruning`). **BENEFITS**
+    - **Guide:** Phase 14 should mention as a pre-restart check. **GUIDE**
+
+27. **`openclaw config file`** — Prints the active config file path.
+    - **Impact:** Useful for debugging which config is active. **NOTED**
+
+### Gateway
+
+28. **Health/readiness endpoints** — New `/health`, `/healthz`, `/ready`, `/readyz` endpoints for Docker/K8s probes.
+    - **Impact:** Our VPS setup doesn't need these, but confirms gateway is reachable. **NOTED**
+
+29. **Gateway WS flood protection** — Closes repeated unauthorized WS request floods, samples duplicate rejection logs.
+    - **Impact:** Reduces log spam from unauthorized connection attempts. **BENEFITS**
+
+30. **Config backups hardened** — Owner-only (`0600`) permissions on rotated config backups. Orphan `.bak.*` files cleaned.
+    - **Impact:** API keys in config backups no longer world-readable. **BENEFITS**
+
+### Tools
+
+31. **Native PDF analysis tool** — First-class `pdf` tool with Anthropic and Google provider support. Configurable via `agents.defaults.pdfModel`, `pdfMaxBytesMb`, `pdfMaxPages`.
+    - **Impact:** Gregor can now analyze PDFs natively. **BENEFITS**
+
+32. **SecretRef expanded coverage** — 64 credential targets now support SecretRef. Unresolved refs fail fast on active surfaces.
+    - **Impact:** If we ever move to SecretRef for API keys, coverage is comprehensive. **NOTED**
+
+### Security
+
+33. **TOCTOU symlink race fix in `writeFileWithinRoot`** — Opens files without truncation, creates with `O_EXCL`, defers truncation until post-open validation, removes out-of-root artifacts on blocked races. Regression tests added.
+    - **Impact:** Critical fix for host filesystem protection. **BENEFITS**
+
+34. **Sandbox media staging symlink escape blocked** — Replaces direct copies with root-scoped safe writes for both local and SCP-staged attachments.
+    - **Impact:** Blocks out-of-workspace file overwrite via media alias traversal. **BENEFITS**
+
+35. **Webhook auth-before-body parsing** — BlueBubbles and Google Chat webhook handlers now authenticate before reading request body. Size + timeout budgets enforced.
+    - **Impact:** Prevents unauthenticated slow-body DoS on webhook endpoints. **BENEFITS**
+
+36. **Prompt spoofing hardening** — Runtime events routed through trusted system context. Inbound `[System Message]` and `System:` markers neutralized.
+    - **Impact:** Directly relevant for Telegram-facing bot — reduces prompt injection surface. **BENEFITS**
+
+37. **Gateway canonicalization hardening** — Plugin route paths decoded to canonical fixpoint. Fails closed on anomalies. Auth enforced on encoded `/api/channels/*` variants.
+    - **Impact:** Prevents auth bypass via encoded path variants. **BENEFITS**
+
+38. **Plugin HTTP hardening** — Explicit auth required for route registration. Ownership guards on duplicate registrations.
+    - **Impact:** Stronger plugin isolation. **BENEFITS**
+
+39. **Cross-agent sandbox inheritance** — Blocks sandboxed sessions from spawning unsandboxed cross-agent subagents.
+    - **Impact:** Prevents sandbox bypass via `sessions_spawn`. **BENEFITS**
+
+40. **Exec approval cwd revalidation** — Working directory identity revalidated before execution. Fails closed on drift.
+    - **Impact:** Prevents stale approval exploitation. **BENEFITS**
+
+41. **Exec approval argv semantics preserved** — Wrapper argv semantics maintained during approval hardening.
+    - **Impact:** Approved commands can't drift into different runtime shapes. **BENEFITS**
+
+42. **Config validation security** — Invalid keys now reported with detailed paths in startup errors.
+    - **Impact:** Combined with `openclaw config validate`, catches misconfiguration before crash. **BENEFITS**
+
+43. **Post-compaction audit injection removed** — Layer 3 fake system message (referencing non-existent `WORKFLOW_AUTO.md`) deleted. Was a prompt injection vector.
+    - **Impact:** Removes a prompt injection surface. **BENEFITS**
+
+44. **Sandbox workspace mount read-only** — `/workspace` bind mounts default to read-only when `workspaceAccess` is not `rw`.
+    - **Impact:** Stronger sandbox isolation. **BENEFITS**
+
+45. **Skills archive extraction hardened** — Tar safety checks unified, size limits enforced, TOCTOU detection between preflight and extraction.
+    - **Impact:** Prevents skill install attacks. **BENEFITS**
+
+46. **Loopback origin enforcement** — Dev mode allowance tied to actual socket address, not Host header claims.
+    - **Impact:** Hardens our loopback gateway against spoofed Host headers. **BENEFITS**
+
+### Known Regressions in v2026.3.1 (carried into 3.2)
+
+47. **Aggressive compaction loop (Issue #32106)** — All agents compact every 2-3 minutes regardless of conversation length. Root cause: auto-enable OpenAI Responses compaction + `softThresholdTokens` defaulting to 4000. Our `contextPruning` config may mitigate, but monitor post-upgrade.
+    - **Impact:** Watch for excessive compaction in Gregor's logs. **INVESTIGATE**
+
+### New Config Keys
+
+- `tools.alsoAllow` — Replaces `tools.allow` for additive tool enablement
+- `agents.defaults.pdfModel` / `pdfMaxBytesMb` / `pdfMaxPages` — PDF tool configuration
+- `agents.*.heartbeat.lightContext` — Lightweight bootstrap for heartbeat runs
+- `cli.banner.taglineMode` — Startup tagline control (`random`/`default`/`off`)
+- `acp.dispatch.enabled` — ACP dispatch toggle (now defaults `true`)
+- `memorySearch.provider` / `memorySearch.fallback` — Now accept `"ollama"`
+- `tools.media.audio.echoTranscript` / `echoFormat` — Audio transcript echo
+- `agents.defaults.bootstrapMaxChars` / `bootstrapTotalMaxChars` — Bootstrap injection caps
+- `channels.telegram.dmPolicy` — DM access policy (`pairing`/`allowlist`/`open`/`disabled`)
+- `disableAudioPreflight` — Per-group/topic voice mention preflight skip
+- `params.openaiWsWarmup` — Per-model WebSocket warm-up toggle
+
+---
+
 ## Config Decisions Tracker
 
 Items extracted from changelogs that may influence our configuration.
@@ -465,6 +649,12 @@ Items extracted from changelogs that may influence our configuration.
 | `openclaw sessions cleanup` for transcript hygiene | v2026.2.23 #11 | CONSIDER | Medium |
 | `update.auto.*` for auto-updates | v2026.2.22 #53 | CONSIDER | Low |
 | `/verbose on` for debugging tool errors | v2026.2.22 #2 | NOTED | — |
+| `tools.allow` → `tools.alsoAllow` migration | v2026.3.2 #1 | APPLIED | High |
+| `acp.dispatch.enabled=false` if ACP causes issues | v2026.3.2 #3 | NOTED | Low |
+| `agents.*.heartbeat.lightContext` to reduce cron/heartbeat cost | v2026.3.2 #14 | CONSIDER | Medium |
+| Ollama memory embeddings (`memorySearch.provider: "ollama"`) | v2026.3.2 #17 | CONSIDER | Low |
+| Monitor compaction loop regression (#32106) | v2026.3.2 #47 | INVESTIGATE | High |
+| `openclaw config validate` as pre-restart check | v2026.3.2 #26 | APPLIED | High |
 
 ## Guide Update Tracker
 
@@ -480,3 +670,8 @@ Changelog items that need reflection in GUIDE.md.
 | Phase 13.2 (Cost) | Official prompt-caching docs published | v2026.2.23 #20 | APPLIED |
 | Appendix F (CLI) | `openclaw memory search --query` syntax added | v2026.2.24 #26 | APPLIED |
 | Appendix (CLI) | Doctor hints corrected to valid commands | v2026.2.24 #27 | N/A — no incorrect hints found |
+| Phase 14 (Maintenance) | `openclaw config validate` as pre-restart check | v2026.3.2 #26 | TODO |
+| Phase 13.3 (Heartbeat) | Heartbeat DM delivery default reverted to `allow` in 3.1, then unchanged in 3.2 | v2026.3.1 | TODO |
+| Phase 12.5 (Cron) | Lightweight bootstrap mode for cron/heartbeat; session reaper reliability | v2026.3.2 #9, #14 | TODO |
+| Appendix F (CLI) | `openclaw config file` and `openclaw config validate` added | v2026.3.2 #26, #27 | TODO |
+| Phase 5 (Tools) | `tools.allow` → `tools.alsoAllow` migration required on upgrade | v2026.3.2 #1 | TODO |

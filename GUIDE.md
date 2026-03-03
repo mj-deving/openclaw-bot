@@ -1628,17 +1628,21 @@ OpenClaw's SQLite database (`~/.openclaw/memory/main.sqlite`) accumulates embedd
    "
    ```
 
-2. **Set explicit pruning config** — prevent aggressive defaults from causing compaction loops. In `~/.openclaw/openclaw.json`, add:
+2. **Set explicit pruning config** — prevent aggressive defaults from causing compaction loops. In `~/.openclaw/openclaw.json` under `agents.defaults.contextPruning`:
    ```jsonc
    {
-     "context": {
-       "pruning": {
-         "ttl": 7200,              // 2 hours (seconds) — don't go below this
-         "keepLastAssistants": 8   // Retain last 8 bot responses through pruning
+     "agents": {
+       "defaults": {
+         "contextPruning": {
+           "mode": "cache-ttl",
+           "ttl": "2h",                  // Don't go below 2 hours
+           "keepLastAssistants": 8       // Retain last 8 bot responses through pruning
+         }
        }
      }
    }
    ```
+   **Warning:** Do NOT use a top-level `"context"` key — OpenClaw rejects unrecognized root keys and the config becomes invalid.
    Low values (TTL=30min, keepLastAssistants=3) create a feedback loop: rapid pruning → constant compaction → more pruning.
 
 **Warning signs of compaction loop:**
@@ -2244,16 +2248,19 @@ Tool results (file reads, web searches) are the fastest-growing context consumer
 
 ```jsonc
 {
-  "context": {
-    "pruning": {
-      "ttl": 7200,                    // 2 hours (seconds) — minimum recommended
-      "keepLastAssistants": 8         // Keep the last 8 responses through pruning
+  "agents": {
+    "defaults": {
+      "contextPruning": {
+        "mode": "cache-ttl",
+        "ttl": "2h",                    // Minimum recommended — don't go lower
+        "keepLastAssistants": 8         // Keep the last 8 responses through pruning
+      }
     }
   }
 }
 ```
 
-**Warning:** Low values (TTL < 2h, keepLastAssistants < 5) can trigger a compaction loop — see Phase 10.6 and `Reference/DATABASE-MAINTENANCE.md`. The bot enters a cycle of pruning, reindexing, and compacting instead of responding.
+**Warning:** The config path is `agents.defaults.contextPruning` — NOT a top-level `"context"` key (which OpenClaw rejects as unrecognized). Low values (TTL < 2h, keepLastAssistants < 5) can trigger a compaction loop — see Phase 10.6 and `Reference/DATABASE-MAINTENANCE.md`.
 
 ### 14.6 Cache-Friendly Architecture
 
