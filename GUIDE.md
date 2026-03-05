@@ -37,6 +37,7 @@ OpenClaw is an open-source AI agent gateway that bridges multiple messaging plat
 12. [Phase 12 — Autonomous Engagement (Cron)](#phase-12--autonomous-engagement-cron)
 13. [Phase 13 — Cost Management & Optimization](#phase-13--cost-management--optimization)
 14. [Phase 14 — Context Engineering](#phase-14--context-engineering)
+15. [Phase 15 — Voice & Audio](#phase-15--voice--audio)
 
 **Appendices**
 - [A — Architecture Overview](#appendix-a--architecture-overview)
@@ -2357,6 +2358,147 @@ In order of impact:
 8. Monitor token distribution via ClawMetry — data-driven tuning from here
 
 > **Deep reference:** [Reference/CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md) has the full internals — bootstrap injection mechanics, memory search pipeline, cache invalidation rules, and context overflow handling.
+
+---
+
+## Phase 15 — Voice & Audio
+
+OpenClaw has built-in voice transcription. When someone sends a voice message on Telegram, OpenClaw can automatically transcribe it and process the text as if it were a typed message. No custom code required — this is config-only.
+
+### 15.1 How It Works
+
+The pipeline: voice message arrives → OpenClaw downloads the OGG/Opus audio → sends it to a configured STT provider → replaces the message body with the transcript → processes it as normal text.
+
+Slash commands and @mentions work inside voice notes. Optional echo sends the transcript back to the user for confirmation.
+
+### 15.2 Choose a Provider
+
+You need an API key from at least one STT provider. Here are the practical options, ranked:
+
+| Provider | Model | Cost/min | Speed | Why Choose |
+|----------|-------|----------|-------|-----------|
+| **Groq** | whisper-large-v3-turbo | $0.0007 | 216x realtime | Cheapest and fastest. Free tier available |
+| **OpenAI** | gpt-4o-mini-transcribe | $0.003 | Fast | Simplest if you already have an OpenAI key |
+| **Deepgram** | nova-3 | $0.0043 | <1s latency | $200 free credit (~4 years at personal-bot volume) |
+
+At 30 voice messages/day averaging 30 seconds each, Groq costs ~$0.30/month. OpenAI costs ~$1.35/month.
+
+> **Why not self-hosted Whisper?** At personal-bot volume, cloud APIs cost cents per month while self-hosting costs hours of engineering time. Self-hosted Whisper also has documented hallucination issues (1.4% of transcriptions contain fabricated content per an [ACM study](https://dl.acm.org/doi/fullHtml/10.1145/3630106.3658996)) and memory leak problems in faster-whisper. Cloud providers retranscribe when hallucination is detected; self-hosted doesn't. Self-hosting only makes sense at 500+ hours/month or in offline environments. See the [reference doc](Reference/VOICE-AND-AUDIO.md#3-self-hosted-stt-options) for the full breakdown.
+
+### 15.3 Configure OpenClaw
+
+Add the audio config to `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "tools": {
+    "media": {
+      "audio": {
+        "enabled": true,
+        "echoTranscript": true,
+        "echoFormat": "[Transcript]: \"{transcript}\"",
+        "models": [
+          { "provider": "groq", "model": "whisper-large-v3" }
+        ]
+      }
+    }
+  }
+}
+```
+
+Set the provider API key (pick one approach):
+
+```bash
+# Option A: In openclaw.json under models.providers
+# "models": { "providers": { "groq": { "apiKey": "gsk_..." } } }
+
+# Option B: Environment variable in systemd unit
+# Environment=GROQ_API_KEY=gsk_...
+```
+
+> **Why explicit config over auto-detection?** OpenClaw can auto-detect available providers, but GitHub issues [#22554](https://github.com/openclaw/openclaw/issues/22554) and [#17101](https://github.com/openclaw/openclaw/issues/17101) document bugs in auto-detection for Telegram voice. Explicit `models` config is more reliable.
+
+### 15.4 Validate and Restart
+
+```bash
+openclaw config validate
+sudo systemctl restart openclaw
+```
+
+Wait 10-15 seconds for the gateway to initialize, then send a voice message to your bot on Telegram. You should see the echo transcript reply.
+
+### 15.5 Fallback Chains
+
+Configure multiple providers for resilience — OpenClaw tries them in order:
+
+```json
+{
+  "tools": {
+    "media": {
+      "audio": {
+        "enabled": true,
+        "echoTranscript": true,
+        "models": [
+          { "provider": "groq", "model": "whisper-large-v3" },
+          { "provider": "openai", "model": "gpt-4o-mini-transcribe" }
+        ]
+      }
+    }
+  }
+}
+```
+
+If Groq is down or rate-limited, OpenClaw falls through to OpenAI automatically.
+
+### 15.6 Local Whisper Fallback (Optional — Zero Cost)
+
+For offline resilience, install whisper.cpp on the VPS and add it as a CLI fallback:
+
+```bash
+# Install whisper.cpp (compile from source)
+git clone https://github.com/ggml-org/whisper.cpp.git
+cd whisper.cpp && make -j$(nproc)
+
+# Download the base.en model (~142 MB, ~400-500 MB RAM at runtime)
+bash models/download-ggml-model.sh base.en
+
+# Test
+./main -m models/ggml-base.en.bin -f /tmp/test.wav
+```
+
+Add to the config chain:
+
+```json
+{
+  "models": [
+    { "provider": "groq", "model": "whisper-large-v3" },
+    { "provider": "openai", "model": "gpt-4o-mini-transcribe" },
+    { "type": "cli", "command": "/path/to/whisper.cpp/main", "args": ["-m", "/path/to/ggml-base.en.bin", "{{MediaPath}}"], "timeoutSeconds": 45 }
+  ]
+}
+```
+
+> **RAM consideration:** The base model uses ~400-500 MB during inference. On a 4 GB VPS running Gregor and PAI pipeline, this is tight but feasible for occasional fallback use. Don't use the small model (~852 MB) or larger unless you have headroom. See [Reference/VOICE-AND-AUDIO.md](Reference/VOICE-AND-AUDIO.md#3-self-hosted-stt-options) for full model size tables.
+
+### 15.7 Telegram Voice Limitations
+
+Things to be aware of:
+
+- **File size:** Telegram Bot API caps downloads at 20 MB. Opus is efficient (~16 kbps for voice), so this covers ~15 minutes of audio.
+- **No native transcription for bots:** Telegram Premium's built-in voice-to-text (`messages.transcribeAudio`) is MTProto-only. Bots cannot access it through the HTTP Bot API.
+- **Download URL expiry:** The file download URL from `getFile()` expires after 60 minutes. OpenClaw handles this internally — it downloads immediately on receipt.
+
+### 15.8 Priority Checklist
+
+1. Get a Groq API key at [console.groq.com](https://console.groq.com) (free tier)
+2. Add `tools.media.audio` config with explicit model
+3. Set API key in config or systemd environment
+4. `openclaw config validate` — fix any issues before restart
+5. Restart gateway, wait 10-15s for initialization
+6. Send a voice message to test transcription
+7. Optionally add a second provider for fallback resilience
+
+> **Deep reference:** [Reference/VOICE-AND-AUDIO.md](Reference/VOICE-AND-AUDIO.md) has the full research — cloud provider pricing, self-hosted engine comparison, architecture patterns, Telegram Bot API internals, and framework landscape analysis.
 
 ---
 
