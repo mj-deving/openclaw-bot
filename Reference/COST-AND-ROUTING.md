@@ -461,7 +461,9 @@ The single highest-impact change. One config line, ~73% cost reduction.
 ```bash
 ssh vps
 export PATH="$HOME/.npm-global/bin:$PATH"
-openclaw config set agents.defaults.models.anthropic/claude-sonnet-4.params.cacheRetention long
+# Check exact model key first, then set cacheRetention on that key
+openclaw config get agents.defaults.models
+openclaw config set agents.defaults.models.anthropic/claude-sonnet-4-20250514.params.cacheRetention long
 ```
 
 See [CONTEXT-ENGINEERING.md](CONTEXT-ENGINEERING.md) for implementation details and the known cache-read-always-0 bug (OpenClaw issue #19534).

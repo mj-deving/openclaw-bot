@@ -38,7 +38,7 @@ The single largest cost: **workspace files are re-injected on every single LLM c
 
 ## Recommendation 1: Enable Prompt Caching (Highest Impact, Lowest Effort)
 
-**What:** Switch to API key auth + `cacheRetention: "long"`
+**What:** Switch to Anthropic API key auth + `cacheRetention: "long"`
 
 **Why:** The static prefix (tools + system prompt + workspace) gets cached. Cache reads cost 10% of base input price.
 
@@ -48,7 +48,9 @@ The single largest cost: **workspace files are re-injected on every single LLM c
 
 **Implementation:**
 ```bash
-openclaw config set agents.defaults.models.anthropic/claude-sonnet-4.params.cacheRetention long
+# Check exact model key first, then set cacheRetention on that key
+openclaw config get agents.defaults.models
+openclaw config set agents.defaults.models.anthropic/claude-sonnet-4-20250514.params.cacheRetention long
 ```
 Then monitor: look for `cache_read_input_tokens` in API responses.
 
@@ -159,7 +161,7 @@ This shows per-file, per-tool token breakdown. Target: anything not essential fo
 
 | # | Action | Effort | Impact |
 |---|--------|--------|--------|
-| 1 | API key auth + `cacheRetention: "long"` | 15 min | Eliminates re-processing cost for static context |
+| 1 | Anthropic API key auth + `cacheRetention: "long"` | 15 min | Eliminates re-processing cost for static context |
 | 2 | Verify caching works (check `cache_read_input_tokens`) | 5 min | Catches known bug before assuming savings |
 | 3 | `/context detail` audit of workspace files | 10 min | Identifies bloat to move to memory |
 | 4 | Raise minScore to 0.40, test quality | 30 min | Reduces noise from low-relevance memories |

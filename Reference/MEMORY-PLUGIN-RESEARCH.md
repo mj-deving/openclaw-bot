@@ -119,7 +119,7 @@ The trade-off: mem0 captures more granularly but at the cost of processing every
 
 - Not mentioned in VirusTotal's Feb 2026 ClawHub malware analysis (which covered 3,016+ skills)
 - No CVEs filed against mem0 platform
-- OpenClaw has since [integrated VirusTotal scanning](https://thehackernews.com/2026/02/openclaw-integrates-virustotal-scanning.html) for ClawHub uploads
+- OpenClaw has since [announced VirusTotal scanning integration](https://openclaw.ai/blog/virustotal-partnership) for ClawHub uploads
 
 ### 3.4 ClawHavoc Association?
 
@@ -370,9 +370,11 @@ This means the system doesn't just discard old context — it saves what matters
 - [Mem0 on Y Combinator](https://www.ycombinator.com/companies/mem0)
 - [mem0 OpenClaw plugin source](https://github.com/mem0ai/mem0/tree/main/openclaw) — index.ts review
 
-### Security & Supply Chain
+### Security & Supply Chain (Primary + Secondary)
 - [VirusTotal Blog: OpenClaw Skills Weaponized](https://blog.virustotal.com/2026/02/from-automation-to-infection-how.html)
-- [OpenClaw Integrates VirusTotal Scanning](https://thehackernews.com/2026/02/openclaw-integrates-virustotal-scanning.html)
+- [OpenClaw + VirusTotal Partnership](https://openclaw.ai/blog/virustotal-partnership)
+
+Secondary reporting (context only; verify against primary sources before operational decisions):
 - [ClawHavoc Poisons ClawHub](https://cyberpress.org/clawhavoc-poisons-openclaws-clawhub-with-1184-malicious-skills/)
 - [Over 60 OpenClaw Vulnerabilities Resolved](https://www.heise.de/en/news/Over-60-security-vulnerabilities-in-AI-assistant-OpenClaw-resolved-11179476.html)
 
