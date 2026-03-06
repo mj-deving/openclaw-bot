@@ -1162,6 +1162,7 @@ With `tools.profile: "full"` and targeted denials, the bot can:
 **Enabled:**
 - Text conversation (Telegram, paired to owner)
 - Web search and web fetch (research capability)
+- Browser automation (Playwright — screenshots, navigation, JS-heavy sites)
 - Shell execution (for scripts, automation tasks)
 - File read/write (workspace, memory files)
 - Persistent memory with hybrid search
@@ -1171,8 +1172,9 @@ With `tools.profile: "full"` and targeted denials, the bot can:
 - `nodes` (device invocation)
 - `sessions_spawn`, `sessions_send` (cross-session operations)
 
-**Explicitly allowed** (via `tools.allow`):
+**Explicitly allowed** (via `tools.alsoAllow`):
 - `cron` — not part of any profile including `"full"`, so must be explicitly allowed. The bot can create and manage its own scheduled jobs when asked. Monitor with `openclaw cron list`. See [§12.4](#124-security-note) for risk assessment.
+- `browser` — Playwright-based browser automation. Enables the bot to take screenshots, navigate pages, fill forms, and extract content from JavaScript-heavy sites. Like `cron`, it is a `group:automation` tool not included in any standard profile.
 
 > **Why deny these specifically?** The `gateway` tool lets the AI reconfigure itself with zero permission checks — it could change its own deny list, enable tools, or modify auth. The `sessions` tools add cross-device attack surface with no benefit for a single bot. These denials are enforced at the orchestration layer (deterministic), not the prompt layer (probabilistic). Even a fully jailbroken model cannot call denied tools.
 
@@ -1945,7 +1947,7 @@ Use the cheapest model that produces good output:
 
 ### 12.4 Security Note
 
-The cron tool is **explicitly allowed** via `tools.allow: ["cron"]`. This is required because `group:automation` tools (cron, gateway) are not part of any standard profile — not even `"full"`. Simply removing `cron` from the deny list is not sufficient; it must be in the allow list to appear in the bot's tool surface. The bot can then create and manage its own scheduled jobs when asked, without requiring CLI access.
+The cron and browser tools are **explicitly allowed** via `tools.alsoAllow: ["cron", "browser"]`. This is required because `group:automation` tools (cron, gateway, browser) are not part of any standard profile — not even `"full"`. Simply removing them from the deny list is not sufficient; they must be in the allow list to appear in the bot's tool surface. The bot can then create and manage its own scheduled jobs when asked, and browse/screenshot web pages via Playwright, without requiring CLI access.
 
 **Risk:** A prompt injection could cause the bot to schedule a rogue recurring task. **Mitigation:** Monitor periodically:
 
@@ -1953,7 +1955,7 @@ The cron tool is **explicitly allowed** via `tools.allow: ["cron"]`. This is req
 openclaw cron list   # Check for unexpected jobs — run after any untrusted interaction
 ```
 
-If you prefer the bot cannot self-schedule, remove `cron` from `tools.allow` and manage schedules exclusively via CLI. See [SECURITY.md §14.2](Reference/SECURITY.md) for the full attack chain.
+If you prefer the bot cannot self-schedule, remove `cron` from `tools.alsoAllow` and manage schedules exclusively via CLI. See [SECURITY.md §14.2](Reference/SECURITY.md) for the full attack chain.
 
 ### 12.5 Cron Reliability (v2026.2.22+)
 
@@ -2722,7 +2724,8 @@ Each bot is completely isolated — separate config, memory, credentials, and Te
 | **mDNS discovery** | Network reconnaissance | mDNS disabled |
 | **Memory database** | Data exfiltration | File permissions, encrypted disk |
 | **Gateway tool** | AI self-reconfiguration | `gateway` in deny list |
-| **Cron tool** | AI creating rogue scheduled tasks | Explicitly allowed via `tools.allow` — monitor with `openclaw cron list` after untrusted interactions |
+| **Cron tool** | AI creating rogue scheduled tasks | Explicitly allowed via `tools.alsoAllow` — monitor with `openclaw cron list` after untrusted interactions |
+| **Browser tool** | Navigating to malicious sites, credential exposure | Explicitly allowed via `tools.alsoAllow` — sandboxed Playwright, no stored credentials |
 | **Indirect prompt injection** | Malicious instructions in fetched content | System prompt hardening, tool deny list, egress filtering |
 | **Pipeline injection** | Unauthorized task submission via inbox/ | `chmod 700`, auditd monitoring |
 | **Shell bypass of deny list** | Bot modifies own config via `exec.security` shell | ReadOnlyPaths drop-in, egress filtering, config integrity cron |
