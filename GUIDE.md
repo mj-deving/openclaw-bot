@@ -2,7 +2,7 @@
 
 **Deploy a security-hardened, self-hosted AI agent — from a blank server to production.**
 
-OpenClaw is an open-source AI agent gateway that bridges multiple messaging platforms — Telegram, WhatsApp, Discord, iMessage, Slack, and more. This guide uses Telegram as the starting interface — it's the fastest path to a working bot — but the security model, memory configuration, skill architecture, and cost patterns you'll learn here apply to any channel OpenClaw supports. Works with any LLM provider: Anthropic, OpenAI, OpenRouter (with free models), and 20+ others. No prior OpenClaw experience needed.
+OpenClaw is an open-source AI agent gateway that bridges multiple messaging platforms — Telegram, WhatsApp, Discord, iMessage, Slack, and more. This guide uses Telegram as the starting interface — it's the fastest path to a working bot — but the security model, memory configuration, skill architecture, and cost patterns you'll learn here apply to any channel OpenClaw supports. No prior OpenClaw experience needed.
 
 > **Guiding philosophy:** *Maximum capability, minimum attack surface.*
 >
@@ -720,6 +720,56 @@ See [SECURITY.md §16.5](Reference/SECURITY.md) for the full post-onboard checkl
 Your VPS is hardened (Phase 1). Now harden OpenClaw itself.
 
 > **The security philosophy:** *As capable as possible, while as secure as necessary.* The bot runs with `tools.profile: "full"` because a bot that can't do things isn't useful. The real threats aren't capability — they're *self-modification*. The `gateway` tool lets the AI reconfigure itself with zero permission checks. The `nodes`/`sessions` tools add multi-device attack surface with no benefit for a single bot. Deny those. Enable everything else. With Telegram pairing limiting who can message the bot, the attack surface is already small.
+
+### 7.0 Blast Radius — What Happens with No Restrictions
+
+Before diving into hardening, understand what you're defending against. An unrestricted OpenClaw instance — default install, no deny list, no systemd hardening — runs with the full permissions of whatever Linux user starts the gateway. It is not sandboxed or containerized. With `exec.security: "full"` and `ask: "off"`, the LLM can execute any shell command silently, without confirmation.
+
+**This matters because anyone who can message your bot can potentially instruct it.** Telegram pairing limits who can send messages, but prompt injection — where a malicious input tricks the LLM into following attacker instructions — is an unsolved problem across all LLM deployments. The bot processes every inbound message as potential instructions.
+
+#### What an unrestricted agent can do
+
+**Immediate (single successful prompt injection):**
+- Read `~/.ssh/`, `.env` files, API keys, wallet keys, browser cookies — exfiltrate via `curl`
+- Read, modify, or delete any file the Linux user owns — code, databases, configs
+- If the user has passwordless `sudo` — full root. Game over.
+
+**Persistent (agent installs backdoors):**
+- Add entries to `crontab`, `~/.bashrc`, systemd user services
+- Install reverse shells, crypto miners
+- Modify the OpenClaw config itself (if `gateway` tool not denied) — change the model, redirect API calls, inject system prompt instructions
+- Push to any git repo the user has SSH keys for
+
+**Lateral (pivot from the VPS):**
+- SSH to other servers using the user's keys
+- Scan internal networks
+- Access cloud provider metadata endpoints (`169.254.169.254` — AWS/GCP instance credentials)
+- Use stored credentials for databases, cloud APIs, third-party services
+
+#### Why this is different from "just having shell access"
+
+A human with shell access thinks before running commands, recognizes social engineering, and doesn't execute instructions from strangers. An LLM:
+
+- **Executes based on token prediction**, not intent — it doesn't "understand" that a command is destructive
+- **Is susceptible to prompt injection** from any message it processes — a crafted Telegram message can override system instructions
+- **Treats every inbound message as a potential instruction** — no inherent distinction between trusted and untrusted input
+- **Cannot reliably refuse** — alignment techniques reduce but don't eliminate the risk of following malicious prompts
+
+> **The bottom line:** An unrestricted OpenClaw is functionally equivalent to giving every person who can message your bot a shell on your server — and hoping the LLM says no to malicious requests. The rest of Phase 7 exists to make sure the bot *can't* cause damage even if the LLM *would*.
+
+#### How the hardening layers address this
+
+| Threat | Mitigation | Section |
+|--------|-----------|---------|
+| AI reconfigures itself | `tools.deny: ["gateway"]` + `ReadOnlyPaths` on config | §7.2, §6 |
+| Shell bypasses tool deny list | systemd `ReadOnlyPaths` (kernel-enforced) | §7.3 |
+| Data exfiltration via curl | Per-user egress filtering (HTTPS/DNS only) | §7.4 |
+| Prompt injection via Telegram | Telegram DM pairing + identity anchoring in system prompt | §7.7, §8 |
+| Malicious community skills | Bundled-only strategy (zero ClawHub installs) | §11 |
+| Forensic trail | auditd kernel logging with immutable rules | §7.15 |
+| Config integrity | Daily checksum cron with alerting | §10 |
+
+No single layer is sufficient. The defense works because the layers are independent — a prompt injection that bypasses the system prompt still hits the tool deny list, the systemd sandbox, and the egress filter.
 
 ### 7.1 Gateway Binding
 

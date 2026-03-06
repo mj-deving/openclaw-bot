@@ -101,6 +101,17 @@ The `idempotency_key` column exists in the outbox schema but is **not populated*
 | [#9167](https://github.com/openclaw/openclaw/issues/9167) | `boot-md` hook fires multiple times during startup | Open |
 | [#5964](https://github.com/openclaw/openclaw/issues/5964) | Control UI webchat: every assistant reply appears twice | Open |
 
+### Real-World Cost Impact (Observed 2026-03-06)
+
+Session `5146418f` — a 9-hour Supercolony session — consumed **$31.77 / 28.8M tokens**. Analysis of the session file revealed:
+
+- **115 user messages** in the session, but only **~48 unique `message_id` values**
+- **~67 duplicate deliveries** (58% of all inbound messages were re-deliveries)
+- After a 4-hour gap (user aborted, resumed), **every message was delivered 4x** — the followup queue re-drained the same messages on each cycle
+- Each duplicate re-triggers the full agent pipeline (context load + LLM inference + tool execution), multiplying token spend
+
+This is Root Cause 1.3 (followup queue multi-delivery, #30604) in action. Unlike 1.1/1.2, `streamMode: "off"` does **not** fix this — there is no config-level mitigation. The cost inflation from duplicates on long, tool-heavy sessions is substantial.
+
 ### Why It's Intermittent
 
 The intermittent nature exists because none of the triggering conditions are deterministic:

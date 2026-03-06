@@ -1,6 +1,6 @@
 {
   "meta": {
-    "lastTouchedVersion": "2026.2.17",
+    "lastTouchedVersion": "2026.3.2",
     "lastTouchedAt": "REDACTED"
   },
   "logging": {
@@ -13,7 +13,7 @@
   "agents": {
     "defaults": {
       "models": {
-        "anthropic/claude-opus-4-6": {}
+        "claude-sonnet-4-6": {}
       },
       "memorySearch": {
         "sources": ["memory"],
@@ -33,6 +33,11 @@
           }
         }
       },
+      "contextPruning": {
+        "mode": "cache-ttl",
+        "ttl": "2h",
+        "keepLastAssistants": 8
+      },
       "compaction": { "mode": "safeguard" },
       "maxConcurrent": 4,
       "subagents": { "maxConcurrent": 8 }
@@ -40,6 +45,7 @@
   },
   "tools": {
     "profile": "full",
+    "alsoAllow": ["cron"],
     "deny": ["gateway", "nodes", "sessions_spawn", "sessions_send"],
     "web": {
       "search": { "enabled": true },
@@ -58,7 +64,7 @@
       "botToken": "REDACTED",
       "groups": {},
       "groupPolicy": "allowlist",
-      "streamMode": "partial"
+      "streamMode": "off"
     }
   },
   "discovery": { "mdns": { "mode": "off" } },
