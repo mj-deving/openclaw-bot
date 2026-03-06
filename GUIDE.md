@@ -2898,6 +2898,38 @@ openclaw memory search --query "What do you know about cron jobs?"
 openclaw memory status --deep    # Index health and chunk counts
 ```
 
+### Troubleshooting: Duplicate Messages
+
+OpenClaw has a systemic duplicate message problem with 7+ distinct root causes. See [Reference/KNOWN-BUGS.md](Reference/KNOWN-BUGS.md) for the full taxonomy. Quick fixes:
+
+```bash
+# Most impactful single fix — disable streaming (eliminates tool-execution fragmentation + draft preview):
+openclaw config set channels.telegram.streamMode off
+sudo systemctl restart openclaw
+
+# If bot is stuck in infinite send loop (Issue #5806):
+sudo systemctl stop openclaw
+rm -f ~/.openclaw/telegram/update-offset-default.json
+rm -f ~/.openclaw/agents/*/sessions/<stuck-session-id>.jsonl
+sudo systemctl start openclaw
+
+# If cron announcements deliver twice (Issue #16139):
+# Add delivery.relay: false to announce-mode crons
+```
+
+### Troubleshooting: Bot Stops Responding (Silent Polling Death)
+
+Long-polling can silently die after ~8 minutes ([#7526](https://github.com/openclaw/openclaw/issues/7526)). The health monitor does not detect this ([#28622](https://github.com/openclaw/openclaw/issues/28622)).
+
+```bash
+# Verify gateway is running but bot is unresponsive:
+sudo systemctl status openclaw        # Shows "active (running)"
+journalctl -u openclaw -n 20          # No recent inbound message logs
+
+# Fix: restart the gateway
+sudo systemctl restart openclaw
+```
+
 ### Emergency Shutdown
 
 ```bash
@@ -2940,6 +2972,7 @@ ssh -L 18789:127.0.0.1:18789 openclaw@YOUR_VPS_IP
 - [Reference/CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md) — Context management, session persistence
 - [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) — Provider routing, cost optimization, x402 security model
 - [Reference/MEMORY-PLUGIN-RESEARCH.md](Reference/MEMORY-PLUGIN-RESEARCH.md) — mem0 evaluation, memory optimization research
+- [Reference/KNOWN-BUGS.md](Reference/KNOWN-BUGS.md) — Systemic bugs, duplicate message taxonomy, workarounds
 
 ### Security & CVE Sources (Primary)
 
