@@ -23,14 +23,8 @@ Thumbs.db
 Screenshot*.png
 
 # Claude Code runtime
-.claude/cache/
-.claude/tasks/
-.claude/todos/
-.claude/debug/
-.claude/history.jsonl
-.claude/session-env/
-.claude/shell-snapshots/
-.claude/file-history/
+.claude/
+MEMORY/
 
 # Session data
 .sessions/
