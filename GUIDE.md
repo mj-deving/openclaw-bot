@@ -1170,13 +1170,14 @@ With `tools.profile: "full"` and targeted denials, the bot can:
 **Denied:**
 - `gateway` (self-reconfiguration)
 - `nodes` (device invocation)
-- `sessions_spawn`, `sessions_send` (cross-session operations)
 
 **Explicitly allowed** (via `tools.alsoAllow`):
 - `cron` — not part of any profile including `"full"`, so must be explicitly allowed. The bot can create and manage its own scheduled jobs when asked. Monitor with `openclaw cron list`. See [§12.4](#124-security-note) for risk assessment.
 - `browser` — Playwright-based browser automation. Enables the bot to take screenshots, navigate pages, fill forms, and extract content from JavaScript-heavy sites. Like `cron`, it is a `group:automation` tool not included in any standard profile.
 
-> **Why deny these specifically?** The `gateway` tool lets the AI reconfigure itself with zero permission checks — it could change its own deny list, enable tools, or modify auth. The `sessions` tools add cross-device attack surface with no benefit for a single bot. These denials are enforced at the orchestration layer (deterministic), not the prompt layer (probabilistic). Even a fully jailbroken model cannot call denied tools.
+> **Why deny these specifically?** The `gateway` tool lets the AI reconfigure itself with zero permission checks — it could change its own deny list, enable tools, or modify auth. The `nodes` tool adds multi-device attack surface with no benefit for a single-VPS deployment. These denials are enforced at the orchestration layer (deterministic), not the prompt layer (probabilistic). Even a fully jailbroken model cannot call denied tools.
+>
+> **Why allow sessions?** `sessions_spawn` and `sessions_send` enable the bot to create parallel agent sessions and push proactive alerts — critical for use cases like Supercolony monitoring where the bot needs to send score updates or publish results without waiting for user input. Trade-off: a prompt injection could trigger unsolicited messages. Mitigate by monitoring session activity in logs.
 
 ### 8.4 Identity-Layer Security
 
@@ -2561,7 +2562,7 @@ Things to be aware of:
 
 Transparency about what's still being evaluated:
 
-1. **`tools.deny` completeness** — The deny list blocks known-dangerous tools (gateway, nodes, sessions), but OpenClaw has 50+ tools. New tools may be added in updates. Review new tool additions after each OpenClaw update.
+1. **`tools.deny` completeness** — The deny list blocks known-dangerous tools (`gateway`, `nodes`), but OpenClaw has 50+ tools. New tools may be added in updates. Review new tool additions after each OpenClaw update. Sessions tools (`sessions_send`, `sessions_spawn`) are intentionally allowed for proactive alerting (Supercolony monitoring).
 
 2. **Haiku quality for autonomous posts** — Cron jobs use Haiku to save costs. Whether Haiku produces posts that meet quality standards over time requires monitoring. If quality degrades, reverting to Sonnet is a single cron edit.
 
@@ -2726,6 +2727,7 @@ Each bot is completely isolated — separate config, memory, credentials, and Te
 | **Gateway tool** | AI self-reconfiguration | `gateway` in deny list |
 | **Cron tool** | AI creating rogue scheduled tasks | Explicitly allowed via `tools.alsoAllow` — monitor with `openclaw cron list` after untrusted interactions |
 | **Browser tool** | Navigating to malicious sites, credential exposure | Explicitly allowed via `tools.alsoAllow` — sandboxed Playwright, no stored credentials |
+| **Sessions tools** | Unsolicited messages, rogue parallel sessions | Allowed for proactive alerts (Supercolony monitoring). Monitor session activity in logs |
 | **Indirect prompt injection** | Malicious instructions in fetched content | System prompt hardening, tool deny list, egress filtering |
 | **Pipeline injection** | Unauthorized task submission via inbox/ | `chmod 700`, auditd monitoring |
 | **Shell bypass of deny list** | Bot modifies own config via `exec.security` shell | ReadOnlyPaths drop-in, egress filtering, config integrity cron |
