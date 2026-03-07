@@ -38,7 +38,14 @@
         "ttl": "2h",
         "keepLastAssistants": 8
       },
-      "compaction": { "mode": "safeguard" },
+      "compaction": {
+        "mode": "safeguard",
+        "memoryFlush": {
+          "enabled": true,
+          "prompt": "Write any lasting notes to memory/daily/YYYY-MM-DD.md (use today's date); reply with NO_REPLY if nothing to store."
+        }
+      },
+      "blockStreamingDefault": "off",
       "maxConcurrent": 4,
       "subagents": { "maxConcurrent": 8 }
     }
@@ -64,7 +71,8 @@
       "botToken": "REDACTED",
       "groups": {},
       "groupPolicy": "allowlist",
-      "streamMode": "off"
+      "streamMode": "off",
+      "blockStreaming": false
     }
   },
   "discovery": { "mdns": { "mode": "off" } },

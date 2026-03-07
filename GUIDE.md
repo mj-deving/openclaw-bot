@@ -611,7 +611,8 @@ Edit `~/.openclaw/openclaw.json` and add the Telegram channel:
       "dmPolicy": "pairing",
       "groupPolicy": "allowlist",
       "groups": {},
-      "streamMode": "partial"
+      "streamMode": "off",
+      "blockStreaming": false
     }
   }
 }
@@ -620,7 +621,8 @@ Edit `~/.openclaw/openclaw.json` and add the Telegram channel:
 **What these settings mean:**
 - `dmPolicy: "pairing"` — the first person to DM the bot becomes the paired owner. Only they can talk to it.
 - `groupPolicy: "allowlist"` — the bot ignores all group chats unless you explicitly add them.
-- `streamMode: "partial"` — responses stream as they generate (not all-at-once).
+- `streamMode: "off"` — responses deliver all-at-once instead of streaming. Prevents duplicate message artifacts (see [Troubleshooting: Duplicate Messages](#troubleshooting-duplicate-messages)).
+- `blockStreaming: false` — disables block-level chunking that can appear as multiple message bubbles.
 
 ### 4.3 Start the Gateway and Pair
 
@@ -1893,6 +1895,164 @@ OpenClaw's SQLite database (`~/.openclaw/memory/main.sqlite`) accumulates embedd
 
 > **Full reference:** `Reference/DATABASE-MAINTENANCE.md` — root causes, remediation steps, health check queries, size thresholds, and Gregor's baseline audit.
 
+### 10.7 PARA Memory Structure
+
+Gregor's default memory is flat daily markdown files (`memory/YYYY-MM-DD.md`). This works, but accumulates without categorization, decay, or consolidation. PARA (Projects/Areas/Resources/Archive) adds navigable organization and LLM-driven consolidation on top of memory-core — without replacing anything.
+
+> **Why not a knowledge graph?** At Gregor's scale (~365 daily files/year, ~240K tokens), BM25+vector hybrid search handles the corpus in milliseconds. Neo4j adds 2.7-4GB RAM overhead for marginal benefit. Manus ($2B acquisition) ran on 3 markdown files. The right answer is structured flat files. See `Reference/MEMORY-PLUGIN-RESEARCH.md §8` for the full decision analysis.
+
+#### Step 1: Create PARA Directories
+
+```bash
+cd ~/.openclaw/workspace/memory
+mkdir -p daily projects areas resources archive meta
+```
+
+#### Step 2: Relocate Daily Files
+
+Move existing daily logs into the `daily/` subdirectory:
+
+```bash
+mv ~/.openclaw/workspace/memory/2026-*.md ~/.openclaw/workspace/memory/daily/
+```
+
+memory-core indexes all `.md` files recursively via the `memory/**/*.md` glob, so files in subdirectories remain fully searchable.
+
+#### Step 3: Initialize Meta Files
+
+Create the consolidation state tracking files:
+
+```bash
+cat > ~/.openclaw/workspace/memory/meta/importance-scores.json << 'EOF'
+{
+  "version": 1,
+  "updated": null,
+  "scores": {}
+}
+EOF
+
+cat > ~/.openclaw/workspace/memory/meta/consolidation-state.json << 'EOF'
+{
+  "version": 1,
+  "lastNightly": null,
+  "lastWeekly": null,
+  "lastMonthly": null
+}
+EOF
+```
+
+#### Step 4: Update Flush Prompt Path
+
+Tell the memory flush to write daily files into `daily/` instead of the root:
+
+```jsonc
+{
+  "agents": {
+    "defaults": {
+      "compaction": {
+        "memoryFlush": {
+          "enabled": true,
+          "prompt": "Write any lasting notes to memory/daily/YYYY-MM-DD.md (use today's date); reply with NO_REPLY if nothing to store."
+        }
+      }
+    }
+  }
+}
+```
+
+Also update `AGENTS.md` session instructions to reference `memory/daily/YYYY-MM-DD.md` instead of `memory/YYYY-MM-DD.md`.
+
+#### Step 5: Add Nightly Consolidation Cron
+
+Runs daily at 3AM. Reads today's daily log, extracts key facts, routes them to the appropriate PARA files. Uses Haiku for cost (~$0.90/month).
+
+```bash
+openclaw cron add \
+  --name "PARA Nightly Consolidation" \
+  --cron "0 3 * * *" \
+  --model "haiku" \
+  --session isolated \
+  --timeout-seconds 300 \
+  --tz "Europe/Berlin" \
+  --message 'Read today'\''s daily memory file from memory/daily/. Extract:
+1. Active project updates → append to the relevant file in memory/projects/
+2. Operational learnings → append to the relevant file in memory/areas/
+3. Reference facts → append to the relevant file in memory/resources/
+4. Completed/obsolete items → note for archival
+
+Update memory/meta/consolidation-state.json with timestamp.
+Do NOT duplicate — check existing content in target files before appending.
+If nothing noteworthy today, respond "No consolidation needed" and stop.'
+```
+
+#### Step 6: Add Weekly Synthesis Cron
+
+Runs Sundays at 3AM. Deduplicates across PARA files, updates importance scores, archives stale entries (~$0.20/month).
+
+```bash
+openclaw cron add \
+  --name "PARA Weekly Synthesis" \
+  --cron "0 3 * * 0" \
+  --model "haiku" \
+  --session isolated \
+  --timeout-seconds 300 \
+  --tz "Europe/Berlin" \
+  --message 'Review all PARA memory files (memory/projects/, memory/areas/, memory/resources/). For each file:
+1. Deduplicate entries (merge similar facts into single entries)
+2. Update importance scores in memory/meta/importance-scores.json using: recency 40% + reference frequency 30% + cross-reference count 30%. Score range 0.0-1.0.
+3. Move entries not referenced in 30+ days from projects/ to archive/. Areas and resources entries stay unless clearly obsolete.
+4. Summarize what you changed.
+
+If no changes needed, respond "No synthesis needed" and stop.'
+```
+
+#### Step 7: Add Monthly Archive Pruning Cron
+
+Runs 1st of each month. Compresses old daily files into monthly summaries (~$0.08/month).
+
+```bash
+openclaw cron add \
+  --name "PARA Monthly Archive" \
+  --cron "0 3 1 * *" \
+  --model "haiku" \
+  --session isolated \
+  --timeout-seconds 300 \
+  --tz "Europe/Berlin" \
+  --message 'Check memory/daily/ for files older than 90 days. For each month with old files:
+1. Read all daily files from that month
+2. Create a summary file at memory/archive/YYYY-MM-summary.md with key facts, decisions, and patterns
+3. Delete the individual daily files that were summarized
+
+If no files older than 90 days exist, respond "No archiving needed" and stop.'
+```
+
+#### Step 8: Rebuild Memory Index
+
+After restructuring, force a full reindex:
+
+```bash
+openclaw memory index --force
+```
+
+Verify indexing still works:
+
+```bash
+openclaw memory status
+```
+
+#### Cost Summary
+
+| Cron | Frequency | Model | Monthly Cost |
+|------|-----------|-------|-------------|
+| Nightly consolidation | Daily 3AM | Haiku | ~$0.90 |
+| Weekly synthesis | Sunday 3AM | Haiku | ~$0.20 |
+| Monthly archive | 1st of month | Haiku | ~$0.08 |
+| **Total** | | | **~$1.18/month** |
+
+> **How decay works without code changes:** The nightly/weekly crons act as importance-modulated decay. Important facts get consolidated forward (resetting their file age), keeping them "fresh" to memory-core's `halfLifeDays: 30` temporal decay. Unimportant facts are never re-touched and age out naturally. This is the FadeMem pattern (Jan 2026, 82.1% critical fact retention at 55% storage) adapted for flat files.
+
+> **Full reference:** `Reference/MEMORY-PLUGIN-RESEARCH.md §8` — decision analysis, alternatives evaluated, research archive link.
+
 ### ✅ Phase 10 Checkpoint
 
 - [ ] Daily backups running (`crontab -l` shows backup entry)
@@ -1901,6 +2061,10 @@ OpenClaw's SQLite database (`~/.openclaw/memory/main.sqlite`) accumulates embedd
 - [ ] Auto-update scheduled weekly
 - [ ] SQLite in WAL journal mode
 - [ ] Context pruning explicitly configured (TTL >= 2h, keepLastAssistants >= 8)
+- [ ] PARA directories created (`ls ~/.openclaw/workspace/memory/` shows projects, areas, resources, archive, daily, meta)
+- [ ] Daily files relocated to `memory/daily/`
+- [ ] Flush prompt updated to reference `memory/daily/` path
+- [ ] Nightly, weekly, and monthly PARA crons registered (`openclaw cron list`)
 
 ---
 
@@ -3132,6 +3296,7 @@ Complete `openclaw.json` with all recommended settings:
         }
       },
       "compaction": { "mode": "safeguard" },
+      "blockStreamingDefault": "off",   // Anti-duplicate: disable block-level streaming
       "maxConcurrent": 4,
       "subagents": { "maxConcurrent": 8 }
     }
@@ -3159,7 +3324,8 @@ Complete `openclaw.json` with all recommended settings:
       "dmPolicy": "pairing",
       "groupPolicy": "allowlist",
       "groups": {},
-      "streamMode": "partial"
+      "streamMode": "off",              // Anti-duplicate: no draft streaming
+      "blockStreaming": false            // Anti-duplicate: no block chunking
     }
   },
 
@@ -3245,13 +3411,40 @@ openclaw memory status --deep    # Index health and chunk counts
 
 ### Troubleshooting: Duplicate Messages
 
-OpenClaw has a systemic duplicate message problem with 7+ distinct root causes. See [Reference/KNOWN-BUGS.md](Reference/KNOWN-BUGS.md) for the full taxonomy. Quick fixes:
+OpenClaw has a systemic duplicate message problem with 7+ distinct root causes. See [Reference/KNOWN-BUGS.md](Reference/KNOWN-BUGS.md) for the full taxonomy.
+
+**Config fixes (apply all three, then restart):**
+
+```jsonc
+{
+  "agents": {
+    "defaults": {
+      "blockStreamingDefault": "off"  // Disable block-level streaming (multiple bubbles per response)
+    }
+  },
+  "channels": {
+    "telegram": {
+      "streamMode": "off",            // Disable draft streaming (eliminates causes 1.1 + 1.2)
+      "blockStreaming": false          // Disable Telegram block chunking
+    }
+  }
+}
+```
+
+**Trade-off:** Users lose the live "typing preview" UX — responses appear all-at-once instead of streaming. Worth it.
 
 ```bash
-# Most impactful single fix — disable streaming (eliminates tool-execution fragmentation + draft preview):
+# Apply via CLI:
 openclaw config set channels.telegram.streamMode off
+openclaw config set channels.telegram.blockStreaming false
+openclaw config set agents.defaults.blockStreamingDefault off
+openclaw config validate   # Always validate before restart
 sudo systemctl restart openclaw
+```
 
+**Additional fixes:**
+
+```bash
 # If bot is stuck in infinite send loop (Issue #5806):
 sudo systemctl stop openclaw
 rm -f ~/.openclaw/telegram/update-offset-default.json
@@ -3261,6 +3454,15 @@ sudo systemctl start openclaw
 # If cron announcements deliver twice (Issue #16139):
 # Add delivery.relay: false to announce-mode crons
 ```
+
+**Per-session commands** — run these in Telegram chat if verbose/reasoning mode is leaking internal thoughts as duplicate-looking messages:
+
+```
+/verbose off
+/reasoning off
+```
+
+> **Note:** Root cause 1.3 (followup queue multi-delivery, [#30604](https://github.com/openclaw/openclaw/issues/30604)) has **no config fix**. If duplicates persist after the above changes, this is the likely remaining cause. Monitor the upstream issue.
 
 ### Troubleshooting: Bot Stops Responding (Silent Polling Death)
 

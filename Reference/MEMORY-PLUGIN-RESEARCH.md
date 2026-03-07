@@ -15,6 +15,7 @@
 5. [Alternative Plugins and Approaches](#5-alternative-plugins-and-approaches)
 6. [Recommendation: 3-Tier Optimization Strategy](#6-recommendation-3-tier-optimization-strategy)
 7. [OpenClaw Built-in Memory Architecture](#7-openclaw-built-in-memory-architecture)
+8. [PARA Implementation: Structured Flat Files](#8-para-implementation-structured-flat-files)
 
 ---
 
@@ -393,6 +394,95 @@ Secondary reporting (context only; verify against primary sources before operati
 - [mem0 Privacy Policy](https://mem0.ai/privacy-policy)
 - [mem0 Security Page](https://mem0.ai/security)
 - [Telemetry Issue #2901](https://github.com/mem0ai/mem0/issues/2901)
+
+---
+
+---
+
+## 8. PARA Implementation: Structured Flat Files
+
+> Decision made 2026-03-07 after extensive research (9 agents, 12 dimensions, 250K+ chars). Research archive: `~/.claude/History/research/2026-03/2026-03-07_para-knowledge-graphs/`
+
+### Decision: PARA Directories Over Knowledge Graphs
+
+Layer PARA (Projects/Areas/Resources/Archive) directory structure on top of the existing memory-core system. No graph database. No new external dependencies.
+
+**Why now:** Felix ($99 ClawMart persona) ships PARA + hot/warm/cold decay as a differentiator. Our research shows the pattern is well-established in production systems (MemGPT, ChatGPT, Manus) and recent literature (FadeMem Jan 2026, MAGMA, EverMemOS). But the contrarian evidence is equally strong — Manus ($2B acquisition) used 3 markdown files, ChatGPT uses plain text. The right answer at Gregor's scale (~365 daily files/year, ~240K tokens total) is structured flat files, not a graph database.
+
+### Architecture
+
+```
+~/.openclaw/workspace/memory/
+  daily/                    # Raw daily logs (relocated from root)
+    2026-03-07.md
+    2026-03-06.md
+  projects/                 # PARA: Active goals with deadlines (HOT)
+    openclaw-bot.md
+    supercolony.md
+  areas/                    # PARA: Ongoing responsibilities (WARM)
+    vps-ops.md
+    security.md
+    cost-monitoring.md
+  resources/                # PARA: Reference material (WARM)
+    provider-pricing.md
+    cli-patterns.md
+    troubleshooting.md
+  archive/                  # PARA: Completed/inactive (COLD)
+    2026-02/
+  meta/                     # Consolidation state & scores
+    importance-scores.json
+    consolidation-state.json
+  MEMORY.md                 # Curated long-term (unchanged)
+```
+
+memory-core indexes all `.md` files via the `memory/**/*.md` recursive glob ([Issue #25497](https://github.com/openclaw/openclaw/issues/25497)), so subdirectories are transparent to search. The PARA directories add navigable organization and enable category-aware crons.
+
+### Tier Mapping
+
+| Tier | PARA Category | Decay Mechanism | Consolidation |
+|------|--------------|-----------------|---------------|
+| **Hot** | `projects/` + today's `daily/` | None | — |
+| **Warm-persistent** | `areas/` | Slow — refreshed by weekly synthesis | Weekly |
+| **Warm-reference** | `resources/` | Very slow — refreshed monthly | Monthly |
+| **Cold** | `archive/` | Natural — never refreshed | Quarterly prune |
+
+### Consolidation Crons
+
+Three Haiku crons handle episodic-to-semantic consolidation (total: ~$1.18/month):
+
+| Cron | Schedule | Purpose | Cost |
+|------|----------|---------|------|
+| Nightly consolidation | Daily 3AM | Extract facts from daily log → route to PARA files | ~$0.90/mo |
+| Weekly synthesis | Sunday 3AM | Deduplicate, update importance scores, archive stale entries | ~$0.20/mo |
+| Monthly archive pruning | 1st of month | Compress old daily files into monthly summaries | ~$0.08/mo |
+
+### Importance-Modulated Decay (FadeMem Pattern)
+
+Instead of implementing adaptive λ in a database, we use LLM-driven curation frequency as the decay mechanism. Important facts get consolidated forward by the nightly/weekly crons (resetting their file modification time and keeping them "fresh" to memory-core's temporal decay). Unimportant facts are never re-touched and age out naturally via the existing `halfLifeDays: 30` config.
+
+This mirrors FadeMem's (Jan 2026) approach of importance-modulated retention — which retained 82.1% of critical facts at 55% storage — but implemented purely through file curation rather than database-level decay functions.
+
+### Alternatives Evaluated
+
+| Alternative | Verdict | Reason |
+|-------------|---------|--------|
+| **Neo4j knowledge graph** | Rejected | 2.7-4GB RAM overhead, overkill at Gregor's scale |
+| **FalkorDB** | Rejected | Best lightweight graph but still 4GB RAM minimum |
+| **Cognee** | Watch list | Best graph option, requires Python + Neo4j. Interesting if we outgrow flat files |
+| **Zep/Graphiti** | Rejected | Temporal KG needs Neo4j, Python-only SDK, wrong stack |
+| **memory-lancedb** | Rejected | Exclusive plugin slot — loses memory-core tools, requires external embedding API |
+| **openclaw-mem sidecar** | Watch list | phenomenoner's project, unverified maturity |
+| **Replace memory-core** | Never | Foundation layer, we build on top, never replace |
+| **Manus-style minimal** | Inspiration | $2B acquisition with 3 markdown files validates flat-file approach |
+
+### Key Research Sources
+
+- FadeMem (Jan 2026) — Importance-modulated decay retains 82.1% critical facts at 55% storage
+- MAGMA, EverMemOS, AgeMem, A-MEM, PlugMem, MemOS (6 major papers Jan 2026) — Converge on episodic→semantic consolidation via LLM
+- Letta/MemGPT — Async memory consolidation pattern maps to Gregor/Isidore architecture
+- Felix ($99 ClawMart) — Competitive reference for PARA + decay implementation
+
+> **Full research archive:** `~/.claude/History/research/2026-03/2026-03-07_para-knowledge-graphs/` (9 files, ~250KB total — Codex, GPT-5, Claude, Grok, Gemini, Perplexity perspectives)
 
 ---
 
