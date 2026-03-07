@@ -1959,6 +1959,20 @@ Gregor's default memory is flat daily markdown files (`memory/YYYY-MM-DD.md`). T
 
 > **Why not a knowledge graph?** At Gregor's scale (~365 daily files/year, ~240K tokens), BM25+vector hybrid search handles the corpus in milliseconds. Neo4j adds 2.7-4GB RAM overhead for marginal benefit. Manus ($2B acquisition) ran on 3 markdown files. The right answer is structured flat files. See `Reference/MEMORY-PLUGIN-RESEARCH.md §8` for the full decision analysis.
 
+#### How Memory Works (with PARA)
+
+| Aspect | How it works |
+|--------|-------------|
+| **Schema** | Flat chunks (~400 tokens, 80 overlap) + embeddings at base. PARA directory overlay: `daily/`, `projects/`, `areas/`, `resources/`, `archive/`, `meta/`. memory-core indexes all via `memory/**/*.md` glob |
+| **Write** | Auto-capture via post-response hook. Agent writes daily markdown to `memory/daily/YYYY-MM-DD.md` |
+| **Search** | Hybrid: 0.7×vector + 0.3×BM25, then MMR deduplication (lambda 0.7), then temporal decay (half-life 30 days). PARA files searched identically — recursive glob |
+| **Injection** | Brute-force: ALL workspace files re-injected every message (up to 150K chars). Enables Anthropic prompt caching |
+| **Distillation** | Two layers: (1) Implicit pre-compaction flush ("write lasting notes"). (2) Explicit 3-tier cron consolidation — nightly extracts daily→PARA files, weekly deduplicates+scores, monthly compresses 90d dailies into archive summaries. FadeMem pattern |
+| **Pruning** | TTL-based (2h) + temporal decay. With importance scoring: weekly cron scores entries (recency 40% + reference freq 30% + cross-ref 30%). Important facts get consolidated forward (resetting age), unimportant ones decay naturally |
+| **Whiteboards** | PARA category files (`projects/*.md`, `areas/*.md`, `resources/*.md`) serve as persistent structured whiteboards. `meta/importance-scores.json` tracks scores |
+
+> **Cost:** ~$1.18/month total for all three consolidation crons (nightly $0.90 + weekly $0.20 + monthly $0.08), all on Haiku.
+
 #### Step 1: Create PARA Directories
 
 ```bash
