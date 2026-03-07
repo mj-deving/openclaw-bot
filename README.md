@@ -20,36 +20,43 @@ This is not a "get started in 5 minutes" tutorial. It's a practitioner's referen
 
 - **[The Guide](GUIDE.md)** — 15-phase walkthrough from OS hardening to context engineering, with threat analysis and tradeoff reasoning
 - **[Reference docs](Reference/)** — Deep research on [security](Reference/SECURITY.md) (2,600 lines, 55 sources), [cost routing](Reference/COST-AND-ROUTING.md), [identity security](Reference/IDENTITY-AND-BEHAVIOR.md), [tool permissions](Reference/SKILLS-AND-TOOLS.md), [known bugs](Reference/KNOWN-BUGS.md), and more
-- **Monitoring scripts** — Automated backup, health checks, update management, and gateway binding verification
+- **Monitoring scripts** — Self-healing health check (4-tier failure detection, exponential backoff), ops playbook (12 diagnostic checks), backup, update management, binding verification
 - **Config template** — Annotated `openclaw.json` with security defaults and audit annotations
 
 ## Quick Start
 
+**Fresh VPS? Use the one-command installer:**
+
 ```bash
-# 1. Clone to your VPS
 git clone https://github.com/mj-deving/openclaw-bot.git
 cd openclaw-bot
 
-# 2. Run the installer (previews changes first)
-./install.sh --dry-run    # See what it will do
-./install.sh              # Deploy config, scripts, cron jobs, logrotate
-
-# 3. Follow the guide
-# GUIDE.md walks you through everything — start at Phase 1
+# From blank Ubuntu 24.04 to running Gregor — handles everything:
+sudo bash setup.sh --dry-run    # Preview all 13 steps
+sudo bash setup.sh              # OS hardening, Node.js, OpenClaw, config, systemd, monitoring
 ```
 
-> **Prerequisites:** Ubuntu 22.04+ VPS, 2+ GB RAM, [OpenClaw](https://www.npmjs.com/package/openclaw) installed, a Telegram account, and an LLM provider API key.
+**Already have OpenClaw installed? Deploy just the tooling:**
 
-## What the Installer Does
+```bash
+./install.sh --dry-run    # See what it will do
+./install.sh              # Deploy config, scripts, cron jobs, logrotate
+```
 
-Deploys operational tooling on top of an existing OpenClaw install. It does **not** install OpenClaw itself — that's `npm install -g openclaw`.
+> **Prerequisites:** Ubuntu 22.04+ VPS, 2+ GB RAM, a Telegram account, and an LLM provider API key.
+
+## What the Installers Do
+
+**`setup.sh`** — Full VPS setup from scratch: creates `openclaw` user, hardens OS (firewall, unattended upgrades), installs Node.js 22.x + OpenClaw, deploys config + systemd service with hardening, then delegates to `install.sh` for monitoring. Interactive or non-interactive (secrets via env vars). 13 idempotent steps — safe to re-run.
+
+**`install.sh`** — Deploys operational tooling on top of an existing OpenClaw install. It does **not** install OpenClaw itself.
 
 - Config template → `~/.openclaw/openclaw.json` (never overwrites existing)
-- Monitoring scripts → `~/scripts/`
-- Cron jobs → backup (daily), health check (10min), auto-update (weekly), binding check (5min)
+- Monitoring scripts → `~/scripts/` (health-check, ops-playbook, backup, auto-update, binding check)
+- Cron jobs → backup (daily), health check (5min), auto-update (weekly), binding check (5min)
 - Log rotation → `/etc/logrotate.d/openclaw` (requires sudo, skipped if unavailable)
 
-Safe to re-run. Never overwrites existing files. Use `--dry-run` to preview.
+Both are safe to re-run. Never overwrite existing files. Use `--dry-run` to preview.
 
 ## Links
 
