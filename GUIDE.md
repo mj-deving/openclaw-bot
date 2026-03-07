@@ -1791,20 +1791,78 @@ chmod +x ~/scripts/verify-binding.sh
 (crontab -l 2>/dev/null; echo "*/5 * * * * /home/openclaw/scripts/verify-binding.sh") | crontab -
 ```
 
-### 10.3 Health Check
+### 10.3 Health Check & Self-Healing
+
+The `health-check.sh` script provides four tiers of failure detection with exponential backoff and a daily restart budget:
+
+| Tier | Detects | Method | Action |
+|------|---------|--------|--------|
+| 1 | Crashed/stopped service | `systemctl is-active` | Start service |
+| 2 | Zombie gateway | HTTP health check, 3 consecutive failures | Restart with backoff |
+| 3 | Silent polling death | Journal log patterns, 3 consecutive checks | Restart with backoff |
+| 4 | Memory leak | `/proc/$PID/status` VmRSS, 3 consecutive >2GB | Restart with backoff |
+
+**Safety mechanisms:**
+- `flock` single-instance guard (overlapping cron runs exit immediately)
+- Exponential backoff: 10 → 20 → 40 → 80 → 160 min cooldowns between restarts
+- Backoff resets after 60 minutes of continuous healthy checks
+- Daily budget: max 5 restarts per 24 hours (beyond that, logs CRITICAL and stops)
+- Calls `ops-playbook.sh diagnose --json` before every restart for post-mortem context
+
+The script runs every 5 minutes via cron. All checks are zero-cost system commands — the only LLM cost is the restart itself (~$0.01–0.05 in init tokens), capped at 5/day.
+
+State files in `~/.openclaw/state/`:
+
+| File | Purpose |
+|------|---------|
+| `health-fail-count` | Consecutive gateway check failures |
+| `polling-fail-count` | Consecutive polling silence count |
+| `memory-warn-count` | Consecutive high-RSS count |
+| `health-backoff-level` | Backoff multiplier (1–16) |
+| `health-last-restart` | Epoch timestamp of last restart |
+| `health-first-ok-after-restart` | First healthy check after restart (for reset tracking) |
+| `health-restart-log` | Structured restart log for daily-report cron |
 
 ```bash
-#!/bin/bash
-# /home/openclaw/scripts/health-check.sh
+chmod +x ~/scripts/health-check.sh
+# Every 5 minutes
+(crontab -l 2>/dev/null; echo "*/5 * * * * /home/openclaw/scripts/health-check.sh") | crontab -
+```
 
-if ! systemctl is-active --quiet openclaw; then
-    echo "OpenClaw is down. Restarting..."
-    systemctl start openclaw
-fi
+### 10.3.1 Ops Playbook
 
-if ! curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18789/health | grep -q "200"; then
-    echo "Gateway health check failed"
-fi
+A structured diagnostic script with three modes. Used by the health check (pre-restart diagnosis) and for manual troubleshooting.
+
+```bash
+# Quick health assessment (default)
+~/scripts/ops-playbook.sh check
+
+# Check + root cause identification
+~/scripts/ops-playbook.sh diagnose
+
+# Diagnose + attempt automated fixes
+~/scripts/ops-playbook.sh fix
+
+# Machine-parseable output (any mode)
+~/scripts/ops-playbook.sh check --json
+```
+
+**Exit codes:** 0 = healthy, 1 = unhealthy (fixable), 2 = unhealthy (needs human), 3 = script error.
+
+Runs 12 diagnostic checks: service status, process health, gateway HTTP, binding security, memory usage, disk space, log errors, polling liveness, `openclaw doctor`, database health, config validation, and restart history.
+
+In `fix` mode, the playbook takes automated action:
+- Starts a stopped service
+- Restarts an unresponsive gateway
+- **Stops** a service bound to 0.0.0.0 (security: wrong interface)
+- Runs `openclaw doctor --fix` for config/permission issues
+- Does NOT restart on config validation failure (prevents crash loops)
+
+```bash
+chmod +x ~/scripts/ops-playbook.sh
+
+# Remote health check from your local machine:
+ssh vps '~/scripts/ops-playbook.sh check --json'
 ```
 
 ### 10.4 Log Rotation
