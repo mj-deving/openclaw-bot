@@ -2991,6 +2991,85 @@ In order of impact:
 
 > **Deep reference:** [Reference/CONTEXT-ENGINEERING.md](Reference/CONTEXT-ENGINEERING.md) has the full internals — bootstrap injection mechanics, memory search pipeline, cache invalidation rules, and context overflow handling.
 
+### 14.9 Upgrading OpenClaw
+
+Safe upgrade procedure for minor version jumps. Tested with the 2026.3.2 → 2026.3.8 upgrade.
+
+#### Pre-Upgrade
+
+```bash
+# 1. Validate current config (fail-closed loading since 2026.3.4)
+openclaw config validate
+
+# 2. Backup config and cron state
+mkdir -p ~/backups
+cp ~/.openclaw/openclaw.json ~/backups/openclaw-config-$(openclaw --version | tr ' ' '-').json
+openclaw cron list --json > ~/backups/cron-backup-$(date +%Y%m%d).json
+
+# 3. Native backup (available since 2026.3.8)
+openclaw backup create --output ~/backups/pre-upgrade-$(date +%Y%m%d).tar.gz
+
+# 4. Disable health-check cron to prevent restart interference
+crontab -l | sed 's|^\*/5 \* \* \* \* .*/health-check.sh|#UPGRADE# &|' | crontab -
+```
+
+#### Upgrade
+
+```bash
+# 5. Stop gateway
+sudo systemctl stop openclaw
+
+# 6. Install new version
+npm install -g openclaw@<version>
+
+# 7. Verify version
+openclaw --version
+
+# 8. Validate config against new version
+openclaw config validate
+
+# 9. Start gateway (allow 30-60s for full init on major upgrades)
+sudo systemctl start openclaw
+sleep 30
+
+# 10. Verify health
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18789/health
+ss -tlnp | grep 18789   # Must show 127.0.0.1 only
+```
+
+#### Post-Upgrade
+
+```bash
+# 11. Verify cron jobs intact
+openclaw cron list
+
+# 12. Re-enable health-check cron
+crontab -l | sed 's|^#UPGRADE# ||' | crontab -
+
+# 13. Run diagnostics
+openclaw doctor
+~/scripts/ops-playbook.sh check --json
+
+# 14. Test native backup
+openclaw backup create --only-config --output ~/backups/post-upgrade-test.tar.gz
+openclaw backup verify ~/backups/post-upgrade-test.tar.gz
+```
+
+#### Rollback
+
+```bash
+# If config breaks:
+cp ~/backups/openclaw-config-<version>.json ~/.openclaw/openclaw.json
+
+# If binary breaks:
+npm install -g openclaw@<previous-version>
+sudo systemctl restart openclaw
+```
+
+> **Key gotcha since 2026.3.4:** Config loading is now fail-closed. Invalid keys abort gateway startup entirely. Always run `openclaw config validate` before restarting after any config change or upgrade.
+
+> **Changelog reference:** [Reference/UPGRADE-NOTES.md](Reference/UPGRADE-NOTES.md) documents every relevant change per version with action tags.
+
 ---
 
 ## Phase 15 — Voice & Audio

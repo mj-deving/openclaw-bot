@@ -637,6 +637,123 @@ Upgraded 2026-03-03 from v2026.2.26 (skipping v2026.3.1). Gateway restarted, Tel
 
 ---
 
+## v2026.3.3
+
+### Telegram & ACP
+
+1. **Telegram topic-to-agent routing** — Durable ACP channel/topic bindings route text-only jobs to correct channels.
+   - **Impact:** If we ever use topic-based routing, bindings persist across restarts. **NOTED**
+
+2. **ContextEngine plugin slot** — New compaction lifecycle hooks: bootstrap, ingest, assemble, compact, afterTurn, prepareSubagentSpawn, onSubagentEnded.
+   - **Impact:** Opt-in plugin interface. No change if no context engine plugin configured. Zero behavior change for existing setups. **NOTED**
+
+3. **Web search improvements** — Perplexity Search API integration, richer locale/time filters.
+   - **Impact:** If web search tool is enabled, better results. We don't currently use it. **NOTED**
+
+4. **SecretRef hardening** — Gateway auth handling improvements for SecretRef expansion.
+   - **Impact:** Improved SecretRef robustness. **BENEFITS**
+
+---
+
+## v2026.3.4
+
+### Routing & Startup
+
+1. **Durable ACP bindings for Discord channels** — Topic-level agentId overrides for reply routing precision.
+   - **Impact:** Discord-specific. **NONE**
+
+2. **Fail-closed config loading** — Invalid configs abort gateway startup instead of degrading silently.
+   - **Impact:** Critical change. If our config has ANY invalid keys, gateway won't start. Must run `openclaw config validate` before restart. **INVESTIGATE**
+
+3. **Stale-socket restart guards** — Protection against hung socket connections during restart.
+   - **Impact:** More reliable restarts. **BENEFITS**
+
+4. **Safer onboarding defaults** — Reduces silent failure modes during initial setup.
+   - **Impact:** Only affects new onboarding. **NONE**
+
+---
+
+## v2026.3.7
+
+### ContextEngine & Lifecycle
+
+1. **Full ContextEngine lifecycle hooks** — Complete plugin interface with bootstrap, ingest, assemble, compact, afterTurn, prepareSubagentSpawn, onSubagentEnded.
+   - **Impact:** Zero behavior change when no context engine plugin configured. LegacyContextEngine wrapper auto-enabled for backward compatibility. **NOTED**
+
+2. **Scoped subagent runtime** — AsyncLocalStorage-based runtime scoping for subagents.
+   - **Impact:** Internal reliability improvement. **BENEFITS**
+
+3. **Gateway sessions.get method** — New method for session retrieval.
+   - **Impact:** Internal API improvement. **NOTED**
+
+### Fixes & Improvements
+
+4. **xAI web-search collision guard** — Prevents tool name collision between native web-search and xAI provider.
+   - **Impact:** We don't use xAI. **NONE**
+
+5. **TUI token copy-safety** — Rendering enhancements for token display.
+   - **Impact:** Terminal rendering improvement. **NOTED**
+
+6. **Agent compaction continuity** — Improved compaction behavior across agent sessions.
+   - **Impact:** Better compaction reliability. May help with the #32106 compaction loop regression. **BENEFITS**
+
+7. **Memory/QMD index isolation** — Memory index separated per-agent.
+   - **Impact:** Cleaner memory index management. **BENEFITS**
+
+---
+
+## v2026.3.8
+
+Upgrading 2026-03-09 from v2026.3.2.
+
+### Major Features
+
+1. **`openclaw backup create` & `openclaw backup verify`** — Native local state archive commands.
+   - Options: `--only-config` (config-only), `--no-include-workspace` (exclude workspace files)
+   - Manifest/payload validation via `verify` subcommand
+   - Better archive naming for date sorting
+   - Pre-upgrade/destructive flow guidance
+   - **Impact:** Potential replacement for our custom `backup.sh`. Test both and compare coverage. **INVESTIGATE**
+
+2. **ACP Provenance Metadata** — `openclaw acp --provenance off|meta|meta+receipt`.
+   - Optional ACP ingress metadata capture, visible receipt injection, session trace ID retention.
+   - **Impact:** New security feature for agent identity verification. Opt-in. **CONSIDER**
+
+3. **Telegram cron announce delivery fix** — Routes text-only jobs through real outbound adapters.
+   - Fixes: cron no longer reports `delivered: true` when message never reached Telegram.
+   - Resolves longstanding "silent failure" for announce jobs.
+   - **Impact:** Fixes KNOWN-BUGS.md root cause 1.4 (Cron announce-mode injection). Does NOT fix root causes 1.1-1.3, 1.5-1.7 which are separate bugs. Keep `streamMode: "off"` workaround for non-cron dupes. **BENEFITS**
+
+4. **Bundled plugin priority** — Plugin onboarding prefers bundled plugins over npm-installed copies with same ID.
+   - Clears discovery cache before reload after plugin install.
+   - **Impact:** Prevents shadowing of bundled plugins (Matrix, Feishu, etc.). **BENEFITS**
+
+5. **CLI short git commit hash** — `openclaw --version` now includes git commit hash.
+   - **Impact:** Better version identification. **BENEFITS**
+
+### Security Fixes
+
+6. **12+ security fixes** — Aggregate of fixes across v2026.3.3-3.8 including:
+   - Fail-closed config loading (3.4)
+   - Stale-socket restart guards (3.4)
+   - SecretRef hardening (3.3)
+   - ContextEngine lifecycle isolation (3.7)
+   - Memory/QMD index isolation (3.7)
+   - Bundled plugin priority prevents shadowing (3.8)
+   - **Impact:** All auto-applied on upgrade. **BENEFITS**
+
+### New Config Keys
+
+- `acp.provenance` — ACP provenance level (`off`/`meta`/`meta+receipt`)
+
+### New CLI Commands
+
+- `openclaw backup create [--only-config] [--no-include-workspace] [--output path]`
+- `openclaw backup verify <archive>`
+- `openclaw acp --provenance <level>`
+
+---
+
 ## Config Decisions Tracker
 
 Items extracted from changelogs that may influence our configuration.
@@ -655,6 +772,10 @@ Items extracted from changelogs that may influence our configuration.
 | Ollama memory embeddings (`memorySearch.provider: "ollama"`) | v2026.3.2 #17 | CONSIDER | Low |
 | Monitor compaction loop regression (#32106) | v2026.3.2 #47 | INVESTIGATE | High |
 | `openclaw config validate` as pre-restart check | v2026.3.2 #26 | APPLIED | High |
+| Fail-closed config loading — validate before EVERY restart | v2026.3.4 #2 | APPLIED | High |
+| `openclaw backup create` vs custom `backup.sh` — evaluate overlap | v2026.3.8 #1 | INVESTIGATE | Medium |
+| ACP provenance (`openclaw acp --provenance meta`) | v2026.3.8 #2 | CONSIDER | Low |
+| Remove Telegram streaming workarounds after 3.8 cron fix | v2026.3.8 #3 | INVESTIGATE | Medium |
 
 ## Guide Update Tracker
 
@@ -675,3 +796,6 @@ Changelog items that need reflection in GUIDE.md.
 | Phase 12.5 (Cron) | Lightweight bootstrap mode for cron/heartbeat; session reaper reliability | v2026.3.2 #9, #14 | TODO |
 | Appendix F (CLI) | `openclaw config file` and `openclaw config validate` added | v2026.3.2 #26, #27 | TODO |
 | Phase 5 (Tools) | `tools.allow` → `tools.alsoAllow` migration required on upgrade | v2026.3.2 #1 | TODO |
+| Phase 14 (Maintenance) | `openclaw backup create/verify` native backup command | v2026.3.8 #1 | TODO |
+| Phase 14 (Maintenance) | Fail-closed config loading — always validate before restart | v2026.3.4 #2 | TODO |
+| Phase 12.5 (Cron) | Cron announce delivery fix — silent failure resolved | v2026.3.8 #3 | TODO |

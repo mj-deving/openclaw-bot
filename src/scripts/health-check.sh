@@ -178,7 +178,7 @@ do_restart() {
     fi
 
     log "RESTART: $reason (backoff level $level, cooldown $(get_cooldown_minutes)m)"
-    systemctl restart openclaw 2>/dev/null || true
+    sudo systemctl restart openclaw 2>/dev/null || true
 
     # Record restart
     local now
@@ -195,7 +195,7 @@ do_restart() {
     # Verify binding after restart (security check)
     if ss -tlnp 2>/dev/null | grep -q '0\.0\.0\.0:18789'; then
         log "CRITICAL: Post-restart binding is 0.0.0.0! Stopping."
-        systemctl stop openclaw 2>/dev/null || true
+        sudo systemctl stop openclaw 2>/dev/null || true
     else
         log "Post-restart binding verified OK (loopback)."
     fi
@@ -204,7 +204,7 @@ do_restart() {
 # --- Tier 1: Service status ---
 if ! systemctl is-active --quiet openclaw 2>/dev/null; then
     log "Service not active. Starting openclaw..."
-    systemctl start openclaw 2>/dev/null || true
+    sudo systemctl start openclaw 2>/dev/null || true
     state_write "$FAIL_COUNT_FILE" 0
     log "Service start attempted."
     exit 0

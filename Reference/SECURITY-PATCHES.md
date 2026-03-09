@@ -134,6 +134,36 @@ Covers both v2026.3.1 and v2026.3.2 security items (upgraded directly from v2026
 
 ---
 
+## v2026.3.3–3.8
+
+Covers security items across v2026.3.3 through v2026.3.8 (upgraded directly from v2026.3.2).
+
+### Critical / Config-Relevant
+
+| Item | Impact | Our Action |
+|------|--------|------------|
+| **Fail-closed config loading** (v2026.3.4) — invalid configs abort gateway startup instead of degrading | Critical operational change. Must run `openclaw config validate` before every restart/upgrade. | APPLIED (validate is part of our upgrade procedure) |
+| **Stale-socket restart guards** (v2026.3.4) — protection against hung connections during restart | More reliable `systemctl restart openclaw`. | BENEFITS US |
+| **Telegram cron announce delivery fix** (v2026.3.8) — routes text-only jobs through real outbound adapters | Fixes silent cron delivery failures. Resolves KNOWN-BUGS 1.4. Does NOT fix non-cron dupe causes (1.1-1.3). | BENEFITS US |
+| **Bundled plugin priority** (v2026.3.8) — bundled plugins preferred over npm-installed copies | Prevents plugin shadowing attacks via npm. | BENEFITS US |
+| **ContextEngine lifecycle isolation** (v2026.3.7) — scoped subagent runtime via AsyncLocalStorage | Stronger isolation for subagent operations. | BENEFITS US |
+| **Memory/QMD index isolation** (v2026.3.7) — memory index separated per-agent | Prevents cross-agent memory index contamination. | BENEFITS US |
+| **ACP Provenance** (v2026.3.8) — `openclaw acp --provenance off\|meta\|meta+receipt` | New identity verification feature. Opt-in. | CONSIDER |
+| **`openclaw backup create/verify`** (v2026.3.8) — native state archive with manifest validation | Backup integrity verification. | BENEFITS US |
+
+### Security Fixes (Auto-Applied)
+
+- Security/Config: fail-closed loading aborts on invalid keys (v2026.3.4)
+- Security/Socket: stale-socket guards prevent hung connection inheritance (v2026.3.4)
+- Security/SecretRef: gateway auth handling hardened (v2026.3.3)
+- Security/ContextEngine: lifecycle hooks scoped via AsyncLocalStorage (v2026.3.7)
+- Security/Memory: QMD index isolation per-agent (v2026.3.7)
+- Security/Plugin: bundled plugin priority prevents npm shadowing (v2026.3.8)
+- Security/ACP: provenance metadata capture with opt-in receipt injection (v2026.3.8)
+- Security/Backup: manifest/payload validation for archive integrity (v2026.3.8)
+
+---
+
 ## How To Use This File
 
 - **Before each upgrade:** Read the new version's changelog, extract security-relevant items here
@@ -156,3 +186,7 @@ Covers both v2026.3.1 and v2026.3.2 security items (upgraded directly from v2026
 | Monitor compaction loop regression (#32106) | v2026.3.1 — `softThresholdTokens=4000` | INVESTIGATE |
 | `openclaw config validate` as pre-restart check | v2026.3.2 — config validation CLI | APPLIED |
 | ACP dispatch now default-on | v2026.3.2 — set `false` if unwanted | NOTED |
+| Fail-closed config loading — validate before every restart | v2026.3.4 — config abort on invalid keys | APPLIED |
+| `openclaw backup create` for pre-upgrade snapshots | v2026.3.8 — native backup command | INVESTIGATE |
+| ACP provenance for agent identity | v2026.3.8 — `acp --provenance meta` | CONSIDER |
+| Telegram cron delivery fix — remove streaming workarounds? | v2026.3.8 — announce adapter fix | INVESTIGATE |
