@@ -379,21 +379,53 @@ openclaw models auth paste-token --provider anthropic
 
 ### 3.1.2 OpenAI Codex Subscription Auth (OAuth, no API key)
 
-OpenClaw also supports OpenAI subscription-based auth (ChatGPT/Codex OAuth), so you can run without per-token OpenAI API keys.
+OpenClaw supports OpenAI subscription-based auth (ChatGPT/Codex OAuth), so you can run without per-token OpenAI API keys. This is included in ChatGPT Plus, Pro, and Team plans — no separate API billing.
 
 ```bash
-# Login flow (interactive browser auth)
+# Login flow (opens browser for OAuth consent)
 openclaw models auth login --provider openai-codex
 
 # Verify auth profile is available
 openclaw models status
+
+# Check which models are accessible under your subscription
+openclaw models list --provider openai
 ```
 
-This is useful if you already pay for a ChatGPT plan and want to use subscription auth instead of API-key billing.
+The browser flow redirects to OpenAI's consent page, then writes credentials to `auth-profiles.json`. No API key needed — billing is through your existing ChatGPT subscription.
 
-> **Important:** subscription auth behavior (quotas/rate limits/model availability) follows your OpenAI/ChatGPT plan and OpenClaw's provider implementation. Validate with `openclaw models status` and a live test message before production rollout.
+> **Important:** Subscription auth behavior (quotas, rate limits, model availability) follows your ChatGPT plan tier. Plus gets lower rate limits than Pro. Validate with `openclaw models status` and a live test message before production rollout.
 >
-> **Caching + cost telemetry caveat:** subscription/OAuth auth does not provide the same cache-cost tuning path as API-key auth. For reliable prompt-caching controls and dollar-denominated optimization, use API-key provider auth.
+> **Embeddings gap:** OpenAI Codex subscription auth does NOT cover the Embeddings API. If you use OpenAI models for memory embeddings (e.g., `text-embedding-3-small`), you still need a separate OpenAI API key for that. Subscription auth only covers chat completions.
+>
+> **Caching clarification:** The `cacheRetention` config key is **Anthropic-only** — it has no effect on OpenAI models. OpenAI uses automatic server-side prompt caching: identical prompt prefixes are cached transparently at no extra cost, with no configuration required. This works regardless of auth method (API key or subscription OAuth). Don't conflate the two systems — Anthropic caching is opt-in via config, OpenAI caching is automatic and invisible.
+>
+> **Auth profile coexistence:** You can have both OpenAI subscription auth and an OpenAI API key in `auth-profiles.json` simultaneously. Use `openclaw models auth order` to set priority. See [§3.1.3](#313-auth-profile-rotation--failover).
+
+### 3.1.3 Auth Profile Rotation & Failover
+
+Multiple auth methods can coexist in `~/.openclaw/agents/main/agent/auth-profiles.json`. You're not locked to one — the bot falls back automatically if the primary method fails.
+
+```bash
+# View current auth profiles and priority order
+openclaw models auth list
+
+# Set priority (first = primary, rest = fallback)
+openclaw models auth order anthropic:oauth anthropic:manual
+```
+
+**How failover works:** If the primary profile (e.g., OAuth) returns an auth error (401/403), OpenClaw automatically retries with the next profile in the order list. This is transparent — the bot continues responding without manual intervention.
+
+**Trade-off between methods:**
+
+| Method | Billing | Cache Control | Best For |
+|--------|---------|---------------|----------|
+| API key (`anthropic:manual`) | Per-token | `cacheRetention` tuning available | Cost optimization, deterministic billing |
+| Setup-token OAuth (`anthropic:oauth`) | Subscription (flat rate) | No `cacheRetention` control | Predictable monthly cost |
+
+Having both configured gives you resilience: if your OAuth token expires during off-hours, the API key catches requests. If your API key hits a billing limit, OAuth takes over.
+
+> **Cross-reference:** Auth profile failover handles *credential* failures. For *model-level* failover (e.g., Sonnet unavailable → fall back to Haiku), see [§3.5 (Fallback Chains)](#35-fallback-chains).
 
 ### 3.2 Configure Your Provider
 
@@ -1365,6 +1397,21 @@ With `tools.profile: "full"` and targeted denials, the bot can:
 > **Why deny these specifically?** The `gateway` tool lets the AI reconfigure itself with zero permission checks — it could change its own deny list, enable tools, or modify auth. The `nodes` tool adds multi-device attack surface with no benefit for a single-VPS deployment. These denials are enforced at the orchestration layer (deterministic), not the prompt layer (probabilistic). Even a fully jailbroken model cannot call denied tools.
 >
 > **Why allow sessions?** `sessions_spawn` and `sessions_send` enable the bot to create parallel agent sessions and push proactive alerts — critical for use cases like Supercolony monitoring where the bot needs to send score updates or publish results without waiting for user input. Trade-off: a prompt injection could trigger unsolicited messages. Mitigate by monitoring session activity in logs.
+
+**Session tools (complete set):**
+
+| Tool | Purpose |
+|------|---------|
+| `sessions_spawn` | Create a new parallel agent session |
+| `sessions_send` | Send a message to an existing session |
+| `sessions_list` | Discover active sessions with metadata (IDs, creation time, status) |
+| `sessions_history` | Fetch transcript logs from other sessions |
+
+**Message flags for `sessions_send`:**
+- `REPLY_SKIP` — Send without triggering a reply from the target session (fire-and-forget notifications)
+- `ANNOUNCE_SKIP` — Send without the announcement prefix that normally identifies cross-session messages
+
+> **Security note:** If running a single-agent deployment (no Supercolony monitoring, no multi-session workflows), deny all session tools in `tools.deny` to reduce attack surface. A compromised prompt could otherwise spawn sessions or read transcripts from other conversations.
 
 ### 8.4 Identity-Layer Security
 
@@ -2456,6 +2503,45 @@ openclaw cron add \
 
 Cross-reference: [COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) Recommendation 4 for the Haiku heartbeat economics.
 
+### 12.7 Webhooks & External Triggers
+
+Cron handles time-driven automation. For event-driven automation — reacting to external events in real time — OpenClaw supports gateway-mounted webhook endpoints.
+
+**How it works:** The gateway exposes HTTP endpoints that accept POST requests and trigger bot actions. An incoming webhook fires a preconfigured prompt or skill.
+
+```jsonc
+{
+  "webhooks": {
+    "endpoints": [
+      {
+        "path": "/hook/email-alert",
+        "method": "POST",
+        "prompt": "New email alert received: {{body.subject}} from {{body.sender}}. Summarize and notify me.",
+        "auth": "bearer"    // Requires Authorization header
+      }
+    ]
+  }
+}
+```
+
+**Use cases:**
+- **Gmail Pub/Sub:** Google Cloud Pub/Sub pushes email notifications to your webhook endpoint, triggering the bot to summarize and alert you.
+- **Git push hooks:** CI/CD pipelines notify the bot of deployments or failures.
+- **Home automation:** IoT events trigger bot actions.
+
+**When to use webhooks vs cron:**
+
+| Trigger | Use |
+|---------|-----|
+| Something *happens* (email arrives, deploy completes) | Webhook |
+| Something should happen *on schedule* (daily report, heartbeat) | Cron ([§12](#phase-12--cron-automation)) |
+
+> **Security warning:** The gateway binds to loopback only (`127.0.0.1:18789`). External webhooks cannot reach it directly. To receive external webhooks, you need either:
+> - An SSH tunnel from the webhook source to the VPS loopback
+> - A reverse proxy (nginx/Caddy) that terminates TLS and forwards to loopback
+>
+> **Never expose the gateway port to the internet.** The reverse proxy must handle authentication, rate limiting, and TLS. Without these protections, anyone with the URL can trigger bot actions. See [§5 (Firewall)](#phase-5--firewall) for network policy guidance.
+
 ---
 
 ## Phase 13 — Cost Management & Optimization
@@ -3070,6 +3156,28 @@ sudo systemctl restart openclaw
 
 > **Changelog reference:** [Reference/UPGRADE-NOTES.md](Reference/UPGRADE-NOTES.md) documents every relevant change per version with action tags.
 
+#### Update Channels
+
+OpenClaw publishes to three npm dist-tags:
+
+| Channel | Dist-Tag | Version Format | When to Use |
+|---------|----------|---------------|-------------|
+| `stable` | `latest` | `vYYYY.M.D` | Production VPS (default) |
+| `beta` | `beta` | `vYYYY.M.D-beta.N` | Testing new features in non-prod |
+| `dev` | `dev` | main branch HEAD | Development only — expect breakage |
+
+```bash
+# Check current channel
+openclaw --version
+
+# Switch channel (triggers immediate update)
+openclaw update --channel stable
+openclaw update --channel beta
+openclaw update --channel dev
+```
+
+> **Recommendation:** Always use `stable` for production. A channel switch triggers an immediate download and install — don't switch to `dev` on a live VPS. If you need to test a beta feature, do it on a separate instance or during a maintenance window.
+
 ---
 
 ## Phase 15 — Voice & Audio
@@ -3210,6 +3318,47 @@ Things to be aware of:
 7. Optionally add a second provider for fallback resilience
 
 > **Deep reference:** [Reference/VOICE-AND-AUDIO.md](Reference/VOICE-AND-AUDIO.md) has the full research — cloud provider pricing, self-hosted engine comparison, architecture patterns, Telegram Bot API internals, and framework landscape analysis.
+
+### 15.9 Text-to-Speech (TTS)
+
+OpenClaw supports text-to-speech output — the bot can send voice replies, not just text. This is server-configurable and relevant for VPS deployments.
+
+**ElevenLabs (recommended):**
+
+```jsonc
+{
+  "tools": {
+    "media": {
+      "tts": {
+        "enabled": true,
+        "provider": "elevenlabs",
+        "model": "eleven_multilingual_v2",
+        "voiceId": "YOUR_VOICE_ID"        // Choose from ElevenLabs voice library
+      }
+    }
+  }
+}
+```
+
+Set the API key via environment variable in the systemd unit:
+
+```bash
+# In /etc/systemd/system/openclaw.service.d/env.conf:
+Environment="ELEVENLABS_API_KEY=sk_..."
+```
+
+**System TTS fallback:** OpenClaw can also use system-level TTS (e.g., `espeak-ng` on Linux) as a zero-cost fallback. Quality is significantly lower than ElevenLabs but requires no API key or external calls.
+
+**Cost:** ElevenLabs free tier includes 10,000 characters/month (~15 minutes of speech). Paid plans start at $5/month for 30,000 characters. At typical bot usage (a few voice replies per day), the free tier is sufficient.
+
+### 15.10 Platform-Specific Features (Reference)
+
+Some OpenClaw features are client-side and not VPS-configurable. Noted here for awareness:
+
+- **Voice Wake (macOS/iOS):** Wake-word activation ("Hey OpenClaw") — requires the desktop/mobile client, not available on headless VPS or Telegram.
+- **Talk Mode (Android):** Push-to-talk conversational mode — Android client only.
+
+These features are irrelevant for a VPS Telegram bot deployment but may matter if you also use OpenClaw's native clients alongside Telegram.
 
 ---
 
@@ -3518,6 +3667,24 @@ Complete `openclaw.json` with all recommended settings:
 ---
 
 ## Appendix F — Runbook: Common Operations
+
+### Chat Commands Reference
+
+Commands available in Telegram chat (or CLI). Cross-references point to detailed explanations elsewhere in the guide.
+
+| Command | Description | Details |
+|---------|-------------|---------|
+| `/status` | Session model, context usage, estimated cost | [§13.1](#131-measure-first) |
+| `/usage off\|tokens\|full` | Token usage footer display | [§13.1](#131-measure-first) |
+| `/verbose on\|off` | Full tool error details in responses | |
+| `/new` or `/reset` | Start a fresh session | |
+| `/compact [instructions]` | Manual context compression | [§14.7](#147-context-pruning) |
+| `/model <alias>` | Switch model mid-session (e.g., `/model haiku`) | [§3.6](#36-model-aliases) |
+| `/reasoning off` | Disable extended thinking output | |
+| `/think <level>` | Thinking intensity: `off\|minimal\|low\|medium\|high\|xhigh` | |
+| `/activation mention\|always` | Group activation mode (mention-only vs always respond) | [§4.3](#43-group-chats) |
+| `/restart` | Gateway restart (owner-only in groups) | |
+| `/context list\|detail` | Token distribution breakdown per loaded file | [§13.1](#131-measure-first) |
 
 ### Start / Stop / Restart
 
