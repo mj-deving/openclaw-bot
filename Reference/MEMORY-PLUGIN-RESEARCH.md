@@ -417,7 +417,7 @@ Layer PARA (Projects/Areas/Resources/Archive) directory structure on top of the 
     2026-03-07.md
     2026-03-06.md
   projects/                 # PARA: Active goals with deadlines (HOT)
-    openclaw-bot.md
+    openclaw-hardened.md
     supercolony.md
   areas/                    # PARA: Ongoing responsibilities (WARM)
     vps-ops.md

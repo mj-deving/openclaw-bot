@@ -1,5 +1,5 @@
 #!/bin/bash
-# openclaw-bot installer — deploys operational tooling to a VPS
+# openclaw-hardened installer — deploys operational tooling to a VPS
 # This does NOT install OpenClaw itself (that's: npm install -g openclaw)
 # This deploys: config template, monitoring scripts, cron jobs, logrotate
 #
@@ -34,7 +34,7 @@ for arg in "$@"; do
         --help|-h)
             echo "Usage: ./install.sh [--dry-run]"
             echo ""
-            echo "Deploys openclaw-bot operational tooling to the current user's environment."
+            echo "Deploys openclaw-hardened operational tooling to the current user's environment."
             echo ""
             echo "Options:"
             echo "  --dry-run    Preview actions without making changes"
@@ -129,7 +129,7 @@ deploy_cron() {
 # --- Preflight checks ---
 echo ""
 echo "════════════════════════════════════════════════════════"
-echo "  openclaw-bot installer"
+echo "  openclaw-hardened installer"
 if $DRY_RUN; then
     echo "  Mode: DRY RUN (no changes will be made)"
 fi

@@ -10,7 +10,7 @@
 #   pai-overnight-local.sh --resume
 #
 # Examples:
-#   pai-overnight-local.sh ~/.claude/MEMORY/WORK/*/PRD-*.md --project openclaw-bot
+#   pai-overnight-local.sh ~/.claude/MEMORY/WORK/*/PRD-*.md --project openclaw-hardened
 #   pai-overnight-local.sh --status
 #   pai-overnight-local.sh --report --json
 
@@ -51,7 +51,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --resume             Resume failed/stuck item"
             echo ""
             echo "Options:"
-            echo "  --project <name>     Project name (default: openclaw-bot)"
+            echo "  --project <name>     Project name (default: openclaw-hardened)"
             echo "  --timeout <minutes>  Per-task timeout (default: 120)"
             echo "  --max-turns <n>      Per-task max turns (default: 50)"
             exit 0

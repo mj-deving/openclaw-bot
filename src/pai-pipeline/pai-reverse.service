@@ -10,7 +10,7 @@
 
 [Unit]
 Description=PAI pipeline reverse-task watcher (Isidore Cloud -> Gregor)
-Documentation=https://github.com/mj-deving/openclaw-bot
+Documentation=https://github.com/mj-deving/openclaw-hardened
 
 [Service]
 Type=simple

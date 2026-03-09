@@ -10,7 +10,7 @@
 
 [Unit]
 Description=PAI pipeline result notification watcher
-Documentation=https://github.com/mj-deving/openclaw-bot
+Documentation=https://github.com/mj-deving/openclaw-hardened
 
 [Service]
 Type=simple

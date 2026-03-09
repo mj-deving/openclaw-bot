@@ -12,8 +12,8 @@
 #
 # Examples:
 #   pai-submit.sh "Review backup.sh for edge cases"
-#   pai-submit.sh "Refactor the auth module" --project openclaw-bot --priority high
-#   pai-submit.sh "Decompose and run PRD" --type orchestrate --project openclaw-bot
+#   pai-submit.sh "Refactor the auth module" --project openclaw-hardened --priority high
+#   pai-submit.sh "Decompose and run PRD" --type orchestrate --project openclaw-hardened
 #   pai-submit.sh "Continue the refactor" --session abc-123 --timeout 60
 
 set -euo pipefail

@@ -1325,7 +1325,7 @@ Configure your bot's personality in workspace files — primarily `AGENTS.md` (o
 
 ```xml
 <identity>
-You are openclaw-bot, an AI assistant for a self-hosted OpenClaw bot system.
+You are openclaw-hardened, an AI assistant for a self-hosted OpenClaw bot system.
 Tone: direct, technical, security-aware. Explain decisions with specific
 reasoning. Avoid filler and unnecessary pleasantries.
 </identity>
@@ -4007,7 +4007,7 @@ chmod 700 ~/.openclaw/pipeline/escalate
 systemctl --user status pai-notify pai-reverse pai-escalation.path
 
 # Test forward pipeline
-pai-submit.sh "What time is it?" --project openclaw-bot
+pai-submit.sh "What time is it?" --project openclaw-hardened
 pai-result.sh --wait --latest
 
 # Test auto-escalation (send complex message via internal pipeline)

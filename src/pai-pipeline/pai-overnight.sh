@@ -14,7 +14,7 @@
 #   resume        Resubmit current failed/stuck item
 #
 # Usage:
-#   pai-overnight.sh init --project openclaw-bot --timeout 120 --max-turns 50
+#   pai-overnight.sh init --project openclaw-hardened --timeout 120 --max-turns 50
 #   pai-overnight.sh advance               (called by cron every 5 min)
 #   pai-overnight.sh status [--json]
 #   pai-overnight.sh report [--json]
@@ -79,7 +79,7 @@ while [[ $# -gt 0 ]]; do
             echo "  resume     Resubmit current failed/stuck item"
             echo ""
             echo "Options (init):"
-            echo "  --project <name>     Project name (default: openclaw-bot)"
+            echo "  --project <name>     Project name (default: openclaw-hardened)"
             echo "  --timeout <minutes>  Per-task timeout (default: 120)"
             echo "  --max-turns <n>      Per-task max turns (default: 50)"
             echo ""
@@ -121,7 +121,7 @@ print(q.get('status', 'unknown'))
         die "No .md files in staging directory: $STAGING_DIR"
     fi
 
-    local effective_project="${PROJECT:-openclaw-bot}"
+    local effective_project="${PROJECT:-openclaw-hardened}"
     log "INIT: ${#prd_files[@]} PRDs, project=$effective_project, timeout=${TIMEOUT_MINUTES}m, max_turns=$MAX_TURNS"
 
     # Build queue.json and submit first task using python3
@@ -368,7 +368,7 @@ def read_result(path):
 def submit_next(item_idx):
     """Submit the next pending item."""
     item = items[item_idx]
-    project = queue.get("project", "openclaw-bot")
+    project = queue.get("project", "openclaw-hardened")
     defaults = queue.get("defaults", {})
 
     prd_path = os.path.join(staging_dir, item["prd_file"])
@@ -414,7 +414,7 @@ def submit_next(item_idx):
 
 def generate_morning_report():
     """Write morning report to Gregor's inbox."""
-    project = queue.get("project", "openclaw-bot")
+    project = queue.get("project", "openclaw-hardened")
     completed = queue.get("completed_count", 0)
     failed = queue.get("failed_count", 0)
     total = len(items)
@@ -817,7 +817,7 @@ if resume_idx is None:
     sys.exit(0)
 
 item = items[resume_idx]
-project = queue.get("project", "openclaw-bot")
+project = queue.get("project", "openclaw-hardened")
 defaults = queue.get("defaults", {})
 
 # If it was failed, decrement fail count

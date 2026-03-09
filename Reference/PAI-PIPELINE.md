@@ -109,7 +109,7 @@ pai-submit.sh "Review backup.sh for edge cases"
 
 # With options
 pai-submit.sh "Refactor the auth module" \
-  --project openclaw-bot \
+  --project openclaw-hardened \
   --priority high \
   --timeout 60 \
   --max-turns 20
@@ -195,7 +195,7 @@ Written to `/var/lib/pai-pipeline/tasks/<id>.json`:
   "type": "task",
   "priority": "normal",
   "mode": "async",
-  "project": "openclaw-bot",
+  "project": "openclaw-hardened",
   "session_id": null,
   "prompt": "Review backup.sh for edge cases",
   "context": {
@@ -583,7 +583,7 @@ Queue-based system for batch PRD execution during Marius's Claude Max 5-hour win
 ### Queue Lifecycle
 
 ```
-pai-overnight-local.sh plan1.md plan2.md --project openclaw-bot
+pai-overnight-local.sh plan1.md plan2.md --project openclaw-hardened
   → scp PRDs to VPS /var/lib/pai-pipeline/overnight/staging/
   → ssh pai-overnight.sh init → builds queue.json, submits first task
 
@@ -604,7 +604,7 @@ The bridge has a hardcoded 5-minute timeout. PRD tasks routinely take 10-120 min
 
 ```bash
 # From local machine — queue PRDs
-src/pai-pipeline/pai-overnight-local.sh ~/.claude/MEMORY/WORK/*/PRD-*.md --project openclaw-bot
+src/pai-pipeline/pai-overnight-local.sh ~/.claude/MEMORY/WORK/*/PRD-*.md --project openclaw-hardened
 
 # Check progress
 src/pai-pipeline/pai-overnight-local.sh --status

@@ -4,7 +4,7 @@
 
 [Unit]
 Description=Watch pipeline escalate directory for new files
-Documentation=https://github.com/mj-deving/openclaw-bot
+Documentation=https://github.com/mj-deving/openclaw-hardened
 
 [Path]
 PathChanged=%h/.openclaw/pipeline/escalate

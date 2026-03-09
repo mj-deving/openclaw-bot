@@ -3,7 +3,7 @@
 
 [Unit]
 Description=Submit escalated pipeline messages to PAI pipeline
-Documentation=https://github.com/mj-deving/openclaw-bot
+Documentation=https://github.com/mj-deving/openclaw-hardened
 
 [Service]
 Type=oneshot

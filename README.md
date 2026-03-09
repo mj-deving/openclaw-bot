@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/social-preview.png" alt="openclaw-bot — Maximum capability, minimum attack surface" width="640">
+  <img src="assets/social-preview.png" alt="openclaw-hardened — Maximum capability, minimum attack surface" width="640">
 </p>
 
 <h3 align="center">Security-first OpenClaw deployment — from blank server to hardened AI agent.</h3>
@@ -12,9 +12,29 @@
 
 ## What This Is
 
-A deployment blueprint for running [OpenClaw](https://docs.openclaw.ai) on a self-hosted VPS with a security-first posture. The guide treats AI agent security as a first-class concern — 4-layer permission model, systemd hardening, supply chain lockdown, loopback-only gateway — and explains the reasoning behind every decision.
+A deployment blueprint for running [OpenClaw](https://docs.openclaw.ai) on a self-hosted VPS with a security-first posture. A practitioner's reference that treats AI agent security as a first-class concern and explains the reasoning behind every decision.
 
-This is not a "get started in 5 minutes" tutorial. It's a practitioner's reference for people who want to understand what their AI agent can and cannot do on their server.
+## Why Hardened?
+
+A vanilla OpenClaw install trusts everything by default:
+
+- **Supply chain attacks** — community skills from ClawHub execute arbitrary code with no review ([ClawHavoc campaign](Reference/SKILLS-AND-TOOLS.md))
+- **Self-reconfiguration** — the `gateway` tool can modify its own permission boundaries at runtime
+- **Credential exfiltration** — prompt injection can extract API keys and auth tokens via tool calls
+- **Silent polling death** — Telegram polling fails silently with no built-in detection or recovery
+
+This repo closes those gaps with defense-in-depth, documented from first principles.
+
+## Security Model
+
+| Layer | Mechanism | Prevents |
+|-------|-----------|----------|
+| 1. Tool profile | `tools.profile: "full"` + `tools.deny` | Self-reconfiguration, device access |
+| 2. Exec gating | `exec.security: "full"` | Unrestricted shell with no audit trail |
+| 3. Network isolation | Loopback-only gateway (`127.0.0.1:18789`) | Remote exploitation, direct API access |
+| 4. Identity hardening | DM pairing + system prompt security | Impersonation, prompt extraction |
+
+Plus: zero community skills (bundled-only policy), supply chain lockdown, local embeddings.
 
 ## What You Get
 
@@ -28,8 +48,8 @@ This is not a "get started in 5 minutes" tutorial. It's a practitioner's referen
 **Fresh VPS? Use the one-command installer:**
 
 ```bash
-git clone https://github.com/mj-deving/openclaw-bot.git
-cd openclaw-bot
+git clone https://github.com/mj-deving/openclaw-hardened.git
+cd openclaw-hardened
 
 # From blank Ubuntu 24.04 to running Gregor — handles everything:
 sudo bash setup.sh --dry-run    # Preview all 13 steps

@@ -1,4 +1,4 @@
-# Security Self-Audit Prompt for openclaw-bot
+# Security Self-Audit Prompt for openclaw-hardened
 
 > Send this to the bot via Telegram or pipeline. It systematically tests its own
 > permissions and checks for bypass vectors.

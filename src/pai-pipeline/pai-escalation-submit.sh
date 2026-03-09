@@ -55,8 +55,8 @@ print(d.get('priority', 'normal'))
 import json, sys
 with open(sys.argv[1]) as fh:
     d = json.load(fh)
-print(d.get('project', 'openclaw-bot'))
-" "$f" 2>/dev/null) || project="openclaw-bot"
+print(d.get('project', 'openclaw-hardened'))
+" "$f" 2>/dev/null) || project="openclaw-hardened"
 
     task_type=$(python3 -c "
 import json, sys
