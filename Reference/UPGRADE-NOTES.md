@@ -754,6 +754,175 @@ Upgrading 2026-03-09 from v2026.3.2.
 
 ---
 
+## v2026.3.11
+
+Released 2026-03-12. Security fix + cron breaking change.
+
+### Breaking Changes
+
+1. **Cron/doctor: tightened isolated delivery** — Prevents ad hoc notifies and fallback summaries in isolated cron sessions. Requires `openclaw doctor --fix --non-interactive` migration.
+   - **Impact:** Our cron jobs run in isolated sessions. Doctor migration applied on upgrade. **APPLIED**
+
+### Security
+
+2. **WebSocket browser origin validation** — Enforces browser origin validation for all browser-originated connections regardless of proxy headers. Closes cross-site WebSocket hijacking in trusted-proxy mode.
+   - **Impact:** Our gateway is loopback-only so not directly exploitable, but defense-in-depth. **BENEFITS**
+
+### Agents & Context
+
+3. **Agent text sanitization** — Strips leaked model control tokens (GLM-5, DeepSeek internal delimiters) from assistant text before delivery.
+   - **Impact:** If Gregor ever routes through providers that leak control tokens, they won't reach Telegram. **BENEFITS**
+
+4. **Context pruning improvements** — Prunes image-only results, aligns coverage.
+   - **Impact:** Better context management for image-heavy sessions. **BENEFITS**
+
+5. **Agents/billing recovery** — Probes single-provider cooldowns on existing throttle. Treats HTTP 499 as transient, recognizes Venice/Poe billing errors.
+   - **Impact:** Better fallback chain resilience. **BENEFITS**
+
+6. **Agents/cooldowns** — Defaults unknown failures to "unknown" instead of "rate_limit". Resets expired error counters before computing backoff.
+   - **Impact:** More accurate cooldown behavior. **BENEFITS**
+
+7. **Agents/memory flush** — Forwards flush write paths through embedded runs.
+   - **Impact:** Memory flush more reliable in subagent contexts. **BENEFITS**
+
+### Telegram
+
+8. **Telegram outbound HTML chunking** — Chunks long messages, preserves fallback params.
+   - **Impact:** Long Gregor responses won't fail on Telegram's message size limits. **BENEFITS**
+
+9. **Telegram final preview delivery** — Splits lifecycle from cleanup retention.
+   - **Impact:** Streaming preview messages handled more cleanly. **BENEFITS**
+
+### Memory
+
+10. **Multimodal memory indexing** — Opt-in image/audio indexing with Gemini `gemini-embedding-2-preview`.
+    - **Impact:** New capability. Would require Gemini API key. **CONSIDER**
+
+### New Features
+
+11. **Exec/child `OPENCLAW_CLI` env var** — Subprocesses can detect when launched from OpenClaw CLI.
+    - **Impact:** Scripts spawned by Gregor can detect OpenClaw context. **NOTED**
+
+12. **`sessions_yield` for orchestrators** — ACP subagents can end turns and skip queued tool work via `sessions_spawn resumeSessionId`.
+    - **Impact:** Future orchestration capability. **NOTED**
+
+### Fixes
+
+13. **iOS/macOS gateway foreground recovery** — Immediate reconnect after stale sockets teardown.
+    - **Impact:** Platform-specific. **NONE**
+
+14. **Gateway config errors surfaced** — Up to three validation issues with details.
+    - **Impact:** Better error messages on config problems. **BENEFITS**
+
+15. **Sessions/reset model** — Clears stale metadata before recompute.
+    - **Impact:** More reliable model switching. **BENEFITS**
+
+---
+
+## v2026.3.12
+
+Upgraded 2026-03-13 from v2026.3.8. Gateway restarted, Telegram verified, `doctor --fix` applied. `node-llama-cpp` peer dependency manually installed (npm doesn't auto-install global peer deps).
+
+### Security (Major — 12+ fixes)
+
+1. **Device pairing: short-lived bootstrap tokens** — Replaces embedded shared credentials with short-lived bootstrap tokens for device pairing.
+   - **Impact:** Significant hardening of the pairing flow. Our DM pairing is already locked, but this closes a class of credential replay attacks. **BENEFITS**
+
+2. **Disabled implicit workspace plugin auto-load** — Plugins in workspace directories no longer auto-execute without explicit enablement.
+   - **Impact:** Prevents unauthorized code execution from workspace files. Directly relevant — Gregor's workspace could theoretically contain malicious plugin files. **BENEFITS**
+
+3. **Invisible Unicode escaping in approval prompts** — Escapes invisible Unicode characters in tool approval prompts.
+   - **Impact:** Prevents prompt injection via invisible characters in tool call displays. **BENEFITS**
+
+4. **Unicode normalization before obfuscation checks** — Normalizes Unicode before checking for obfuscated commands.
+   - **Impact:** Closes Unicode-based exec obfuscation bypass. **BENEFITS**
+
+5. **Sender ownership for `/config` and `/debug`** — Requires sender ownership verification for config and debug slash commands.
+   - **Impact:** Prevents unauthorized config access even in shared chat contexts. **BENEFITS**
+
+6. **Unbound scope clearing on shared-token WebSocket** — Clears unbound scopes on shared-token WebSocket connects.
+   - **Impact:** Prevents scope escalation via stale WebSocket sessions. **BENEFITS**
+
+7. **Persistent browser profile blocking** — Blocks persistent browser profile operations from write-scoped requests.
+   - **Impact:** Prevents browser state persistence attacks. **BENEFITS**
+
+8. **Public spawned-run lineage rejection** — Rejects public spawned-run lineage fields.
+   - **Impact:** Prevents lineage spoofing in agent runs. **BENEFITS**
+
+9. **Sandbox session-tree visibility** — Enforces sandbox session-tree visibility in `session_status`.
+   - **Impact:** Sandboxed sessions can't inspect parent session state. **BENEFITS**
+
+10. **Hooks: fail-closed on unresolvable paths** — Hook loader fails closed when paths can't be resolved.
+    - **Impact:** Prevents hook bypass via path manipulation. **BENEFITS**
+
+11. **POSIX case sensitivity in allowlist patterns** — Preserves POSIX case sensitivity in allowlist patterns.
+    - **Impact:** Prevents case-based allowlist bypass on case-sensitive filesystems. **BENEFITS**
+
+12. **Hook delivery deduplication** — Agent deliveries deduped by optional idempotency key.
+    - **Impact:** Prevents duplicate hook-triggered actions. **BENEFITS**
+
+### Telegram
+
+13. **Telegram model picker persistence** — Persistent inline model selections and proper fallback handling.
+    - **Impact:** Model selection via Telegram inline keyboard now survives restarts. **BENEFITS**
+
+14. **Cron isolated sends excluded from resend queue** — Isolated cron sends no longer enter the resend queue, preventing duplicates.
+    - **Impact:** Another duplicate message fix (KNOWN-BUGS.md). Our `streamMode: "off"` stays, but this fixes one more root cause. **BENEFITS**
+
+15. **TUI duplicate assistant message fix** — Fixed duplicate rendering in streaming runs.
+    - **Impact:** TUI-specific. **NONE**
+
+16. **Mattermost duplicate fix** — Block streaming deduplication for Mattermost.
+    - **Impact:** Platform-specific. **NONE**
+
+### Agents & Subagents
+
+17. **Subagent completion timeout raised to 90s** — Stops retrying gateway timeouts for completion announces.
+    - **Impact:** Complex subagent tasks get more time to announce completion. **BENEFITS**
+
+18. **Ollama/vLLM/SGLang → provider-plugin architecture** — Moved to plugin-based provider registration.
+    - **Impact:** If we ever add local Ollama, it's now a plugin. Architecture change. **NOTED**
+
+19. **GPT-5.4 and Anthropic Claude fast mode** — `/fast` toggle maps to Anthropic `service_tier` requests. Session-level toggles.
+    - **Impact:** New speed/cost option if Anthropic supports `service_tier` for our tier. **CONSIDER**
+
+20. **Slack Block Kit support** — Agent replies support Block Kit messages.
+    - **Impact:** Platform-specific. **NONE**
+
+### Gateway & Infrastructure
+
+21. **Control UI dashboard-v2** — Modular views (overview, chat, config, agent, session), command palette, mobile bottom tabs.
+    - **Impact:** If we SSH-tunnel the Control UI, significant UX upgrade. **NOTED**
+
+22. **Kubernetes deployment manifests** — Raw K8s manifests and Kind setup documentation for containerized gateway deployment.
+    - **Impact:** Alternative deployment model. We use VPS + systemd. **NOTED** (see separate research)
+
+### Fixes
+
+23. **Gateway session discovery** — Fixed disk-only and retired ACP session store discovery.
+    - **Impact:** Session recovery more robust. **BENEFITS**
+
+24. **Plugins/env-scoped roots** — Fixed discovery caches and provenance tracking.
+    - **Impact:** Plugin management reliability. **BENEFITS**
+
+25. **Models/OpenRouter canonicalization** — Canonicalized native model keys across operations.
+    - **Impact:** More reliable OpenRouter model handling. **BENEFITS**
+
+26. **Sandbox/write stdin preservation** — Preserved stdin to prevent empty file creation.
+    - **Impact:** Sandbox write reliability. **BENEFITS**
+
+### New Config Keys
+
+- `service_tier` — Anthropic fast mode toggle (via `/fast`)
+
+### Operational Notes
+
+- `node-llama-cpp` is now a `peerDependency` (was optional). Global npm install doesn't auto-install peer deps — must manually install: `cd ~/.npm-global/lib/node_modules/openclaw && npm install node-llama-cpp@3.16.2`
+- Upgrade removed 131 packages, added 20, changed 536 — significant dependency restructuring
+- Startup time: 27s (normal range for restart)
+
+---
+
 ## Config Decisions Tracker
 
 Items extracted from changelogs that may influence our configuration.
@@ -776,6 +945,13 @@ Items extracted from changelogs that may influence our configuration.
 | `openclaw backup create` vs custom `backup.sh` — evaluate overlap | v2026.3.8 #1 | INVESTIGATE | Medium |
 | ACP provenance (`openclaw acp --provenance meta`) | v2026.3.8 #2 | CONSIDER | Low |
 | Remove Telegram streaming workarounds after 3.8 cron fix | v2026.3.8 #3 | INVESTIGATE | Medium |
+| `node-llama-cpp` peer dep — manual install needed on upgrade | v2026.3.12 ops | APPLIED | High |
+| Cron isolated resend queue fix — another dupe root cause closed | v2026.3.12 #14 | BENEFITS | Medium |
+| Device pairing bootstrap tokens — credential replay class closed | v2026.3.12 #1 | BENEFITS | High |
+| Workspace plugin auto-load disabled — code execution risk closed | v2026.3.12 #2 | BENEFITS | High |
+| Anthropic fast mode (`service_tier`) available via `/fast` | v2026.3.12 #19 | CONSIDER | Low |
+| Multimodal memory indexing (Gemini embeddings) | v2026.3.11 #10 | CONSIDER | Low |
+| K8s deployment manifests available — alternative to systemd | v2026.3.12 #22 | NOTED | Low |
 
 ## Guide Update Tracker
 
@@ -799,3 +975,9 @@ Changelog items that need reflection in GUIDE.md.
 | Phase 14 (Maintenance) | `openclaw backup create/verify` native backup command | v2026.3.8 #1 | TODO |
 | Phase 14 (Maintenance) | Fail-closed config loading — always validate before restart | v2026.3.4 #2 | TODO |
 | Phase 12.5 (Cron) | Cron announce delivery fix — silent failure resolved | v2026.3.8 #3 | TODO |
+| Phase 14 (Maintenance) | `node-llama-cpp` peer dep install step in upgrade procedure | v2026.3.12 ops | TODO |
+| Phase 7 (Security) | Device pairing now uses short-lived bootstrap tokens | v2026.3.12 #1 | TODO |
+| Phase 7 (Security) | Workspace plugin auto-load disabled by default | v2026.3.12 #2 | TODO |
+| Phase 12.5 (Cron) | Isolated sends excluded from resend queue — dupe fix | v2026.3.12 #14 | TODO |
+| Phase 14 (Maintenance) | Cron doctor migration required (`doctor --fix`) on upgrade | v2026.3.11 #1 | TODO |
+| NEW: Appendix (K8s) | K8s deployment manifests as alternative to systemd | v2026.3.12 #22 | TODO |

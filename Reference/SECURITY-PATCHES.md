@@ -164,6 +164,45 @@ Covers security items across v2026.3.3 through v2026.3.8 (upgraded directly from
 
 ---
 
+## v2026.3.11–3.12
+
+Covers v2026.3.11 (March 12) and v2026.3.12 (March 13). Upgraded directly from v2026.3.8.
+
+### Critical / Config-Relevant
+
+| Item | Impact | Our Action |
+|------|--------|------------|
+| **WebSocket browser origin validation** (v2026.3.11) — enforces origin check for all browser-originated connections, closes cross-site WebSocket hijacking in trusted-proxy mode | Our gateway is loopback-only, not directly exploitable. Defense-in-depth. | NONE (auto-applied) |
+| **Cron isolated delivery tightened** (v2026.3.11, BREAKING) — prevents ad hoc notifies and fallback summaries in isolated cron sessions | Requires `openclaw doctor --fix` migration. Applied on upgrade. | APPLIED |
+| **Device pairing: short-lived bootstrap tokens** (v2026.3.12) — replaces embedded shared credentials with ephemeral tokens | Significant improvement. Closes credential replay class for device pairing flow. | NONE (auto-applied) |
+| **Workspace plugin auto-load disabled** (v2026.3.12) — plugins in workspace dirs no longer auto-execute without explicit enablement | Closes unauthorized code execution from workspace files. Directly relevant to Gregor's workspace. | NONE (auto-applied) |
+| **Invisible Unicode escaping in approval prompts** (v2026.3.12) — escapes invisible Unicode in tool approval displays | Closes prompt injection via invisible characters. | NONE (auto-applied) |
+| **Unicode normalization before obfuscation checks** (v2026.3.12) — normalizes Unicode before exec obfuscation detection | Closes Unicode-based exec bypass. Strengthens our `exec.security: "full"` posture. | NONE (auto-applied) |
+| **Sender ownership for `/config` and `/debug`** (v2026.3.12) — requires sender ownership verification | Prevents unauthorized config access even in shared contexts. | NONE (auto-applied) |
+| **Hooks fail-closed on unresolvable paths** (v2026.3.12) — hook loader fails closed instead of skipping | Prevents hook bypass via path manipulation. | NONE (auto-applied) |
+| **POSIX case sensitivity in allowlist** (v2026.3.12) — preserves case sensitivity in allowlist patterns | Prevents case-based allowlist bypass on Linux. | NONE (auto-applied) |
+| **Cron isolated sends excluded from resend queue** (v2026.3.12) — prevents duplicate delivery from resend queue | Another duplicate message root cause closed. Keep `streamMode: "off"` for remaining causes. | BENEFITS US |
+| **Agent text sanitization** (v2026.3.11) — strips leaked model control tokens from delivery | Prevents GLM-5/DeepSeek delimiters from reaching Telegram users. | NONE (auto-applied) |
+| **`node-llama-cpp` peer dependency** (v2026.3.12) — now a peer dep instead of optional | Requires manual install for global npm setups: `cd ~/.npm-global/lib/node_modules/openclaw && npm install node-llama-cpp@3.16.2` | APPLIED |
+
+### Security Fixes (Auto-Applied)
+
+- Security/WebSocket: browser origin validation for all browser-originated connections (v2026.3.11)
+- Security/Device: short-lived bootstrap tokens replace embedded shared credentials (v2026.3.12)
+- Security/Plugins: disabled implicit workspace plugin auto-load (v2026.3.12)
+- Security/Unicode: invisible character escaping in approval prompts (v2026.3.12)
+- Security/Unicode: normalization before obfuscation checks (v2026.3.12)
+- Security/Commands: sender ownership required for `/config` and `/debug` (v2026.3.12)
+- Security/Scopes: unbound scope clearing on shared-token WebSocket connects (v2026.3.12)
+- Security/Browser: persistent browser profile operations blocked from write-scoped requests (v2026.3.12)
+- Security/Agents: public spawned-run lineage fields rejected (v2026.3.12)
+- Security/Sandbox: session-tree visibility enforced in `session_status` (v2026.3.12)
+- Security/Hooks: fail-closed on unresolvable paths (v2026.3.12)
+- Security/Hooks: agent delivery deduplication by idempotency key (v2026.3.12)
+- Security/Allowlist: POSIX case sensitivity preserved in patterns (v2026.3.12)
+
+---
+
 ## How To Use This File
 
 - **Before each upgrade:** Read the new version's changelog, extract security-relevant items here
@@ -190,3 +229,7 @@ Covers security items across v2026.3.3 through v2026.3.8 (upgraded directly from
 | `openclaw backup create` for pre-upgrade snapshots | v2026.3.8 — native backup command | INVESTIGATE |
 | ACP provenance for agent identity | v2026.3.8 — `acp --provenance meta` | CONSIDER |
 | Telegram cron delivery fix — remove streaming workarounds? | v2026.3.8 — announce adapter fix | INVESTIGATE |
+| Device pairing bootstrap tokens — credential replay class closed | v2026.3.12 — short-lived tokens | BENEFITS |
+| Workspace plugin auto-load disabled — execution risk closed | v2026.3.12 — implicit load disabled | BENEFITS |
+| `node-llama-cpp` peer dep — manual install on global upgrades | v2026.3.12 — dependency restructure | APPLIED |
+| Cron resend queue dupe fix — another root cause closed | v2026.3.12 — isolated send exclusion | BENEFITS |
