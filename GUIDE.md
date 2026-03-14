@@ -1083,6 +1083,10 @@ OpenClaw broadcasts its presence via mDNS by default. Disable it.
 >
 > If you later connect external nodes (iOS/Android), re-enable this plugin and use `openclaw nodes approve` to manage device access.
 
+> **Device pairing hardening (v2026.3.12):** Device pairing now uses short-lived bootstrap tokens instead of embedded shared credentials. This closes a class of credential replay attacks where a captured pairing token could be reused indefinitely. The change is auto-applied — no config action needed. If you re-enable `device-pair` for multi-device setups, the pairing flow is now significantly more secure by default.
+
+> **Workspace plugin auto-load disabled (v2026.3.12):** Plugins in workspace directories no longer auto-execute without explicit enablement. Previously, a file placed in the workspace (e.g., `~/.openclaw/workspace/`) could auto-load as a plugin — a supply chain risk if workspace contents are writable by the bot or by external tools. This is now opt-in only. No config change needed — the safer default is automatic.
+
 ### 7.8 Log Redaction
 
 Prevent API keys from appearing in logs:
@@ -2458,6 +2462,7 @@ OpenClaw's cron system received major reliability improvements. Key behaviors to
 - **Manual run timeout** — `openclaw cron run <jobId>` enforces the same per-job timeout as scheduled runs.
 - **Concurrent runs** — Configure `cron.maxConcurrentRuns` to allow parallel job execution (default: 1).
 - **Delivery status split** — `lastRunStatus` and `lastDeliveryStatus` tracked separately for better diagnostics.
+- **Resend queue fix (v2026.3.12)** — Isolated cron sends are now excluded from the resend queue. Previously, completed cron deliveries could re-enter the retry queue and produce duplicates. This closes another duplicate message root cause (see [KNOWN-BUGS.md §1.4](Reference/KNOWN-BUGS.md)). Keep `streamMode: "off"` for non-cron duplicate causes.
 
 ### 12.6 Rotating Heartbeat Pattern
 
@@ -3108,35 +3113,52 @@ sudo systemctl stop openclaw
 # 6. Install new version
 npm install -g openclaw@<version>
 
-# 7. Verify version
+# 7. Fix peer dependencies (if using local embeddings)
+# node-llama-cpp moved from optional to peerDependency in v2026.3.12.
+# npm doesn't auto-install peer deps for global packages — must install manually.
+cd ~/.npm-global/lib/node_modules/openclaw && npm install node-llama-cpp@3.16.2
+cd ~
+
+# 8. Verify version
 openclaw --version
 
-# 8. Validate config against new version
+# 9. Validate config against new version
 openclaw config validate
 
-# 9. Start gateway (allow 30-60s for full init on major upgrades)
+# 10. Run doctor for breaking-change migrations
+# v2026.3.11+ may require cron migration. Safe to run on any version.
+openclaw doctor --fix --non-interactive
+
+# 11. Start gateway (allow 30-60s for full init on major upgrades)
 sudo systemctl start openclaw
 sleep 30
 
-# 10. Verify health
+# 12. Verify health
 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18789/health
 ss -tlnp | grep 18789   # Must show 127.0.0.1 only
 ```
 
+> **node-llama-cpp (v2026.3.12+):** If you use local embeddings (`embeddinggemma-300m`), this step is mandatory. Without it, `openclaw memory status` shows "Local embeddings unavailable" and memory search falls back to text-only. The gateway won't error — it silently degrades.
+
+> **Doctor migrations:** Some releases (e.g., v2026.3.11's cron isolated delivery tightening) require `doctor --fix` to migrate internal state. Running it on every upgrade is safe — if nothing needs migration, it exits cleanly.
+
 #### Post-Upgrade
 
 ```bash
-# 11. Verify cron jobs intact
+# 13. Verify cron jobs intact
 openclaw cron list
 
-# 12. Re-enable health-check cron
+# 14. Verify local embeddings (if using)
+openclaw memory status   # Should show "Provider: local", not "unavailable"
+
+# 15. Re-enable health-check cron
 crontab -l | sed 's|^#UPGRADE# ||' | crontab -
 
-# 13. Run diagnostics
+# 16. Run diagnostics
 openclaw doctor
 ~/scripts/ops-playbook.sh check --json
 
-# 14. Test native backup
+# 17. Test native backup
 openclaw backup create --only-config --output ~/backups/post-upgrade-test.tar.gz
 openclaw backup verify ~/backups/post-upgrade-test.tar.gz
 ```
@@ -4023,3 +4045,40 @@ journalctl --user -u pai-reverse --since "1 hour ago"
 - **Why two separate watchers?** systemd user-level path units can watch `~/` (escalation uses `PathChanged`) but cannot watch `/var/lib/` (result notification and reverse-tasks use Python inotify). Two different mechanisms for two different directory locations.
 - **Why two-stage escalation?** Haiku in cron sessions cannot reliably execute shell commands — it "role-plays" running them instead. Separating classification (AI) from execution (deterministic scripts) is the robust pattern.
 - **Why `openclaw agent` for reverse tasks?** It's the Gregor-side equivalent of `claude -p` — programmatic one-shot execution through the gateway without needing cron or inbox polling.
+
+---
+
+## Appendix J — Kubernetes Deployment (Alternative)
+
+Since v2026.3.12, OpenClaw ships raw Kubernetes deployment manifests as an alternative to the systemd deployment described in this guide. This appendix summarizes what's available and when it makes sense.
+
+### What's Included
+
+- **Raw Kustomize manifests** — base + overlays for dev/staging environments. Not Helm charts — plain YAML with Kustomize overlays for environment-specific patches.
+- **Kind setup scripts** — Local development cluster setup using [Kind](https://kind.sigs.k8s.io/) (Kubernetes in Docker). Useful for testing the containerized gateway before deploying to a real cluster.
+- **Gateway-only containerization** — Only the gateway process runs in the container. Memory database (SQLite), cron state, and config are mounted from the host via persistent volumes.
+
+### Architecture Differences
+
+| Aspect | VPS + systemd (this guide) | K8s manifests |
+|--------|---------------------------|---------------|
+| Target | Single-bot production | Dev/testing, multi-bot fleet |
+| Maturity | Battle-tested, documented | New in v2026.3.12 — early |
+| Security model | systemd sandboxing, ReadOnlyPaths | Container isolation, network policies |
+| State management | Files on disk, simple backups | PersistentVolumeClaims, more complex |
+| Monitoring | health-check.sh + ops-playbook | K8s probes + container metrics |
+| Ops complexity | Low (systemctl, journalctl) | High (kubectl, pod lifecycle, networking) |
+
+### When to Consider K8s
+
+- **Multi-bot fleet** — Running 5+ OpenClaw instances where orchestration overhead pays off.
+- **Existing K8s infrastructure** — Your team already operates K8s clusters and prefers consistency.
+- **CI/CD integration** — Automated testing of OpenClaw config changes in ephemeral environments.
+
+### When to Stay with systemd
+
+- **Single bot** — This guide's VPS + systemd approach has lower operational complexity for one or two bots.
+- **Production stability** — The K8s manifests are dev/testing-focused as of v2026.3.12. The systemd approach is proven in production.
+- **Simple ops** — `systemctl restart openclaw` is simpler than managing pod lifecycles, volume claims, and network policies.
+
+> **Our recommendation:** For the single-bot, security-first deployment this guide describes, VPS + systemd remains the better fit. The K8s manifests are useful for testing or if you're scaling to multiple bots.

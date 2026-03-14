@@ -2,7 +2,7 @@
 
 Documented bugs affecting OpenClaw deployments, with root cause analysis, upstream tracking, and available mitigations. Focus on issues that are systemic (not one-off configuration mistakes) and affect production stability.
 
-> **Last updated:** 2026-03-09 | **OpenClaw version:** v2026.3.8
+> **Last updated:** 2026-03-14 | **OpenClaw version:** v2026.3.12
 
 ---
 
@@ -46,13 +46,14 @@ When a user sends messages while the agent is busy (mid-tool-call), the followup
 
 #### 1.4 Cron Announce-Mode Injection — Issue [#16139](https://github.com/openclaw/openclaw/issues/16139)
 
-**Likelihood:** MEDIUM (if using cron) | **Fix:** ~~Partial config available~~ **FIXED in v2026.3.8**
+**Likelihood:** ~~MEDIUM~~ LOW (v2026.3.12+) | **Fix:** ~~Partial config available~~ **FIXED in v2026.3.8, further hardened in v2026.3.12**
 
 Isolated cron jobs with `delivery.mode: "announce"` deliver their message correctly, but the main session also receives an injected "Summarize naturally..." prompt, generating a second response.
 
 - **Cause:** Cron completion event injects a summary prompt into the main session
 - **Fix:** ~~Set `delivery.relay: false` on announce-mode crons~~
 - **Upstream:** **Fixed in v2026.3.8** — text-only jobs now routed through real outbound adapters. Cron no longer reports `delivered: true` when message never reached Telegram. The silent failure path is eliminated.
+- **v2026.3.12 hardening:** Isolated cron sends are now excluded from the resend queue entirely. Previously, completed cron deliveries could re-enter the retry queue and produce duplicates even after the v2026.3.8 fix. This closes the remaining edge case.
 - **Note:** This fix addresses the cron announce delivery path specifically. Non-cron duplicate causes (1.1-1.3, 1.5-1.7) are unaffected — keep `streamMode: "off"` workarounds.
 
 #### 1.5 Polling Offset Loss on Restart — Issue [#739](https://github.com/openclaw/openclaw/issues/739)
@@ -140,7 +141,7 @@ The single highest-impact config change:
 This eliminates root causes 1.1 and 1.2 (tool execution fragmentation and draft streaming perception). Trade-off: users lose the "typing preview" UX.
 
 Additional mitigations:
-- Audit cron jobs: add `delivery.relay: false` to announce-mode crons (fixes 1.4)
+- ~~Audit cron jobs: add `delivery.relay: false` to announce-mode crons (fixes 1.4)~~ — **No longer needed** (fixed in v2026.3.8, hardened in v2026.3.12)
 - Ensure v2026.2.24+ for heartbeat followup fix (#25606)
 - Monitor PRs #30478 and #33455 for multi-layer outbound dedup
 - Monitor Issue #32063 for the durable SQLite outbox (architectural fix)

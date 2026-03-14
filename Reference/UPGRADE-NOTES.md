@@ -975,9 +975,9 @@ Changelog items that need reflection in GUIDE.md.
 | Phase 14 (Maintenance) | `openclaw backup create/verify` native backup command | v2026.3.8 #1 | TODO |
 | Phase 14 (Maintenance) | Fail-closed config loading — always validate before restart | v2026.3.4 #2 | TODO |
 | Phase 12.5 (Cron) | Cron announce delivery fix — silent failure resolved | v2026.3.8 #3 | TODO |
-| Phase 14 (Maintenance) | `node-llama-cpp` peer dep install step in upgrade procedure | v2026.3.12 ops | TODO |
-| Phase 7 (Security) | Device pairing now uses short-lived bootstrap tokens | v2026.3.12 #1 | TODO |
-| Phase 7 (Security) | Workspace plugin auto-load disabled by default | v2026.3.12 #2 | TODO |
-| Phase 12.5 (Cron) | Isolated sends excluded from resend queue — dupe fix | v2026.3.12 #14 | TODO |
-| Phase 14 (Maintenance) | Cron doctor migration required (`doctor --fix`) on upgrade | v2026.3.11 #1 | TODO |
-| NEW: Appendix (K8s) | K8s deployment manifests as alternative to systemd | v2026.3.12 #22 | TODO |
+| Phase 14 (Maintenance) | `node-llama-cpp` peer dep install step in upgrade procedure | v2026.3.12 ops | APPLIED |
+| Phase 7 (Security) | Device pairing now uses short-lived bootstrap tokens | v2026.3.12 #1 | APPLIED |
+| Phase 7 (Security) | Workspace plugin auto-load disabled by default | v2026.3.12 #2 | APPLIED |
+| Phase 12.5 (Cron) | Isolated sends excluded from resend queue — dupe fix | v2026.3.12 #14 | APPLIED |
+| Phase 14 (Maintenance) | Cron doctor migration required (`doctor --fix`) on upgrade | v2026.3.11 #1 | APPLIED |
+| Appendix J (K8s) | K8s deployment manifests as alternative to systemd | v2026.3.12 #22 | APPLIED |
