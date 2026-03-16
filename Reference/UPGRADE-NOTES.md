@@ -923,6 +923,86 @@ Upgraded 2026-03-13 from v2026.3.8. Gateway restarted, Telegram verified, `docto
 
 ---
 
+## v2026.3.13
+
+Released 2026-03-14 (auto-updated from v2026.3.12). **Rolled back to v2026.3.12** due to CLI→gateway WS RPC regression. Auto-update disabled until CLI fix lands.
+
+> **Note:** The CLI WS regression exists on v2026.3.12 as well (discovered during rollback testing). It affects WS-based RPC commands (`cron list`, `cron runs`, gateway memory probe) but NOT simpler commands (`doctor`, `memory status`, `models list`, `config validate`). Telegram, cron execution, and all bot functionality are unaffected. Tracked upstream: #45560, #46716, #46117, #46100, #47103, #45222.
+
+### Known Issues
+
+1. **CLI→gateway WebSocket RPC broken** — CLI connects, receives `connect.challenge`, but connection closes with code 1000 "normal closure". Root cause: CLI not using paired device token for RPC calls, falls into scope-less auth path. Missing auth files (`auth-profiles.json`, `device-auth.json`, `.paired`).
+   - **Impact:** Cannot run `openclaw cron list`, `openclaw cron runs`, or gateway memory probe from CLI. All other CLI commands work. Telegram and internal cron execution unaffected. **UPSTREAM BUG**
+
+### New Features
+
+2. **Browser automation** — Live Chrome session attachment via Chrome DevTools remote debugging. Batched actions, selector targeting, delayed clicks.
+   - **Impact:** New capability. Would need browser installed on VPS and Chrome DevTools config. **CONSIDER**
+
+3. **`OPENCLAW_TZ` env var for Docker** — Pins gateway and CLI containers to a chosen IANA timezone.
+   - **Impact:** Docker-specific. **NONE**
+
+### Telegram
+
+4. **Plugin command/runtime hardening** — Validates and normalizes plugin command name/description at registration; guards Telegram native menu normalization so malformed specs can't crash startup.
+   - **Impact:** Prevents startup crashes from malformed plugin specs. **BENEFITS**
+
+5. **Telegram media download SSRF hardening** — Media downloads use the same direct/proxy transport policy into SSRF-guarded file fetches; IPv4 fallback for IPv6-broken hosts.
+   - **Impact:** Fixes potential media download failures on our VPS. **BENEFITS**
+
+6. **Telegram model picker persistence** — Inline model selections persist correctly, clears overrides when selecting default, validates fallback models.
+   - **Impact:** Improved from 3.12 — model picker now fully persistent. **BENEFITS**
+
+7. **Webhook auth hardening** — Validates webhook secret BEFORE reading/parsing request bodies. Unauthenticated requests rejected immediately.
+   - **Impact:** If we ever enable webhooks, this prevents resource exhaustion from unauth requests. **BENEFITS**
+
+8. **Guard duplicate-token checks** — Guards Telegram token normalization when account tokens are missing. Prevents `token.trim()` crashes.
+   - **Impact:** Prevents edge-case startup crashes. **BENEFITS**
+
+### Cron
+
+9. **Isolated session deadlock fix** — Nested cron-triggered embedded runner work routed onto the nested lane so isolated cron jobs no longer deadlock when compaction or queued inner work runs.
+   - **Impact:** Fixes a class of cron hangs during compaction. Our isolated cron sessions benefit. **BENEFITS**
+
+10. **Doctor cron storage migration** — Adds `openclaw doctor --fix` migration for legacy cron storage and legacy notify/webhook delivery metadata.
+    - **Impact:** Should run after upgrade. **APPLIED** (via doctor --fix)
+
+### Security
+
+11. **macOS exec approval trust binding** — Skill auto-allow trust bound to both executable name AND resolved path. Same-basename binaries no longer inherit trust.
+    - **Impact:** macOS-specific. **NONE**
+
+### Gateway
+
+12. **Gateway status `--require-rpc`** — Clearer failure reporting for Linux non-interactive daemon-install.
+    - **Impact:** Better diagnostics for service detection. **NOTED**
+
+13. **Shared token auth on plain HTTP** — Preserves explicit shared token and password auth on plain-HTTP Control UI connects so LAN/reverse-proxy sessions don't drop auth before first WS handshake.
+    - **Impact:** We use loopback + token auth. Could be related to CLI WS issue. **INVESTIGATE**
+
+### Agents & Models
+
+14. **Context engine plugin interface** — Full lifecycle hooks for context engine plugins.
+    - **Impact:** Framework change. **NOTED**
+
+15. **OpenAI-compatible compat overrides** — Respects explicit user `models[].compat` opt-ins for non-native openai-completions endpoints.
+    - **Impact:** Relevant if using OpenRouter models that need compatibility overrides. **NOTED**
+
+### Fixes
+
+16. **Plugin-SDK bundling** — Shared build pass prevents duplicating chunks. Reduces memory.
+    - **Impact:** Lower memory usage from plugins. **BENEFITS**
+
+### Operational Notes
+
+- Auto-update applied v2026.3.13 on March 14. Rolled back to v2026.3.12 on March 16 due to CLI WS regression.
+- Auto-update cron disabled (`#PINNED-3.12#` prefix) until upstream fixes CLI auth.
+- Check-only update script still runs daily (harmless).
+- `node-llama-cpp` reinstalled after rollback.
+- Startup time after rollback: ~2min (major version change direction).
+
+---
+
 ## Config Decisions Tracker
 
 Items extracted from changelogs that may influence our configuration.
@@ -930,28 +1010,33 @@ Items extracted from changelogs that may influence our configuration.
 | Decision | Source | Status | Priority |
 |----------|--------|--------|----------|
 | `tools.allow: ["cron"]` is NOT redundant — `group:automation` outside all profiles | v2026.2.24 #6 | RESOLVED | Medium |
-| `security.trust_model.multi_user_heuristic` | v2026.2.24 #35 | CONSIDER | Low |
-| Per-agent `params.cacheRetention` for cron | v2026.2.23 #4 | CONSIDER | Low |
-| `openclaw sessions cleanup` for transcript hygiene | v2026.2.23 #11 | CONSIDER | Medium |
-| `update.auto.*` for auto-updates | v2026.2.22 #53 | CONSIDER | Low |
+| `security.trust_model.multi_user_heuristic` | v2026.2.24 #35 | DEFERRED — single-user VPS, no benefit now | Low |
+| Per-agent `params.cacheRetention` for cron | v2026.2.23 #4 | DEFERRED — cron cost is already low (~$6/mo total) | Low |
+| `openclaw sessions cleanup` for transcript hygiene | v2026.2.23 #11 | DEFERRED — disk space not yet a concern (68 sessions) | Medium |
+| `update.auto.*` for auto-updates | v2026.2.22 #53 | REJECTED — custom `auto-update.sh` + `check-openclaw-update.sh` give more control | Low |
 | `/verbose on` for debugging tool errors | v2026.2.22 #2 | NOTED | — |
 | `tools.allow` → `tools.alsoAllow` migration | v2026.3.2 #1 | APPLIED | High |
 | `acp.dispatch.enabled=false` if ACP causes issues | v2026.3.2 #3 | NOTED | Low |
-| `agents.*.heartbeat.lightContext` to reduce cron/heartbeat cost | v2026.3.2 #14 | CONSIDER | Medium |
-| Ollama memory embeddings (`memorySearch.provider: "ollama"`) | v2026.3.2 #17 | CONSIDER | Low |
-| Monitor compaction loop regression (#32106) | v2026.3.2 #47 | INVESTIGATE | High |
+| `agents.*.heartbeat.lightContext` to reduce cron/heartbeat cost | v2026.3.2 #14 | DEFERRED — heartbeat cost already acceptable (~$4.65/mo) | Medium |
+| Ollama memory embeddings (`memorySearch.provider: "ollama"`) | v2026.3.2 #17 | REJECTED — local embeddinggemma via node-llama-cpp works well | Low |
+| Monitor compaction loop regression (#32106) | v2026.3.2 #47 | RESOLVED — no compaction loops observed since v2026.3.8 | High |
 | `openclaw config validate` as pre-restart check | v2026.3.2 #26 | APPLIED | High |
 | Fail-closed config loading — validate before EVERY restart | v2026.3.4 #2 | APPLIED | High |
-| `openclaw backup create` vs custom `backup.sh` — evaluate overlap | v2026.3.8 #1 | INVESTIGATE | Medium |
-| ACP provenance (`openclaw acp --provenance meta`) | v2026.3.8 #2 | CONSIDER | Low |
-| Remove Telegram streaming workarounds after 3.8 cron fix | v2026.3.8 #3 | INVESTIGATE | Medium |
+| `openclaw backup create` vs custom `backup.sh` — evaluate overlap | v2026.3.8 #1 | RESOLVED — both kept: native covers config+sessions+auth, custom covers SQLite+memory markdown | Medium |
+| ACP provenance (`openclaw acp --provenance meta`) | v2026.3.8 #2 | DEFERRED — no multi-agent ACP use case yet | Low |
+| Remove Telegram streaming workarounds after 3.8 cron fix | v2026.3.8 #3 | RESOLVED — keep `streamMode: "off"`. v2026.3.8 fixed cron delivery (1.4) but non-cron dupes (1.1-1.3, 1.5-1.7) still need it | Medium |
 | `node-llama-cpp` peer dep — manual install needed on upgrade | v2026.3.12 ops | APPLIED | High |
 | Cron isolated resend queue fix — another dupe root cause closed | v2026.3.12 #14 | BENEFITS | Medium |
 | Device pairing bootstrap tokens — credential replay class closed | v2026.3.12 #1 | BENEFITS | High |
 | Workspace plugin auto-load disabled — code execution risk closed | v2026.3.12 #2 | BENEFITS | High |
-| Anthropic fast mode (`service_tier`) available via `/fast` | v2026.3.12 #19 | CONSIDER | Low |
-| Multimodal memory indexing (Gemini embeddings) | v2026.3.11 #10 | CONSIDER | Low |
+| Anthropic fast mode (`service_tier`) available via `/fast` | v2026.3.12 #19 | DEFERRED — Gregor's Sonnet latency is acceptable | Low |
+| Multimodal memory indexing (Gemini embeddings) | v2026.3.11 #10 | DEFERRED — no Gemini API key, text memory sufficient | Low |
 | K8s deployment manifests available — alternative to systemd | v2026.3.12 #22 | NOTED | Low |
+| CLI WS RPC regression — `cron list`/`cron runs` broken | v2026.3.13 #1 | UPSTREAM BUG | High |
+| Shared token auth on plain HTTP — may relate to CLI WS issue | v2026.3.13 #13 | INVESTIGATE | High |
+| Browser automation via Chrome DevTools | v2026.3.13 #2 | DEFERRED — no browser use case for Gregor yet | Low |
+| Cron isolated session deadlock fix | v2026.3.13 #9 | BENEFITS | Medium |
+| Auto-update disabled — pinned to v2026.3.12 | v2026.3.13 ops | APPLIED | High |
 
 ## Guide Update Tracker
 
@@ -967,14 +1052,14 @@ Changelog items that need reflection in GUIDE.md.
 | Phase 13.2 (Cost) | Official prompt-caching docs published | v2026.2.23 #20 | APPLIED |
 | Appendix F (CLI) | `openclaw memory search --query` syntax added | v2026.2.24 #26 | APPLIED |
 | Appendix (CLI) | Doctor hints corrected to valid commands | v2026.2.24 #27 | N/A — no incorrect hints found |
-| Phase 14 (Maintenance) | `openclaw config validate` as pre-restart check | v2026.3.2 #26 | TODO |
-| Phase 13.3 (Heartbeat) | Heartbeat DM delivery default reverted to `allow` in 3.1, then unchanged in 3.2 | v2026.3.1 | TODO |
-| Phase 12.5 (Cron) | Lightweight bootstrap mode for cron/heartbeat; session reaper reliability | v2026.3.2 #9, #14 | TODO |
-| Appendix F (CLI) | `openclaw config file` and `openclaw config validate` added | v2026.3.2 #26, #27 | TODO |
-| Phase 5 (Tools) | `tools.allow` → `tools.alsoAllow` migration required on upgrade | v2026.3.2 #1 | TODO |
-| Phase 14 (Maintenance) | `openclaw backup create/verify` native backup command | v2026.3.8 #1 | TODO |
-| Phase 14 (Maintenance) | Fail-closed config loading — always validate before restart | v2026.3.4 #2 | TODO |
-| Phase 12.5 (Cron) | Cron announce delivery fix — silent failure resolved | v2026.3.8 #3 | TODO |
+| Phase 14 (Maintenance) | `openclaw config validate` as pre-restart check | v2026.3.2 #26 | APPLIED |
+| Phase 13.3 (Heartbeat) | Heartbeat DM delivery default reverted to `allow` in 3.1, then unchanged in 3.2 | v2026.3.1 | APPLIED |
+| Phase 12.5 (Cron) | Lightweight bootstrap mode for cron/heartbeat; session reaper reliability | v2026.3.2 #9, #14 | APPLIED |
+| Appendix F (CLI) | `openclaw config file` and `openclaw config validate` added | v2026.3.2 #26, #27 | APPLIED |
+| Phase 7.2 (Tools) | `tools.allow` → `tools.alsoAllow` migration required on upgrade | v2026.3.2 #1 | APPLIED |
+| Appendix F (Backups) | `openclaw backup create/verify` native backup command | v2026.3.8 #1 | APPLIED |
+| Appendix F (Config) | Fail-closed config loading — always validate before restart | v2026.3.4 #2 | APPLIED |
+| Phase 12.5 (Cron) | Cron announce delivery fix — silent failure resolved | v2026.3.8 #3 | APPLIED |
 | Phase 14 (Maintenance) | `node-llama-cpp` peer dep install step in upgrade procedure | v2026.3.12 ops | APPLIED |
 | Phase 7 (Security) | Device pairing now uses short-lived bootstrap tokens | v2026.3.12 #1 | APPLIED |
 | Phase 7 (Security) | Workspace plugin auto-load disabled by default | v2026.3.12 #2 | APPLIED |

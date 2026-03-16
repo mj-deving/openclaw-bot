@@ -940,6 +940,8 @@ Capability-first with targeted denials:
 
 Everything else stays enabled. The bot's power comes from full tool access, not from restrictions.
 
+> **Migration note (v2026.3.2):** The `tools.allow` key was renamed to `tools.alsoAllow`. If upgrading from pre-3.2, update your config. The old key silently does nothing — your explicitly allowed tools (like `cron`, `browser`) won't appear in the tool surface.
+
 ### 7.2.1 How Permissions Work (The Four-Layer Pipeline)
 
 Tool access is resolved through four layers, applied in sequence. **Each layer can only restrict, never expand:**
@@ -2462,6 +2464,9 @@ OpenClaw's cron system received major reliability improvements. Key behaviors to
 - **Manual run timeout** — `openclaw cron run <jobId>` enforces the same per-job timeout as scheduled runs.
 - **Concurrent runs** — Configure `cron.maxConcurrentRuns` to allow parallel job execution (default: 1).
 - **Delivery status split** — `lastRunStatus` and `lastDeliveryStatus` tracked separately for better diagnostics.
+- **Lightweight bootstrap (v2026.3.2+)** — Cron and heartbeat sessions use a lighter bootstrap mode with reduced context injection, lowering per-run token cost.
+- **Session reaper reliability (v2026.3.2+)** — Session cleanup is more reliable for isolated cron runs, preventing stale session accumulation.
+- **Cron announce delivery fix (v2026.3.8)** — Silent failure in cron announce delivery resolved. Cron jobs with `delivery.mode: "announce"` now correctly route through real outbound adapters.
 - **Resend queue fix (v2026.3.12)** — Isolated cron sends are now excluded from the resend queue. Previously, completed cron deliveries could re-enter the retry queue and produce duplicates. This closes another duplicate message root cause (see [KNOWN-BUGS.md §1.4](Reference/KNOWN-BUGS.md)). Keep `streamMode: "off"` for non-cron duplicate causes.
 
 ### 12.6 Rotating Heartbeat Pattern
@@ -3708,6 +3713,16 @@ Commands available in Telegram chat (or CLI). Cross-references point to detailed
 | `/restart` | Gateway restart (owner-only in groups) | |
 | `/context list\|detail` | Token distribution breakdown per loaded file | [§13.1](#131-measure-first) |
 
+### Config Management (v2026.3.2+)
+
+```bash
+openclaw config file                # Show config file path
+openclaw config validate            # Validate config syntax (ALWAYS run before restart)
+openclaw config set <key> <value>   # Set a config value (verify with config validate after)
+```
+
+> **Config is fail-closed since v2026.3.4.** Invalid keys abort gateway startup entirely. Always run `openclaw config validate` before any restart — after config changes, after upgrades, after manual edits.
+
 ### Start / Stop / Restart
 
 ```bash
@@ -3738,9 +3753,16 @@ ss -tlnp | grep 18789              # Verify binding after restart
 ### Check Backups
 
 ```bash
+# Native backup (v2026.3.8+) — config, sessions, auth, cron state
+openclaw backup create --output ~/backups/manual-$(date +%Y%m%d).tar.gz
+openclaw backup verify ~/backups/manual-$(date +%Y%m%d).tar.gz
+
+# Custom backup script — SQLite memory DB + memory markdown files
 crontab -l | grep backup
 ls -lt ~/.openclaw/backups/ | head -5
 ```
+
+> **Both backup methods are needed.** Native `backup create` covers config+sessions+auth+cron state but NOT the SQLite memory database or memory markdown files. The custom `backup.sh` handles those. Keep both.
 
 ### Search Memory (CLI)
 
@@ -3792,7 +3814,8 @@ rm -f ~/.openclaw/agents/*/sessions/<stuck-session-id>.jsonl
 sudo systemctl start openclaw
 
 # If cron announcements deliver twice (Issue #16139):
-# Add delivery.relay: false to announce-mode crons
+# Fixed in v2026.3.8 (announce adapter) and v2026.3.12 (resend queue exclusion).
+# No config workaround needed on current versions.
 ```
 
 **Per-session commands** — run these in Telegram chat if verbose/reasoning mode is leaking internal thoughts as duplicate-looking messages:

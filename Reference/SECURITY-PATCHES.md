@@ -203,6 +203,32 @@ Covers v2026.3.11 (March 12) and v2026.3.12 (March 13). Upgraded directly from v
 
 ---
 
+## v2026.3.13
+
+Released 2026-03-14. Auto-updated from v2026.3.12, then **rolled back** due to CLI WS regression. Security items documented for reference.
+
+### Critical / Config-Relevant
+
+| Item | Impact | Our Action |
+|------|--------|------------|
+| **CLI→gateway WS RPC broken** (REGRESSION) — CLI WS handshake fails on `cron list`, `cron runs`, gateway probe. Root cause: missing device token auth path. Issues #45560, #46716, #47103 | Cannot manage cron via CLI. Telegram and internal cron execution unaffected. | ROLLED BACK to v2026.3.12 |
+| **Plugin command/runtime hardening** — validates and normalizes plugin specs at registration boundaries; guards Telegram menu normalization | Prevents startup crashes from malformed plugin specs. | NONE (auto-applied) |
+| **Webhook auth pre-validation** — validates secret BEFORE reading request bodies | Prevents resource exhaustion from unauthenticated webhook requests. | NONE (auto-applied) |
+| **Telegram media SSRF hardening** — SSRF-guarded file fetches with IPv4 fallback | Hardens media download path. | NONE (auto-applied) |
+| **macOS exec approval trust binding** — trust bound to name AND resolved path | macOS-specific. Prevents same-basename trust inheritance. | NONE (macOS only) |
+| **Cron isolated session deadlock fix** — nested work routed to nested lane | Prevents cron hangs during compaction. Important for isolated sessions. | BENEFITS US |
+
+### Security Fixes (Auto-Applied)
+
+- Security/Telegram: plugin command spec validation at registration boundaries (v2026.3.13)
+- Security/Telegram: media download SSRF-guarded with IPv4 fallback (v2026.3.13)
+- Security/Telegram: webhook secret validated before body parsing (v2026.3.13)
+- Security/Telegram: duplicate-token check guarding prevents startup crashes (v2026.3.13)
+- Security/macOS: exec approval trust bound to name + resolved path (v2026.3.13)
+- Security/Gateway: shared token auth preserved on plain-HTTP connections (v2026.3.13)
+
+---
+
 ## How To Use This File
 
 - **Before each upgrade:** Read the new version's changelog, extract security-relevant items here
@@ -233,3 +259,6 @@ Covers v2026.3.11 (March 12) and v2026.3.12 (March 13). Upgraded directly from v
 | Workspace plugin auto-load disabled — execution risk closed | v2026.3.12 — implicit load disabled | BENEFITS |
 | `node-llama-cpp` peer dep — manual install on global upgrades | v2026.3.12 — dependency restructure | APPLIED |
 | Cron resend queue dupe fix — another root cause closed | v2026.3.12 — isolated send exclusion | BENEFITS |
+| CLI WS RPC regression — rolled back to v2026.3.12 | v2026.3.13 — upstream auth bug | ROLLED BACK |
+| Auto-update disabled until CLI fix | v2026.3.13 — pinned to v2026.3.12 | APPLIED |
+| Cron isolated session deadlock fix | v2026.3.13 — nested lane routing | BENEFITS |
