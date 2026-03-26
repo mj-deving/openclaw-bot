@@ -3175,7 +3175,7 @@ In order of impact:
 
 ### 14.9 Upgrading OpenClaw
 
-Safe upgrade procedure for minor version jumps. Tested with the 2026.3.2 → 2026.3.8 upgrade.
+Safe upgrade procedure for minor version jumps. Tested through the 2026.3.12 → 2026.3.23-2 upgrade.
 
 #### Pre-Upgrade
 
@@ -3266,6 +3266,12 @@ sudo systemctl restart openclaw
 ```
 
 > **Key gotcha since 2026.3.4:** Config loading is now fail-closed. Invalid keys abort gateway startup entirely. Always run `openclaw config validate` before restarting after any config change or upgrade.
+
+> **ReadOnlyPaths gotcha:** If you have `ReadOnlyPaths=/home/openclaw/.openclaw/openclaw.json` in your systemd hardening drop-in, the gateway may fail to persist plugin auto-enable changes on first startup after installing external plugins. The symptom is `EBUSY: resource busy or locked` in logs, and Telegram may not start. Fix: temporarily comment out the ReadOnlyPaths line, restart, let the gateway write its config changes, then restore. After the first successful write, ReadOnlyPaths is safe to re-enable. See UPGRADE-NOTES.md v2026.3.22 for details.
+
+> **Auth-profile credential reversion (fixed in v2026.3.23):** In earlier versions, the gateway could overwrite `auth-profiles.json` with stale in-memory OAuth tokens, causing persistent auth failures after credential updates. If you experience auth issues after upgrade, check if the gateway is reverting your auth profile order. The fix landed in v2026.3.23 — ensure you're on this version or later.
+
+> **Plugin SDK migration (v2026.3.22):** The plugin SDK moved from `openclaw/extension-api` to `openclaw/plugin-sdk/*`. If you use external plugins (e.g., lossless-claw), verify they load correctly after upgrade. Check gateway logs for plugin load errors.
 
 > **Changelog reference:** [Reference/UPGRADE-NOTES.md](Reference/UPGRADE-NOTES.md) documents every relevant change per version with action tags.
 

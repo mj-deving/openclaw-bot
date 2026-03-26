@@ -1181,8 +1181,8 @@ Changelog items that need reflection in GUIDE.md.
 | Phase 12.5 (Cron) | Isolated sends excluded from resend queue — dupe fix | v2026.3.12 #14 | APPLIED |
 | Phase 14 (Maintenance) | Cron doctor migration required (`doctor --fix`) on upgrade | v2026.3.11 #1 | APPLIED |
 | Appendix J (K8s) | K8s deployment manifests as alternative to systemd | v2026.3.12 #22 | APPLIED |
-| Phase 7 (Security) | Security evolution table — cumulative hardening across versions | v2026.3.22 security | TODO |
-| Phase 7 (Plugins) | Plugin SDK migration note, ClawHub default store | v2026.3.22 #1, #4 | TODO |
-| Phase 15 (Upgrade) | CLI WS RPC fix — re-enable auto-update, remove #PINNED prefix | v2026.3.22 #13 | TODO |
-| Phase 14 (Maintenance) | Auth-profile credential reversion fix — document gotcha | v2026.3.23 fix | TODO |
-| Phase 14 (Maintenance) | ReadOnlyPaths + plugin auto-enable conflict documented | v2026.3.22 ops | TODO |
+| Phase 7 (Security) | Security evolution table — cumulative hardening across versions | v2026.3.22 security | APPLIED (§7.18) |
+| Phase 7 (Plugins) | Plugin SDK migration note, ClawHub default store | v2026.3.22 #1, #4 | APPLIED (§7.7 note) |
+| Phase 14.9 (Upgrade) | CLI WS RPC fix — re-enable auto-update, remove #PINNED prefix | v2026.3.22 #13 | APPLIED |
+| Phase 14.9 (Upgrade) | Auth-profile credential reversion fix — document gotcha | v2026.3.23 fix | APPLIED |
+| Phase 14.9 (Upgrade) | ReadOnlyPaths + plugin auto-enable conflict documented | v2026.3.22 ops | APPLIED |
