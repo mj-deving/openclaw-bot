@@ -1070,16 +1070,31 @@ OpenClaw broadcasts its presence via mDNS by default. Disable it.
 {
   "plugins": {
     "enabled": true,
+    "allow": ["lossless-claw"],
     "slots": { "memory": "memory-core" },
     "entries": {
       "telegram": { "enabled": true },
       "device-pair": { "enabled": false },
       "memory-core": { "enabled": true },
-      "memory-lancedb": { "enabled": false }
+      "memory-lancedb": { "enabled": false },
+      "lossless-claw": { "enabled": true }
     }
   }
 }
 ```
+
+> **Lossless-Claw (LCM):** External plugin that replaces sliding-window context pruning with hierarchical summarization. Messages are compressed into a DAG (Directed Acyclic Graph) — a tree of summaries at increasing time scales (minutes → hours → days → weeks) where every summary links back to its source messages. Nothing is discarded, just compressed. See [§14.4](#144-session-continuity) for how it works and [Reference/CONTEXT-ENGINEERING.md §9](Reference/CONTEXT-ENGINEERING.md) for the full architecture. Install: `openclaw plugins install @martian-engineering/lossless-claw`. Configure via **systemd environment variables** (not `openclaw.json` — `config validate` rejects plugin-specific keys as unrecognized). Create `/etc/systemd/system/openclaw.service.d/lcm.conf`:
+>
+> ```ini
+> [Service]
+> Environment=LCM_SUMMARY_MODEL=claude-haiku-4-5-20251001
+> Environment=LCM_SUMMARY_PROVIDER=anthropic
+> Environment=LCM_FRESH_TAIL_COUNT=32
+> Environment=LCM_CONTEXT_THRESHOLD=0.75
+> Environment=LCM_IGNORE_SESSION_PATTERNS=cron:*,*:heartbeat*,*:daily-report*,*:para-nightly*,*:para-weekly*,*:para-monthly*
+> ```
+>
+> Then `sudo systemctl daemon-reload && sudo systemctl restart openclaw`. The `plugins.allow` list explicitly trusts the non-bundled plugin — without it, the gateway logs a warning on every load. Haiku is used for summarization to keep costs low. Cron sessions are excluded to avoid polluting the DAG with heartbeat noise. Full analysis: [Reference/CONTEXT-ENGINEERING.md §9](Reference/CONTEXT-ENGINEERING.md).
 
 > **Why `device-pair` is disabled:** The device-pair plugin is designed for multi-device setups where iOS/Android/macOS nodes connect to the gateway network. For a single-bot, single-user, loopback-only gateway, it adds no security value — the gateway is only reachable from localhost. The actual access controls are: loopback binding (gateway not internet-facing), Telegram DM pairing (controls who can message the bot), tool deny list (controls what the bot can do), and gateway auth token (protects the WS connection). Disabling device-pair also resolves the CLI→gateway RPC catch-22 where pairing approval commands themselves require gateway access.
 >
@@ -1295,6 +1310,28 @@ Your bot processes text from Telegram messages, fetched URLs, and tool outputs. 
 This won't stop a determined attacker with model-level exploits, but it handles the most common injection patterns — especially social engineering via fetched content, which is the highest-risk vector for a bot that browses URLs.
 
 > **Deep dive:** [SECURITY.md §12](Reference/SECURITY.md) covers 120+ lines of injection taxonomy, real-world examples, and defense-in-depth strategies. The snippet above is the practical minimum.
+
+### 7.18 Security Evolution Across Versions
+
+OpenClaw's built-in security has improved significantly across releases. This table tracks the cumulative hardening that benefits our setup — each version added protections that reduce our attack surface without manual config changes.
+
+| Version | Key Security Additions | Category |
+|---------|----------------------|----------|
+| **v2026.2.22** | Cron reliability fixes, tool error handling | Stability |
+| **v2026.2.23** | Per-agent cache params, session cleanup | Config integrity |
+| **v2026.2.24** | Exec env sanitization (LD_*/DYLD_*), hook Unicode normalization, Telegram DM auth before media, gateway API auth, exec safe-bin trusted dirs, shell env blocking (SHELLOPTS/PS4), sandbox symlink/hardlink rejection | Exec, Auth, Media |
+| **v2026.3.2** | `tools.alsoAllow` rename (breaking), config validate CLI, fail-closed config loading, ACP dispatch | Config, Auth |
+| **v2026.3.4** | Fail-closed config — invalid keys abort gateway startup entirely | Config integrity |
+| **v2026.3.8** | Native backup, Telegram cron delivery fix, subagent timeout | Stability, Data |
+| **v2026.3.11** | Cron isolated delivery tightened | Stability |
+| **v2026.3.12** | Device pairing bootstrap tokens, workspace plugin auto-load disabled, 13 auto-applied security fixes | Auth, Supply chain |
+| **v2026.3.13** | Telegram SSRF hardening with IPv4 fallback, webhook pre-auth, plugin command validation, exec trust binding | Media, Network, Plugins |
+| **v2026.3.22** | `file://` URL blocking, CSP hardening, plugin manifest validation, JVM/dependency injection hardening, device token enforcement (CLI WS fix), pluggable sandbox backends | Media, Gateway, Exec, Auth |
+| **v2026.3.23** | Auth-profile credential reversion fix, bundled plugin packaging fix | Auth, Supply chain |
+
+**Trend:** Each major release adds 3-8 security hardening measures. Most are auto-applied — no config changes needed. The cumulative effect is significant: a v2026.3.23 deployment is substantially more secure than a v2026.2.22 deployment even with identical user configuration.
+
+> **Full security patch details:** [SECURITY-PATCHES.md](Reference/SECURITY-PATCHES.md) tracks every security item by version, severity, and action status.
 
 ### ✅ Phase 7 Checkpoint
 
@@ -1788,7 +1825,7 @@ When the session reaches ~176K tokens:
 
 ### 10.1 Backup Script
 
-Back up the three critical things: config, memory database, and memory files.
+Back up the four critical things: config, memory database, memory files, and the LCM database.
 
 ```bash
 #!/bin/bash
@@ -1810,6 +1847,12 @@ chmod 600 "$BACKUP_DIR/memory-$TIMESTAMP.sqlite"
 # Memory files
 tar czf "$BACKUP_DIR/memory-files-$TIMESTAMP.tar.gz" -C ~/.openclaw memory/
 chmod 600 "$BACKUP_DIR/memory-files-$TIMESTAMP.tar.gz"
+
+# LCM database (Lossless-Claw context DAG)
+if [ -f ~/.openclaw/lcm.db ]; then
+    cp ~/.openclaw/lcm.db "$BACKUP_DIR/lcm-$TIMESTAMP.sqlite"
+    chmod 600 "$BACKUP_DIR/lcm-$TIMESTAMP.sqlite"
+fi
 
 # Prune backups older than 30 days
 find "$BACKUP_DIR" -mtime +30 -delete
@@ -1961,6 +2004,25 @@ chmod +x ~/scripts/auto-update.sh
 # Weekly: Sunday 4 AM
 (crontab -l 2>/dev/null; echo "0 4 * * 0 /home/openclaw/scripts/auto-update.sh >> /home/openclaw/.openclaw/logs/update.log 2>&1") | crontab -
 ```
+
+### 10.5.1 LCM Plugin Health Check
+
+Weekly check for Lossless-Claw plugin updates, security issues, and database growth:
+
+```bash
+# /home/openclaw/scripts/lcm-check.sh
+# Checks: installed vs latest version, DB size, plugin load status,
+#         open security issues on GitHub, latest release tag
+# Source: src/scripts/lcm-check.sh
+```
+
+```bash
+chmod +x ~/scripts/lcm-check.sh
+# Weekly: Sunday 5 AM (after auto-update at 4 AM, doctor-fix at 4:30)
+(crontab -l 2>/dev/null; echo "0 5 * * 0 /home/openclaw/scripts/lcm-check.sh") | crontab -
+```
+
+> **Why a separate script?** LCM is the only external (non-bundled) plugin and has its own release cycle independent of OpenClaw. This script catches upstream updates, new security issues, and database growth before they become problems. The version is read from `openclaw.json` → `plugins.installs.lossless-claw.resolvedVersion` (not npm global, since the plugin is installed via `openclaw plugins install`).
 
 ### 10.6 Database Maintenance
 
@@ -2962,14 +3024,38 @@ Your memory search config controls how much context the retrieval system adds pe
 
 ### 14.4 Session Continuity
 
-Two mechanisms keep context alive across conversations:
+Three mechanisms keep context alive across conversations:
 
-**Compaction** — When context nears the window limit, OpenClaw auto-summarizes older history, keeping recent messages verbatim. You can also trigger it manually:
+**Lossless-Claw (LCM)** — The primary context persistence mechanism. Tagline: *"Bounded context, unbounded memory."*
+
+Instead of discarding old messages when the context window fills up, LCM compacts them into a **DAG (Directed Acyclic Graph)** — a tree-like structure of hierarchical summaries where every summary links back to its source messages:
+
+```
+  D2 (days)    ┌─────────────────────────────┐
+               │ "This week: hardened VPS,   │  ← High-level narrative
+               │  added voice, deployed LCM" │
+               └─────────────┬───────────────┘
+  D1 (hours)          ┌──────┴──────┐
+                   ┌──┴──┐      ┌──┴──┐         ← Arc summaries
+                   │ ... │      │ ... │
+  D0 (minutes)  ┌──┴──┐──┐  ┌──┴──┐──┐         ← Detailed summaries
+                 │msg│msg│  │msg│msg│             linked to raw messages
+                 └───┘───┘  └───┘───┘
+```
+
+- **Fresh tail:** Last 32 messages stay uncompressed
+- **Condensation:** When 4 summaries accumulate at the same depth, they synthesize upward into a higher-level node
+- **Retrieval:** `lcm_grep` (search all depths), `lcm_describe` (token counts), `lcm_expand` (drill into detail), `lcm_expand_query` (smart sub-agent navigation)
+- **Key property:** "Acyclic" means summaries only point down to sources, never loop — you can always trace back to the original messages
+
+Configuration is in [Phase 7.7](#77-plugins--selective-enable). Full analysis with DAG diagrams: [Reference/CONTEXT-ENGINEERING.md §9](Reference/CONTEXT-ENGINEERING.md).
+
+**Compaction** — When context nears the window limit, OpenClaw auto-summarizes older history, keeping recent messages verbatim. With LCM installed, compaction feeds into the DAG instead of discarding. You can also trigger it manually:
 ```
 /compact Focus on decisions and open questions
 ```
 
-**Memory flush** — Runs before compaction to persist important facts to `memory/` files before they get summarized away. This is your cross-session continuity mechanism. Full configuration and explanation in [Phase 9.6](#96-context-persistence-memory-flush). The default trigger fires at ~176K tokens (200K context - 20K reserve - 4K soft threshold).
+**Memory flush** — Runs before compaction to persist important facts to `memory/` files before they get summarized away. This is a complementary mechanism to LCM — memory flush saves structured knowledge to markdown files, while LCM preserves full conversation history. Full configuration and explanation in [Phase 9.6](#96-context-persistence-memory-flush). The default trigger fires at ~176K tokens (200K context - 20K reserve - 4K soft threshold).
 
 ### 14.5 Context Pruning
 
@@ -3678,16 +3764,20 @@ Complete `openclaw.json` with all recommended settings:
 
   "plugins": {
     "enabled": true,
+    "allow": ["lossless-claw"],
     "slots": { "memory": "memory-core" },
     "entries": {
       "telegram": { "enabled": true },
       "device-pair": { "enabled": false },
       "memory-core": { "enabled": true },
-      "memory-lancedb": { "enabled": false }
+      "memory-lancedb": { "enabled": false },
+      "lossless-claw": { "enabled": true }
     }
   }
 }
 ```
+
+> **Note:** LCM plugin config (summaryModel, freshTailCount, etc.) is set via systemd environment variables in `/etc/systemd/system/openclaw.service.d/lcm.conf`, not in `openclaw.json` — see [Phase 7.7](#77-plugins--selective-enable).
 
 > **Note:** The `botToken` in the config is how Telegram channel authentication works in OpenClaw — it's read directly from `openclaw.json`. This bot-specific config should never be committed to git.
 

@@ -229,6 +229,51 @@ Released 2026-03-14. Auto-updated from v2026.3.12, then **rolled back** due to C
 
 ---
 
+## v2026.3.22 / v2026.3.23
+
+Upgrade from v2026.3.12 → v2026.3.23 (skipping v2026.3.14–v2026.3.22). Installed 2026-03-24.
+
+### Critical / Config-Relevant
+
+| Item | Impact | Our Action |
+|------|--------|------------|
+| **CLI WS RPC regression FIXED** (PR #50101) — operator scope preservation during device-auth bypass | `cron list`, `cron runs`, gateway memory probe all work again. Unblocks PARA cron monitoring. | APPLIED (upgrade) |
+| **Auth-profile credential reversion fix** (v2026.3.23) — gateway no longer overwrites auth-profiles.json with stale in-memory OAuth tokens | Fixes the exact auth issue we hit on 2026-03-21 where OAuth profiles silently reverted. | BENEFITS |
+| **Plugin SDK migration** — `openclaw/extension-api` → `openclaw/plugin-sdk/*` | External plugins (LCM) may need path updates. Verify LCM loads. | INVESTIGATE |
+| **ClawHub default plugin store** — resolution prefers ClawHub before npm | Risk of namespace squatting. LCM installed via explicit spec, low risk. | NOTED |
+| **Device pairing codes bound to profile** — stricter auth enforcement | Device-pair disabled for us. Tighter security posture. | BENEFITS |
+| **Pluggable sandbox backends** — SSH and OpenShell (NemoClaw) support | Future hardening path. See Reference/NEMOCLAW.md. | CONSIDER |
+
+### Security Fixes (Auto-Applied)
+
+- Security/Media: block `file://` URLs and UNC paths before resolution (prevents SMB credential handshake)
+- Security/Gateway: CSP hardening — SHA-256 hashes for inline script blocks in Control UI
+- Security/Plugins: enhanced manifest validation against marketplace sources
+- Security/Exec: JVM and dependency resolution injection hardening in sandbox
+- Security/Webhook: body limits and timeouts before auth checks (defense-in-depth)
+- Security/Auth: device token enforcement for `operator.read` scope (CLI WS RPC fix)
+- Security/Auth: credential reversion prevention — no more stale in-memory token overwrites
+- Security/Gateway: cold start hardening — faster initialization reduces exposure window
+- Security/Telegram: threading context correctly populated (prevents context confusion)
+- Security/OpenRouter: auto-pricing recursion fix (prevents infinite loop DoS)
+- Security/Packaging: bundled plugin sidecars and Control UI restored (v2026.3.23)
+
+### Security Evolution (v2026.2.22 → v2026.3.23)
+
+Cumulative security hardening across all versions we've tracked:
+
+| Category | Controls Added | Version |
+|----------|---------------|---------|
+| **Exec sandbox** | env sanitization (LD_*, DYLD_*), safe-bin dirs, nested env chain cap, JVM injection hardening | v2026.2.24, v2026.3.22 |
+| **Auth** | hook Unicode normalization, agent fallback chain fix, device bootstrap tokens, credential reversion fix | v2026.2.24, v2026.3.12, v2026.3.23 |
+| **Telegram** | DM auth before media, SSRF-guarded downloads, webhook pre-auth, plugin command validation | v2026.2.24, v2026.3.13, v2026.3.22 |
+| **Gateway** | /api/channels auth, shared token on plain HTTP, CSP hardening, cold start hardening | v2026.2.24, v2026.3.13, v2026.3.22 |
+| **Plugins** | workspace auto-load disabled, manifest validation, SDK migration | v2026.3.12, v2026.3.22 |
+| **Media** | sandbox reject hardlink/symlink, file:// URL blocking, UNC path blocking | v2026.2.24, v2026.3.22 |
+| **Config** | fail-closed loading, config validate CLI, per-agent reasoning defaults | v2026.3.4, v2026.3.2, v2026.3.22 |
+
+---
+
 ## How To Use This File
 
 - **Before each upgrade:** Read the new version's changelog, extract security-relevant items here

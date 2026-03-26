@@ -14,8 +14,9 @@ Best practices for optimizing context management, prompt caching, and session co
 6. [Recommendation 5: Context Pruning Tuning](#recommendation-5-context-pruning-tuning)
 7. [Recommendation 6: Monitor with ClawMetry](#recommendation-6-monitor-with-clawmetry)
 8. [Priority Roadmap](#priority-roadmap)
-9. [OpenClaw Context Internals Reference](#openclaw-context-internals-reference)
-10. [Sources](#sources)
+9. [Lossless-Claw (LCM) — DAG-Based Context Persistence](#lossless-claw-lcm--dag-based-context-persistence)
+10. [OpenClaw Context Internals Reference](#openclaw-context-internals-reference)
+11. [Sources](#sources)
 
 ---
 
@@ -169,6 +170,206 @@ This shows per-file, per-tool token breakdown. Target: anything not essential fo
 | 6 | Test 4 chunks instead of 6 | 30 min | Less context waste if quality holds |
 | 7 | Enable MMR if memory has redundant entries | 5 min | Deduplicates at retrieval time |
 | 8 | Set up ClawMetry token monitoring baseline | 1 hour | Data-driven optimization from that point |
+| 9 | Evaluate Lossless-Claw plugin (see §9 below) | 1 hour | Replaces TTL pruning with persistent DAG — no context loss |
+
+---
+
+## Lossless-Claw (LCM) — DAG-Based Context Persistence
+
+**GitHub:** [martian-engineering/lossless-claw](https://github.com/martian-engineering/lossless-claw)
+**Version:** 0.4.0 (2026-03-18) · MIT license · 3,000+ stars
+**Last checked:** 2026-03-21
+
+### What It Is
+
+An OpenClaw plugin that replaces the default sliding-window pruning with persistent, hierarchical summarization. The tagline: *"Bounded context, unbounded memory."*
+
+**The problem it solves:** Traditional context management operates within a fixed token budget. When usage crosses ~80% capacity, flat summarization fires — replacing many messages with a single summary that loses detail. The model then "confidently misremembers specifics, contradicts earlier decisions." Our `cache-ttl` pruning is even more aggressive — it permanently discards messages older than 2 hours.
+
+**LCM's approach:** Instead of discarding, LCM compacts messages into a **Directed Acyclic Graph (DAG)** of hierarchical summaries. Raw messages stay in `~/.openclaw/lcm.db`. Every summary links back to its source messages. The agent can drill into any level of detail on demand.
+
+### What Is a DAG?
+
+A **Directed Acyclic Graph** is a tree-like structure where nodes point in one direction (parent → children) and never form loops. Think of it like a library's catalog system:
+
+```
+                    ┌─────────────────────┐
+                    │ D2: "Over the past  │  ← Weeks-level narrative
+                    │ week, we hardened   │    (durable decisions,
+                    │ the VPS and added   │     milestone timeline)
+                    │ voice support"      │
+                    └────────┬────────────┘
+                     ┌───────┴────────┐
+              ┌──────┴──────┐  ┌──────┴──────┐
+              │ D1: "Set up │  │ D1: "Added  │  ← Hours-level arcs
+              │ PARA memory │  │ Groq STT,   │    (outcomes, evolution,
+              │ structure,  │  │ tested voice │     current state)
+              │ 3 crons"    │  │ in Telegram" │
+              └──────┬──────┘  └──────┬──────┘
+               ┌─────┴─────┐    ┌─────┴─────┐
+            ┌──┴──┐  ┌──┴──┐ ┌──┴──┐  ┌──┴──┐
+            │ D0  │  │ D0  │ │ D0  │  │ D0  │  ← Minutes-level detail
+            │msg 1│  │msg 2│ │msg 3│  │msg 4│    (specific decisions,
+            │msg 2│  │msg 3│ │msg 4│  │msg 5│     rationale, config)
+            │msg 3│  │msg 4│ │msg 5│  │msg 6│
+            └─────┘  └─────┘ └─────┘  └─────┘
+```
+
+- **D0 (minutes):** Specific decisions, rationale, technical details — directly linked to original messages
+- **D1 (hours):** Arc distillation — outcomes, evolution, current state
+- **D2 (days):** Durable narrative — decisions in effect, milestone timeline
+- **D3 (weeks) / D4 (months):** Higher-level compression for long-running conversations
+
+**Condensation rule:** When 4 summaries accumulate at the same depth, they automatically synthesize into one higher-level node. This is how the DAG grows upward over time.
+
+**Key property — "acyclic":** Summaries only point DOWN to their source messages, never back up. This means you can always trace any high-level summary all the way back to the exact messages that produced it. Nothing is lost — just compressed.
+
+### Why It Matters for Gregor
+
+Our previous setup used `contextPruning` with `mode: "cache-ttl"`, `TTL: "2h"`, `keepLastAssistants: 8`. This permanently discarded messages older than 2 hours — if Gregor needed something from 3 hours ago, it was gone. With LCM, those messages are compressed into the DAG and recoverable on demand.
+
+### Architecture (5 Layers)
+
+| Layer | What It Does |
+|-------|-------------|
+| **1. Persistence** | All messages stored in `~/.openclaw/lcm.db` (SQLite, optional FTS5) |
+| **2. Fresh Tail** | Recent messages (default: 32) remain uncompressed, protected from summarization |
+| **3. Incremental Compaction** | When messages outside the fresh tail exceed threshold, async compaction fires without interrupting conversation. Summaries form the DAG at increasing depth levels (D0→D1→D2→...) |
+| **4. Context Assembly** | Each turn combines raw recent messages + compressed historical summaries within token budget (default 128K) |
+| **5. Retrieval Tools** | 4 tools for the agent to drill into the DAG on demand |
+
+### Retrieval Tools
+
+The agent doesn't need to know the DAG structure — four tools handle navigation:
+
+| Tool | Purpose | How It Works |
+|------|---------|-------------|
+| `lcm_describe` | Plan retrieval strategy | Returns subtree token counts + child manifests — "how much is stored under this node?" |
+| `lcm_grep` | Search across all depths | Full-text search with depth labels — "where in the DAG does topic X live?" |
+| `lcm_expand` | Drill into a specific node | Descend from a summary to its children — "show me the details behind this summary" |
+| `lcm_expand_query` | Smart retrieval | Spawns a bounded sub-agent (4K token budget) to navigate the DAG strategically — full source fidelity with bounded cost |
+
+### Key Features
+
+- **Cost optimization:** Summarization model can differ from session model — route to Haiku for compression while keeping Sonnet for conversation
+- **Session filtering:** Glob patterns to ignore/make-stateless specific sessions (e.g., cron jobs)
+- **Large file handling:** Content exceeding token thresholds externalized with 3-segment sampling (beginning + middle + end)
+- **LLM escalation:** Normal → Aggressive → Character truncation fallback if summarization struggles
+- **Subagent delegation:** Expansion grants for child agents with automatic cleanup
+- **Data integrity:** Idempotent bootstrap from JSONL, tool metadata preservation, structured content round-tripping
+
+### Installation
+
+```bash
+openclaw plugins install @martian-engineering/lossless-claw
+```
+
+### Configuration
+
+Environment variables (highest priority) or plugin config:
+
+```bash
+LCM_FRESH_TAIL_COUNT=32          # Recent messages protected from compaction
+LCM_CONTEXT_THRESHOLD=0.75       # Compaction trigger (% of token budget)
+LCM_INCREMENTAL_MAX_DEPTH=-1     # Unlimited DAG cascade depth
+LCM_DB_PATH=~/.openclaw/lcm.db   # Database location
+```
+
+Recommended plugin config for Gregor:
+
+```json
+{
+  "summaryProvider": "anthropic",
+  "summaryModel": "claude-haiku-4-5-20251001",
+  "freshTailCount": 32,
+  "contextThreshold": 0.75,
+  "fanout": 8
+}
+```
+
+### Security Concerns (Evaluate Before Deploying)
+
+| Concern | Severity | Notes |
+|---------|----------|-------|
+| Cross-session data leakage via query tools | High | No auth boundaries on `lcm_grep`/`lcm_expand` — any session can query any other |
+| Prompt injection persistence | Medium | Malicious content survives compaction cycles into summaries |
+| No cost circuit breaker | Medium | Heavy summarization can exhaust budget — monitor closely |
+| Database growth | Low-Medium | 230MB in 4 days reported by users — add to backup.sh |
+
+### Evaluation Plan
+
+1. **Pre-flight:** Back up current config. Verify plugin doesn't conflict with existing `contextPruning` settings
+2. **Install:** `openclaw plugins install @martian-engineering/lossless-claw`
+3. **Configure:** Start conservative — use Haiku for summarization, default thresholds
+4. **Test:** Run a few Telegram conversations, verify DAG formation via TUI (`lcm-tui`)
+5. **Monitor:** Check `lcm.db` size growth, summarization costs, conversation quality
+6. **Compare:** Side-by-side with current TTL pruning — does Gregor recall old context better?
+7. **Decide:** Keep LCM or revert to TTL pruning based on cost/quality tradeoff
+
+### Known Issues & Compatibility
+
+| Issue | Status | Impact on Gregor |
+|-------|--------|-----------------|
+| **#145** Plugin loading failure: Node 22.16.0 + OpenClaw v2026.3.13 = no summaries written | Open | We're on v2026.3.12 + Node 22.x — verify compat before install |
+| **#142** Installation "Invalid path" error | Open | May need workaround |
+| **#70** Cross-session data leakage via lcm_grep/lcm_describe | Open | No upstream fix yet |
+| **#71** Prompt injection persistence across compaction | Open | No upstream fix yet |
+| **#100** False flag from OpenClaw security audit | Open | Low impact |
+
+**Recent fixes (post-v0.4.0, landed on main):**
+- Timeout protection for summarizer (60s blocks unresponsive providers)
+- Session queue memory leak fix (unbounded growth eliminated)
+- Media message annotation ("[Media attachment]" for media-only messages)
+- Summary model persistence (stores actual model name in DB)
+
+### Current Status
+
+**Installed on VPS (2026-03-21).** v0.4.0, loaded and active. Configuration via systemd env vars in `/etc/systemd/system/openclaw.service.d/lcm.conf`:
+
+```bash
+LCM_SUMMARY_MODEL=claude-haiku-4-5-20251001
+LCM_SUMMARY_PROVIDER=anthropic
+LCM_FRESH_TAIL_COUNT=32
+LCM_CONTEXT_THRESHOLD=0.75
+LCM_IGNORE_SESSION_PATTERNS=cron:*,*:heartbeat*,*:daily-report*,*:para-nightly*,*:para-weekly*,*:para-monthly*
+```
+
+Plugin explicitly trusted in `plugins.allow: ["lossless-claw"]`. DB at `~/.openclaw/lcm.db`.
+
+**Note:** Plugin config keys in `plugins.entries.lossless-claw` cause `config validate` to fail ("Unrecognized keys"). Use systemd env vars instead — they take highest priority per LCM's `resolveLcmConfig()`. The startup banner logs `(default)` for the summary model even when env vars are set; this is cosmetic — env vars override at runtime.
+
+17 open PRs (was 21 — 4 merged since initial research). PostgreSQL + pgvector backend PR (#140/#141) in flight. Active daily development.
+
+### Monitoring Routine
+
+**Deployed:** `~/scripts/lcm-check.sh` on VPS (source: `src/scripts/lcm-check.sh`).
+
+Checks: installed version vs npm latest, `lcm.db` size (warns >500MB), plugin load status, open GitHub security issues, latest release tag.
+
+```bash
+# Run manually
+~/scripts/lcm-check.sh
+
+# View results
+cat ~/.openclaw/logs/lcm-check.log
+```
+
+**Cron:** Add to weekly schedule (Sunday 05:00, after doctor-fix at 04:30):
+
+```bash
+# Add via: crontab -e
+0 5 * * 0 $HOME/scripts/lcm-check.sh
+```
+
+**Note on version detection:** LCM is installed via `openclaw plugins install` (not npm global). The script reads the version from `openclaw.json` → `plugins.installs.lossless-claw.resolvedVersion`.
+
+### Open Questions
+
+- Does LCM play nicely with our PARA memory structure, or does it duplicate what memory-core already does?
+- What's the cost impact of Haiku-based summarization over a typical day of Gregor usage?
+- Should cron sessions (heartbeat, daily-report, PARA) be ignored or stateless?
+- Does the 230MB/4-day DB growth concern apply to our usage patterns?
+- Is #145 (Node 22 + OpenClaw 3.13 loading failure) relevant to our v2026.3.12 setup?
 
 ---
 
@@ -245,3 +446,5 @@ OpenClaw's memory system uses a three-tier architecture with SQLite as the index
 - [Lost in the Middle (Liu et al. 2023)](https://arxiv.org/abs/2307.03172)
 - [OpenClaw GitHub Issue #19534: Cache Read Always 0](https://github.com/openclaw/openclaw/issues/19534)
 - [OpenClaw GitHub Issue #9157: Workspace Injection Waste](https://github.com/openclaw/openclaw/issues/9157)
+- [Lossless-Claw Plugin](https://github.com/martian-engineering/lossless-claw) — DAG-based context persistence for OpenClaw
+- [LCM: Lossless Context Management — Explainer](https://www.losslesscontext.ai/) — visual explanation of the DAG architecture and retrieval system

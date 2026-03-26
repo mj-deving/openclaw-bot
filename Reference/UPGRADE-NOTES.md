@@ -993,6 +993,112 @@ Released 2026-03-14 (auto-updated from v2026.3.12). **Rolled back to v2026.3.12*
 16. **Plugin-SDK bundling** — Shared build pass prevents duplicating chunks. Reduces memory.
     - **Impact:** Lower memory usage from plugins. **BENEFITS**
 
+---
+
+## v2026.3.22 / v2026.3.23
+
+**Upgrade: v2026.3.12 → v2026.3.23-2** (skipping v2026.3.14–v2026.3.22 — no releases exist for those versions; jumped directly from v2026.3.13-1 to v2026.3.22). Installed 2026-03-24. v2026.3.22 had packaging bugs (bundled plugins and Control UI missing from npm tarball); v2026.3.23 fixes those; v2026.3.23-2 is a same-day hotfix patch. Documented together as a single upgrade.
+
+> **CLI WS RPC regression: FIXED.** The blocker from v2026.3.13 (#45560, #46716, #47103) is resolved. PR #50101 fixed operator scope preservation during device-auth bypass. `openclaw cron list`, `cron runs`, and gateway memory probe all work again.
+
+### Breaking Changes
+
+1. **Plugin SDK migration** — `openclaw/extension-api` → `openclaw/plugin-sdk/*`. Custom and external plugins may need path updates.
+   - **Impact:** LCM (lossless-claw) is an external plugin. Must verify it loads correctly post-upgrade. **INVESTIGATE**
+
+2. **Chrome MCP extension relay removed** — Browser extension-based MCP relay replaced with `existing-session` mode.
+   - **Impact:** Run `openclaw doctor --fix` to migrate. We don't use browser MCP. **APPLIED** (via doctor --fix)
+
+3. **Legacy env vars removed** — `CLAWDBOT_*`, `MOLTBOT_*` prefixes removed. Must use `OPENCLAW_*`.
+   - **Impact:** We already use `OPENCLAW_*` env vars. No impact. **NONE**
+
+4. **ClawHub becomes default plugin store** — Plugin resolution prefers ClawHub before npm for discovery.
+   - **Impact:** LCM installed via explicit npm spec (`@martian-engineering/lossless-claw`), not discovery. Low risk but watch for namespace squatting. **NOTED**
+
+5. **Image generation standardized** — Legacy image gen tools replaced with core `image_generate`.
+   - **Impact:** We don't use image generation in Gregor. **NONE**
+
+6. **Plugin message discovery** — Tools must implement `ChannelMessageActionAdapter.describeMessageTool(...)`.
+   - **Impact:** Affects plugin developers. LCM may need update if it uses message tools. **INVESTIGATE**
+
+7. **Device pairing binding** — Pairing codes now bound to intended profile.
+   - **Impact:** Tighter auth. Device-pair is disabled for us. **BENEFITS**
+
+### Security (30+ improvements)
+
+8. **File URL blocking** — Blocks `file://` media URLs and UNC paths before resolution. Prevents SMB credential handshakes on Windows.
+   - **Impact:** Cross-platform security hardening. **BENEFITS**
+
+9. **CSP hardening** — SHA-256 hashes for inline script blocks in index.html (Control UI).
+   - **Impact:** Hardens Control UI against XSS. **BENEFITS**
+
+10. **Plugin manifest validation** — Enhanced validation against marketplace sources, prevents malformed plugin manifests.
+    - **Impact:** Hardens our LCM plugin trust. **BENEFITS**
+
+11. **Exec environment sandbox restrictions** — JVM and dependency resolution injection hardening.
+    - **Impact:** Tighter exec sandbox. Our `exec.security: full` means bot has autonomous shell, but this limits injection vectors. **BENEFITS**
+
+12. **Webhook pre-auth** — Body limits and timeouts applied before auth checks.
+    - **Impact:** Defense-in-depth for webhook path (we use polling, but the control path benefits). **BENEFITS**
+
+13. **Device token enforcement** — Stricter device-auth for `operator.read` scope. This is the fix for the CLI WS RPC regression.
+    - **Impact:** Directly fixes #45560/#46716. **APPLIED**
+
+14. **Auth-profile credential reversion fix** (v2026.3.23) — Gateway no longer overwrites `auth-profiles.json` with stale in-memory OAuth tokens.
+    - **Impact:** Fixes exactly the auth issue we hit on 2026-03-21 where OAuth profiles were silently reverting. **BENEFITS**
+
+### Packaging Fixes (v2026.3.23)
+
+15. **Bundled plugin runtime sidecars restored** — WhatsApp, Matrix, and other optional bundled plugins were missing from the v2026.3.22 npm tarball due to missing `OPENCLAW_INCLUDE_OPTIONAL_BUNDLED=1` in release workflow.
+    - **Impact:** We don't use WhatsApp/Matrix, but it indicates v2026.3.22 had packaging issues. v2026.3.23 fixes this. **NONE** (but validates our "skip to 3.23" decision)
+
+16. **Control UI assets restored** — `dist/control-ui/` directory was excluded from v2026.3.22 npm tarball.
+    - **Impact:** Dashboard access fixed in v2026.3.23. **BENEFITS**
+
+### Provider Support
+
+17. **Native Anthropic Vertex AI** — Claude via Google Vertex.
+    - **Impact:** New provider option. We use direct Anthropic. **NOTED**
+
+18. **Qwen DashScope endpoints** — Standard pay-as-you-go + coding plan.
+    - **Impact:** New provider option. **NOTED**
+
+19. **Forward compatible models** — `gpt-5.4-mini`, `gpt-5.4-nano` aliases.
+    - **Impact:** Future model support. **NOTED**
+
+### Plugin Ecosystem
+
+20. **ClawHub integration** — Skill/plugin discovery via ClawHub marketplace.
+    - **Impact:** We use bundled-only + explicit npm installs. **NOTED**
+
+21. **Pluggable sandbox backends** — SSH and OpenShell support for sandboxed execution.
+    - **Impact:** NemoClaw/OpenShell integration path. See Reference/NEMOCLAW.md. **NOTED**
+
+22. **Per-agent thinking/reasoning defaults** — Configure thinking mode per agent.
+    - **Impact:** Could optimize Gregor's reasoning behavior per session type. **CONSIDER**
+
+### Performance
+
+23. **Gateway cold start reduced** — Minutes → seconds for startup.
+    - **Impact:** Faster restarts. **BENEFITS**
+
+24. **Bundled plugins from compiled dist/extensions** — Faster plugin loading.
+    - **Impact:** Faster startup. **BENEFITS**
+
+25. **Model catalog caching** — Cached by configuration state, reduces repeated resolution.
+    - **Impact:** Faster model selection. **BENEFITS**
+
+### Fixes
+
+26. **Telegram threading context population** — Thread context correctly passed.
+    - **Impact:** Better thread handling. **BENEFITS**
+
+27. **OpenRouter auto-pricing recursion fix** — Prevents infinite recursion in pricing refresh.
+    - **Impact:** Our OpenRouter fallback is more stable. **BENEFITS**
+
+28. **Browser attachment timeouts** — Longer timeouts for slower systems.
+    - **Impact:** If browser tool is used. **NOTED**
+
 ### Operational Notes
 
 - Auto-update applied v2026.3.13 on March 14. Rolled back to v2026.3.12 on March 16 due to CLI WS regression.
@@ -1037,6 +1143,15 @@ Items extracted from changelogs that may influence our configuration.
 | Browser automation via Chrome DevTools | v2026.3.13 #2 | DEFERRED — no browser use case for Gregor yet | Low |
 | Cron isolated session deadlock fix | v2026.3.13 #9 | BENEFITS | Medium |
 | Auto-update disabled — pinned to v2026.3.12 | v2026.3.13 ops | APPLIED | High |
+| CLI WS RPC regression — FIXED in v2026.3.22 | PR #50101 — operator scope fix | RESOLVED | High |
+| Auth-profile credential reversion fix | v2026.3.23 — stale token overwrite | BENEFITS | High |
+| Plugin SDK migration — verify LCM compat | v2026.3.22 — extension-api → plugin-sdk/* | INVESTIGATE | High |
+| ClawHub default plugin store — namespace squatting | v2026.3.22 — explicit spec is safe | NOTED | Low |
+| Pluggable sandbox backends (OpenShell) | v2026.3.22 — NemoClaw integration path | CONSIDER | Low |
+| Per-agent thinking/reasoning defaults | v2026.3.22 — customize per session type | CONSIDER | Medium |
+| Re-enable auto-update cron | v2026.3.23 — CLI fix landed | APPLIED | High |
+| Gateway cold start improvement | v2026.3.22 — faster startup | BENEFITS | Medium |
+| ReadOnlyPaths + plugin auto-enable conflict | v2026.3.22 — needs write on first startup | DOCUMENTED | Medium |
 
 ## Guide Update Tracker
 
@@ -1066,3 +1181,8 @@ Changelog items that need reflection in GUIDE.md.
 | Phase 12.5 (Cron) | Isolated sends excluded from resend queue — dupe fix | v2026.3.12 #14 | APPLIED |
 | Phase 14 (Maintenance) | Cron doctor migration required (`doctor --fix`) on upgrade | v2026.3.11 #1 | APPLIED |
 | Appendix J (K8s) | K8s deployment manifests as alternative to systemd | v2026.3.12 #22 | APPLIED |
+| Phase 7 (Security) | Security evolution table — cumulative hardening across versions | v2026.3.22 security | TODO |
+| Phase 7 (Plugins) | Plugin SDK migration note, ClawHub default store | v2026.3.22 #1, #4 | TODO |
+| Phase 15 (Upgrade) | CLI WS RPC fix — re-enable auto-update, remove #PINNED prefix | v2026.3.22 #13 | TODO |
+| Phase 14 (Maintenance) | Auth-profile credential reversion fix — document gotcha | v2026.3.23 fix | TODO |
+| Phase 14 (Maintenance) | ReadOnlyPaths + plugin auto-enable conflict documented | v2026.3.22 ops | TODO |

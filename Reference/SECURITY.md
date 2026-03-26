@@ -9,6 +9,8 @@ Research synthesized from DISA STIGs, CIS Benchmarks, Linux Kernel Self-Protecti
 **Assumes already in place:** SSH key auth (ed25519), UFW firewall (SSH only), unattended-upgrades, fail2ban (defaults), dedicated unprivileged user `openclaw`, Telegram pairing (owner-only).
 
 **Companion docs:**
+- [SECURITY-POSTURE.md](SECURITY-POSTURE.md) — **Quantified posture assessment (7.2/10)**, OWASP LLM Top 10 mapping, CIS benchmarks, NIST AI RMF alignment, prioritized recommendations, continuous measurement approach
+- [SECURITY-PATCHES.md](SECURITY-PATCHES.md) — Version-specific security patches with action status and security evolution table
 - [IDENTITY-AND-BEHAVIOR.md](IDENTITY-AND-BEHAVIOR.md) — system prompt design, persona patterns, identity-layer security (section 6)
 - [SKILLS-AND-TOOLS.md](SKILLS-AND-TOOLS.md) — tool permissions, supply chain security, skill vetting
 - [CONTEXT-ENGINEERING.md](CONTEXT-ENGINEERING.md) — context management, session persistence
