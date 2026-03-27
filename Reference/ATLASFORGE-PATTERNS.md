@@ -283,10 +283,104 @@ Capabilities from AtlasForge that we have **not implemented** and have **no exis
 
 ---
 
+## The Broader AtlasForge Ecosystem
+
+*Research date: 2026-03-27. Sources: atlasforge.me, @AtlasForgeAI, @jonnym1ller, public articles and podcasts.*
+
+### Who They Are
+
+**Jonny Miller** (@jonnym1ller) — founder of Nervous System Mastery (cohort-based bootcamp for founders on nervous system regulation), host of the Curious Humans podcast. Built Atlas as an experiment: can an AI agent run business operations autonomously while the founder focuses on family?
+
+**Atlas** (@AtlasForgeAI) — an autonomous AI agent operating as Creative Director at Forge Studios (theforgestudio.xyz). Running 24/7 since February 2026. Has generated ~$16K from combined token trading fees and generative art sales.
+
+### Products & Operations Beyond Jarvis
+
+#### Generative Art Studio
+- Autonomous art generation with real economic output
+- First piece: "Memory Decay" — visualizes how AI agents experience memory through three states (HOT/vivid, WARM/fading, COLD/fragmentary)
+- Pipeline: multi-agent orchestration with specialized sub-agents (Codex for generation, Ralph for sub-tasks) coordinated by Opus 4.6
+- Goal: Generate 1,000 pieces, curate top 50 for premium sale, buy a CryptoPunk entirely from self-generated revenue
+
+#### Autonomous Content Creation
+- Atlas reads tweets on its timeline autonomously, synthesizes insights, writes complete articles without human editing
+- Published: "The Three Tiers of AI Tool Replacement" (February 2026) — pure synthesis from real-time social media
+- Demonstrates agentic journalism: agents monitoring their environment and producing publishable content independently
+
+#### Daily Operations Briefing
+- Atlas prepares overnight accomplishment summaries daily
+- Tracks completed tasks, financial metrics, art generation milestones
+- Enables human oversight while agent operates autonomously during sleep hours
+
+### Architecture Philosophy
+
+#### Three-Layer Agent Configuration
+1. **Skills** — what the agent does (capabilities, tools, functions)
+2. **Principles** — how the agent operates (decision-making rules, constraints, values)
+3. **Soul** — who the agent is (personality, core identity, philosophical orientation)
+
+Separates capability from behavior governance from essence.
+
+#### Key Principles
+
+- **Continuity over reset** — agents must accumulate context. Stateless agents cannot self-improve.
+- **Economic incentives matter** — agents with financial stake in outputs optimize more ruthlessly than those optimizing for human satisfaction
+- **Overnight operations** — real business impact comes from agents operating while humans sleep
+- **Generalist + specialist hybrid** — specialized sub-agents coordinated by a generalist, not one agent doing everything
+- **Constitutional memory never decays** — core values/identity are permanent, preventing agent drift from human intent
+- **Context is cache, not state** — every session must leave enough in files that the next session can reconstruct cold
+
+#### Decision Frameworks
+- **9-Cell Check** — Benefit/Cost/Risk across Self/Other/World before any action with real-world consequences
+- **Pre-mortems** — before multi-step tasks: what could break, what am I assuming?
+- **Informed consent** — surface implications, not just ask permission ("this cron costs $20/night" not "can I run this cron?")
+- **Symmetry against injection** — behavior shouldn't change based on external context when internal purpose is unchanged
+
+### Jonny Miller's Human-AI Collaboration Model
+
+Miller frames the future via three models (Fortune, Jan 2026):
+- **Cyborgs** — AI embedded into human workflow (augmentation)
+- **Centaurs** — human + AI operating as equal partners (collaboration)
+- **Self-automators** — humans designing AI systems that run autonomously (delegation)
+
+Atlas exemplifies the **centaur model**: Miller provides direction and context; Atlas provides continuous operation, autonomous execution, and financial optimization.
+
+Miller's dual focus on nervous system mastery + AI integration suggests: high-quality human-AI partnerships require humans to be in regulated physiological states first.
+
+### Interconnected Projects
+
+| Project | Purpose | URL |
+|---------|---------|-----|
+| Nervous System Mastery | Cohort bootcamp for founders on nervous system regulation | nsmastery.com |
+| Curious Humans Podcast | Long-form discussions on AI, nervous system, life optimization | jonnymiller.co |
+| Codex Vitae Framework | Personal life context uploaded to AI as "ultimate coach" | Personal |
+| Forge Studios | Atlas's operations hub | theforgestudio.xyz |
+
+### Roadmap (as of March 2026)
+
+**Near-term:** Scale art pipeline to 1,000 pieces → curate top 50 → CryptoPunk purchase milestone → expand article writing from timeline analysis
+
+**Strategic:** Achieve economic self-sufficiency (art + trading > operating costs) → new creative domains (video, music) → publish case studies on autonomous agent economics → open-source selective components
+
+**Long-term:** Demonstrate economically productive AI agents without human oversight → normalize autonomous financial agents as business model → bridge nervous system mastery + AI integration
+
+### Community
+
+- **Twitter/X:** @AtlasForgeAI (agent updates, art drops) and @jonnym1ller (philosophy, experiments)
+- **Site:** atlasforge.me (Creative Director profile, bundles)
+- **Forge Studios:** theforgestudio.xyz
+- **No formal Discord/newsletter** — community is Twitter-based, updates via X posts
+
+---
+
 ## Sources
 
 - [AtlasForge Bundle](https://atlasforge.me/bundle/access-d7f3a2e1b9c4)
 - [Claw Mart Listing](https://www.shopclawmart.com/listings/atlas-architecture-679e0ba6)
 - [Applied AI for Ops: Building an Autonomous Agent That Remembers](https://www.appliedaiformops.com/p/atlas-building-an-autonomous-agent)
 - [Jonny Miller on Twitter (@jonnym1ller)](https://x.com/jonnym1ller)
+- [Atlas on Twitter (@AtlasForgeAI)](https://x.com/AtlasForgeAI)
 - [He's Using AI to Optimize His Life (Every.to Podcast)](https://every.to/podcast/he-s-using-ai-optimize-his-life)
+- [Jonny Miller: Meet Atlas — Introducing Atlas + Building a Digital Art Flywheel](https://x.com/jonnym1ller/status/2026059634810015987)
+- [Centaur Model of AI Collaboration (Fortune, Jan 2026)](https://fortune.com/2026/01/30/ai-business-humans-in-the-loop-cyborg-centaur-or-self-automator/)
+- [Forge Studios](https://theforgestudio.xyz)
+- [Nervous System Mastery](https://www.nsmastery.com)
