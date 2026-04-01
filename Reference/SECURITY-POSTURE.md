@@ -751,3 +751,98 @@ This risk appetite is appropriate for a **personal deployment** with a **single 
 ---
 
 *Assessment conducted 2026-03-24. Re-assess quarterly or after any major configuration change, OpenClaw version upgrade, or security incident.*
+
+---
+
+## 10. Enterprise Hardening Action Plan
+
+*Added 2026-03-29. Based on "Scaling OpenClaw for the Enterprise" analysis (Alpha Signal Sunday Deep Dive) mapped against our deployment.*
+
+**Context:** Article documents real-world incidents — Meta's Summer Yue lost hundreds of emails when context compaction dropped safety instructions; BitStrike/BitDefender found 100K+ exposed OpenClaw instances with RCE vulnerabilities. Enterprise solutions emerging: Amazon Lightsail (managed deployment), NemoClaw (OpenShell sandbox), Zenity (real-time intercept layer). Onyx AI published "CLAW-10" enterprise readiness framework.
+
+### What We Already Have (maintain)
+
+| Enterprise Requirement | Our Implementation | Status |
+|----------------------|-------------------|--------|
+| Sandboxed execution | systemd hardening (~2.1 EXPOSURE), ReadOnlyPaths, CapabilityBoundingSet | Strong |
+| Network isolation | Loopback-only gateway, polling mode, verify-binding.sh cron | Strong |
+| Supply chain control | Bundled-only skills, zero ClawHub, LCM audited | Strong |
+| Audit logging | auditd with OpenClaw rules + immutable flag | Needs verification |
+
+### Action Items (not yet executed)
+
+#### P0 — Do This Week
+
+**P0-A: Verify auditd is active with immutable flag**
+
+```bash
+ssh vps "sudo auditctl -s | grep enabled"   # Must show "enabled 2"
+ssh vps "sudo auditctl -l"                    # Must show openclaw rules
+```
+
+If not active, deploy rules from GUIDE.md §7.15. This is our primary forensic control.
+
+**P0-B: Add safety instructions to Constitutional memory**
+
+The Meta/Summer Yue incident: context compaction dropped "confirm before acting" → agent wiped inbox. Our memoryFlush fires before compaction, but AGENTS.md identity instructions could still be compressed away in a long session.
+
+Action: Add critical safety instructions to `memory/resources/` (PARA Constitutional tier) so they persist independently of context window. Verify memoryFlush prompt explicitly preserves security rules.
+
+#### P1 — Do This Month
+
+**P1-A: Evaluate exec.security tiering per session type**
+
+Our #1 weakness: `exec.security: full` gives Gregor autonomous shell. The enterprise guidance says "minimum privileges per task."
+
+Options to evaluate:
+- `exec.security: "ask"` for high-risk operations (package installs, network calls)
+- Two-tier model: Haiku crons get `deny`, Sonnet conversations get `full`
+- Document the tradeoff explicitly if keeping `full`
+
+**P1-B: Tighten ReadOnlyPaths on auth files**
+
+Gregor can currently read `auth-profiles.json`. Add to hardening.conf:
+```
+ReadOnlyPaths=/home/openclaw/.openclaw/agents/main/agent/auth-profiles.json
+```
+
+**P1-C: Add workspace file tamper detection**
+
+Microsoft Defender guidance: "Monitor saved instructions for unexpected persistent rules."
+
+Add auditd watch:
+```
+-w /home/openclaw/.openclaw/workspace/ -p wa -k openclaw-workspace
+```
+
+#### P2 — Do in 3 Months
+
+**P2-A: Research Zenity intercept layer**
+
+Open-source real-time action inspection. Could replace/supplement our static tool deny list with dynamic pre-execution checks. Evaluate if it works with OpenClaw's plugin system.
+
+**P2-B: Token isolation improvements**
+
+Microsoft guidance: "Give agent its own accounts, tokens — assume they will be compromised." Evaluate scoped API keys when Anthropic supports them. Consider separate OAuth tokens per session type.
+
+#### P3 — Track
+
+**P3-A: Encrypted localhost communications** — only if gateway exposure changes beyond loopback.
+
+### External Frameworks to Evaluate
+
+| Framework | What It Does | Action |
+|-----------|-------------|--------|
+| **Onyx AI CLAW-10** | Enterprise readiness checklist for OpenClaw | Scrape and score ourselves against it |
+| **Zenity** | Open-source agent security intercept layer | Research for P2-A |
+| **Microsoft Defender Agent Guidance** | Zero-trust framework for autonomous agents | Already incorporated above |
+
+### Sources
+
+- "Scaling OpenClaw for the Enterprise" — Alpha Signal Sunday Deep Dive (2026-03-29)
+- Meta/Summer Yue context compaction incident (February 2026)
+- BitStrike exposed OpenClaw agent study
+- BitDefender 100K+ OpenClaw instance scan
+- Onyx AI CLAW-10 enterprise readiness framework
+- Microsoft Defender autonomous agent guidance
+- Reference/NEMOCLAW.md — NVIDIA's enterprise OpenClaw stack
