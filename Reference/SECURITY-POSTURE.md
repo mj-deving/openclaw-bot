@@ -252,6 +252,39 @@ Selected items most relevant to this deployment. Full CIS benchmark contains 300
 
 **OWASP LLM Summary:** Average coverage 6.8/10. Strongest in supply chain (LLM03) and misinformation (LLM09, low inherent risk). Weakest in prompt injection (LLM01) and excessive agency (LLM06) — both are accepted consequences of the capability-first design.
 
+### 5.3 OWASP Top 10 for Agentic Applications (ASI01-ASI10, December 2025)
+
+Separate framework from the LLM Top 10, specifically for autonomous AI agents. Published December 10, 2025 by 100+ industry experts.
+**Source:** https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+
+| ASI ID | Risk | Our Coverage | Rating | Notes |
+|--------|------|-------------|--------|-------|
+| **ASI01** | Agent Goal Hijack | PARTIAL | 6/10 | System prompt hardening in AGENTS.md. Symmetry principle (from AtlasForge). BUT: single-context architecture means poisoned web content could redirect Gregor's behavior. memoryFlush may not preserve safety instructions through compaction (the Meta/Summer Yue incident). No dual-LLM isolation. |
+| **ASI02** | Tool Misuse & Exploitation | MODERATE | 6/10 | Tool deny list (gateway, nodes). `exec.security: full` is the deliberate gap — Gregor has autonomous shell. Cron tool allowed (self-scheduling). Browser tool allowed. No pre-execution validation of tool arguments beyond OpenClaw's built-in checks. |
+| **ASI03** | Identity & Privilege Abuse | MODERATE | 6/10 | Dedicated `openclaw` user (not root). OAuth tokens in auth-profiles.json readable by the agent via shell. No scoped API keys (Anthropic doesn't offer them). No JIT provisioning. Agent inherits full `openclaw` user filesystem access. |
+| **ASI04** | Supply Chain Vulnerabilities | STRONG | 8/10 | Bundled-only skills, zero ClawHub. LCM plugin installed from explicit npm spec with integrity hash. No MCP servers. `plugins.allow` whitelist. Gap: LCM deps use wildcard versions (`@mariozechner/pi-agent-core: *`). No runtime component scanning. |
+| **ASI05** | Unexpected Code Execution | WEAK | 5/10 | `exec.security: full` — Gregor can execute arbitrary shell commands. This is deliberate (capability-first) but is the single largest risk. systemd sandbox (CapabilityBoundingSet, ProtectSystem) constrains blast radius. ReadOnlyPaths protects config. No approval gate on generated code. |
+| **ASI06** | Memory & Context Poisoning | MODERATE | 6/10 | PARA memory with daily cron consolidation. LCM DAG stores all messages. No input validation on what enters memory. No integrity checking on memory files. Memory search spans all sessions (cross-session poisoning possible). No provenance tracking on memory entries. Gregor can write to his own memory files via shell. |
+| **ASI07** | Insecure Inter-Agent Communication | WEAK | 5/10 | PAI pipeline uses shared filesystem (/var/lib/pai-pipeline/) with setgid permissions. No message signing or authentication. No encryption. Pipeline injection possible if either user is compromised. No rate limiting on task submission. This is a P1 item in our enterprise action plan. |
+| **ASI08** | Cascading Agent Failures | MODERATE | 7/10 | Two-agent system (Gregor + Isidore Cloud) with strict isolation (separate users, separate processes). Health-check with exponential backoff and daily restart budget (5/24h). Circuit breaker via flock guard. No shared state beyond pipeline. Failure in one agent doesn't cascade to the other. |
+| **ASI09** | Human-Agent Trust Exploitation | LOW RISK | 8/10 | Single-owner deployment. Marius is the only user and can evaluate output directly. No public-facing deployment. No multi-user approval workflows where rubber-stamping is a risk. Gregor's informed consent patterns (from SOUL.md influence) surface costs before acting. |
+| **ASI10** | Rogue Agents | MODERATE | 7/10 | Health-check detects crashes, zombies, polling death, memory leaks. Daily-report cron provides behavioral summary. Kill switch via `sudo systemctl stop openclaw`. No automated behavioral drift detection. No reward function misalignment risk (no optimization objective beyond user instructions). Workspace file integrity not monitored (P1-C in action plan). |
+
+**OWASP Agentic Summary:** Average coverage 6.4/10. Strongest in supply chain (ASI04: 8/10) and cascading failures (ASI08: 7/10, due to two-agent isolation). Weakest in code execution (ASI05: 5/10) and inter-agent communication (ASI07: 5/10). Both are documented accepted risks with specific hardening plans.
+
+**Key gap vs LLM Top 10:** The agentic framework highlights risks we hadn't fully addressed — particularly ASI06 (memory poisoning has no provenance tracking), ASI07 (pipeline has no authentication), and ASI03 (agent inherits all user privileges with no JIT scoping).
+
+### 5.4 Complementary Frameworks
+
+| Framework | Status | Relevance | URL |
+|-----------|--------|-----------|-----|
+| **MITRE ATLAS v5.4** | Active (Feb 2026) | 16 tactics, 84 techniques for AI threat modeling. Added 14 agentic techniques in Oct 2025. | https://atlas.mitre.org/ |
+| **NIST AI RMF + Agentic Initiative** | In development (2026) | COSAiS SP 800-53 control overlays for agent systems. Not yet published. | https://www.nist.gov/itl/ai-risk-management-framework |
+| **ISO/IEC 42001:2023** | Published | AI management system standard. Applicable to our agent deployment. Not yet assessed. | https://www.iso.org/standard/42001 |
+| **EU AI Act** | Enforces Aug 2, 2026 | No specific agent guidance yet. Tool sovereignty rules may affect us. | https://artificialintelligenceact.eu/ |
+| **CSA Agentic Control Plane** | Launched 2026 | Identity, authorization, runtime governance for agents. New CSAI foundation. | https://cloudsecurityalliance.org/ |
+| **Onyx AI CLAW-10** | Published | Enterprise readiness framework for OpenClaw specifically. Not yet assessed. | TBD |
+
 ### 5.3 NIST AI Risk Management Framework (AI RMF 1.0)
 
 The NIST AI RMF organizes around four functions: GOVERN, MAP, MEASURE, MANAGE. Mapping this deployment:
@@ -829,12 +862,26 @@ Microsoft guidance: "Give agent its own accounts, tokens — assume they will be
 
 **P3-A: Encrypted localhost communications** — only if gateway exposure changes beyond loopback.
 
+#### P2-C: Memory provenance tracking (ASI06)
+
+No input validation or source tracking on what enters PARA memory or LCM DAG. A poisoned web page could inject facts that persist indefinitely.
+
+Action: Evaluate AtlasForge's trust-scoring pattern (`[trust:0.9|src:direct|used:YYYY-MM-DD|hits:3]`) for memory entries. See `Reference/AtlasForge-Bundle/assets/MEMORY.md` for their format. Could be added to PARA consolidation cron.
+
+#### P2-D: PAI pipeline message signing (ASI07)
+
+Shared filesystem pipeline has no authentication. Task injection possible if either user is compromised.
+
+Action: Implement HMAC signing. Generate shared secret (`openssl rand -hex 32`) in `/var/lib/pai-pipeline/.signing-key` (640, root:pai). Sign task JSON on submit, verify on receive.
+
 ### External Frameworks to Evaluate
 
 | Framework | What It Does | Action |
 |-----------|-------------|--------|
 | **Onyx AI CLAW-10** | Enterprise readiness checklist for OpenClaw | Scrape and score ourselves against it |
 | **Zenity** | Open-source agent security intercept layer | Research for P2-A |
+| **MITRE ATLAS v5.4** | 16 tactics, 84 techniques for AI threat modeling | Use for detailed attack path analysis |
+| **CSA Agentic Control Plane** | Identity + authorization + runtime governance | Monitor as standards mature |
 | **Microsoft Defender Agent Guidance** | Zero-trust framework for autonomous agents | Already incorporated above |
 
 ### Sources
