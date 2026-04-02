@@ -1122,12 +1122,38 @@ Auto-updated from v2026.3.23-2 by weekly auto-update cron (Sun 04:00). Confirmed
 3. **Cron scheduler tagline rotation** — Gateway startup shows rotating taglines (cosmetic).
    - **Impact:** Cosmetic. **NONE**
 
-### No Breaking Changes Observed
+### Security
 
+4. **CWD `.env` injection vulnerability (GHSA-8rh7-6779-cjqq, CVSS 9.6)** — `src/infra/dotenv.ts` loads CWD `.env` before trusted state-dir config. An attacker-placed `.env` in the workspace could override `OPENCLAW_CONFIG`, `NODE_OPTIONS`, API keys, and plugin env vars (including `LCM_SUMMARY_MODEL`). Affects all versions ≤ v2026.3.24. Fixed in v2026.3.28.
+   - **Impact:** Our systemd `WorkingDirectory` is `/home/openclaw` (not workspace), and `ReadOnlyPaths` protects config. Low immediate risk but upgrade to ≥ v2026.3.28 recommended. **INVESTIGATE**
+
+5. **Sandbox media dispatch bypass closed** — `mediaUrl`/`fileUrl` alias bypass prevented tool/message action sandbox escapes.
+   - **Impact:** Hardens exec sandbox. **BENEFITS**
+
+### Features
+
+6. **Plugin hooks: `before_dispatch` added** — New plugin lifecycle hook with canonical inbound metadata.
+   - **Impact:** LCM doesn't use dispatch hooks. **NONE**
+
+7. **`/tools` visibility overhaul** — `/tools` now shows only currently-accessible tools with compact default view.
+   - **Impact:** UX change only. **NOTED**
+
+8. **Restart sentinel** — Agent wakeup via heartbeat after restart; retries outbound delivery on transient failure.
+   - **Impact:** Smoother post-restart behavior. **BENEFITS**
+
+9. **OpenAI-compatible endpoints** — Gateway now exposes `/v1/models`, `/v1/embeddings`, `/v1/chat/completions`.
+   - **Impact:** Enables external tools to use gateway as OpenAI-compatible API. **NOTED**
+
+### Packaging Issues (Known: #54790)
+
+10. **In-place `dist/` overwrite during live Gateway** — `npm install -g` overwrites modules while Gateway is running, causing module hash mismatches and crashes.
+    - **Impact:** Our auto-update script stops gateway before updating. Verify stop ordering. **INVESTIGATE**
+
+### Compatibility
+
+- No breaking changes to Telegram/Anthropic/LCM surface
+- LCM env var handling unchanged — precedence remains: env vars > plugin config > defaults
 - Gateway starts cleanly with existing v2026.3.23 config
-- All crons continue running (heartbeat, daily-report, PARA suite)
-- LCM plugin loads correctly with existing env vars
-- ReadOnlyPaths and systemd hardening unaffected
 - Auth profiles stable (no credential reversion observed)
 
 ### Operational Notes
@@ -1135,6 +1161,8 @@ Auto-updated from v2026.3.23-2 by weekly auto-update cron (Sun 04:00). Confirmed
 - Auto-update applied v2026.3.24 between 2026-03-31 and 2026-04-01 (weekly cron).
 - Auto-update re-enabled since v2026.3.22 fixed CLI WS regression.
 - PARA Nightly was already in `error` state before upgrade (timeout issue, not version-related).
+- **Action: Plan upgrade to v2026.3.28+ to close GHSA-8rh7-6779-cjqq (.env injection CVE).**
+- **Action: Verify `auto-update.sh` stops gateway before `npm install -g` (issue #54790).**
 
 ---
 
