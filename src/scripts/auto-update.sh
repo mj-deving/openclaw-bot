@@ -27,6 +27,12 @@ log "=== Auto-update starting ==="
 CURRENT_VERSION=$(openclaw --version 2>/dev/null || echo "unknown")
 log "Current version: $CURRENT_VERSION"
 
+# Stop gateway BEFORE npm update to avoid in-place dist/ overwrite crash (issue #54790)
+# npm install -g overwrites modules while gateway is running, causing hash mismatches
+log "Stopping gateway for safe update..."
+systemctl stop openclaw 2>/dev/null || true
+sleep 3
+
 # Update OpenClaw
 npm update -g openclaw >> "$LOG" 2>&1 || {
     log "WARNING: npm update failed"
@@ -36,11 +42,17 @@ npm update -g openclaw >> "$LOG" 2>&1 || {
 NEW_VERSION=$(openclaw --version 2>/dev/null || echo "unknown")
 log "Post-update version: $NEW_VERSION"
 
-# Restart if version changed
+# Always restart (gateway was stopped for update)
 if [ "$CURRENT_VERSION" != "$NEW_VERSION" ]; then
-    log "Version changed: $CURRENT_VERSION → $NEW_VERSION. Restarting service..."
-    systemctl restart openclaw 2>/dev/null || true
-    sleep 10
+    log "Version changed: $CURRENT_VERSION → $NEW_VERSION. Starting service..."
+else
+    log "No version change. Restarting service..."
+fi
+systemctl restart openclaw 2>/dev/null || true
+sleep 10
+
+# Version changed — run extra verification
+if [ "$CURRENT_VERSION" != "$NEW_VERSION" ]; then
 
     # Verify binding after restart (critical — updates could regress the binding behavior)
     if [ -x "$HOME/scripts/verify-binding.sh" ]; then

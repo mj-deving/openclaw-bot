@@ -1124,8 +1124,8 @@ Auto-updated from v2026.3.23-2 by weekly auto-update cron (Sun 04:00). Confirmed
 
 ### Security
 
-4. **CWD `.env` injection vulnerability (GHSA-8rh7-6779-cjqq, CVSS 9.6)** — `src/infra/dotenv.ts` loads CWD `.env` before trusted state-dir config. An attacker-placed `.env` in the workspace could override `OPENCLAW_CONFIG`, `NODE_OPTIONS`, API keys, and plugin env vars (including `LCM_SUMMARY_MODEL`). Affects all versions ≤ v2026.3.24. Fixed in v2026.3.28.
-   - **Impact:** Our systemd `WorkingDirectory` is `/home/openclaw` (not workspace), and `ReadOnlyPaths` protects config. Low immediate risk but upgrade to ≥ v2026.3.28 recommended. **INVESTIGATE**
+4. **CWD `.env` injection vulnerability class** — `src/infra/dotenv.ts` loads CWD `.env` before trusted state-dir config. An attacker-placed `.env` in the workspace could override env vars including hooks dir, plugin dir, pip index, and more. Tracked under GHSA-3qpv-xf3v-mm45, GHSA-qcj9-wwgw-6gm8, GHSA-7ggg-pvrf-458v, GHSA-g8xp-qx39-9jq9 (all HIGH). **Fixed in v2026.3.31**, not v2026.3.28 as initially reported.
+   - **Impact:** ~~Upgrade recommended.~~ **APPLIED** — upgraded to v2026.4.1 on 2026-04-02.
 
 5. **Sandbox media dispatch bypass closed** — `mediaUrl`/`fileUrl` alias bypass prevented tool/message action sandbox escapes.
    - **Impact:** Hardens exec sandbox. **BENEFITS**
@@ -1161,8 +1161,153 @@ Auto-updated from v2026.3.23-2 by weekly auto-update cron (Sun 04:00). Confirmed
 - Auto-update applied v2026.3.24 between 2026-03-31 and 2026-04-01 (weekly cron).
 - Auto-update re-enabled since v2026.3.22 fixed CLI WS regression.
 - PARA Nightly was already in `error` state before upgrade (timeout issue, not version-related).
-- **Action: Plan upgrade to v2026.3.28+ to close GHSA-8rh7-6779-cjqq (.env injection CVE).**
-- **Action: Verify `auto-update.sh` stops gateway before `npm install -g` (issue #54790).**
+- **Action: ~~Plan upgrade to v2026.3.28+~~ DONE — upgraded directly to v2026.4.1 on 2026-04-02.**
+- **Action: ~~Verify `auto-update.sh`~~ DONE — fixed to stop gateway before npm update (issue #54790).**
+
+## v2026.3.28
+
+Skipped — upgraded directly from v2026.3.24 to v2026.4.1. Documented for completeness as changes are included transitively.
+
+### Security
+
+1. **CWD `.env` injection partially addressed** — Workspace `.env` loading restricted for some paths. However, the full fix (hooks root, plugin trust root, exec env sanitization) landed in **v2026.3.31**, not 3.28.
+   - **Impact:** Transitively applied via v2026.4.1 upgrade. **APPLIED**
+
+### Features
+
+2. **`requireApproval` hooks** — `before_tool_call` hooks can prompt user via Telegram buttons or `/approve`. Enables interactive exec confirmation from Telegram.
+   - **Impact:** Available if we ever add approval-gated exec. **NOTED**
+
+3. **`openclaw config schema`** — Print JSON schema for config validation.
+   - **Impact:** Useful for pre-restart validation. **CONSIDER**
+
+4. **Compaction flush ownership** — `memory-core` now owns pre-compaction flush prompts and target-path policy. Improved LCM/memory-core integration.
+   - **Impact:** Our memoryFlush config may interact differently. Monitor. **BENEFITS**
+
+### Bug Fixes
+
+5. **Anthropic `sensitive` stop reason** — Unhandled provider stop reasons no longer crash agent runs.
+   - **Impact:** Prevents Gregor crashes on content policy triggers. **BENEFITS**
+
+6. **Telegram long message splitting** — Splits at word boundaries, not mid-word.
+   - **Impact:** Better message formatting. **BENEFITS**
+
+7. **Telegram whitespace-only replies** — No longer cause GrammyError 400 crashes.
+   - **Impact:** Prevents delivery crashes. **BENEFITS**
+
+8. **Heartbeat timer re-arm** — Interval timer guaranteed re-armed after errors. Prevents silent heartbeat death.
+   - **Impact:** Critical — our heartbeat runs every 30m. **BENEFITS**
+
+9. **Rate-limit cooldowns scoped per model** — One 429 no longer blocks all models.
+   - **Impact:** Better auth profile rotation. **BENEFITS**
+
+10. **Compaction timeout recovery** — Compaction triggered before retrying oversized LLM requests.
+    - **Impact:** Prevents repeated timeout failures in long sessions. **BENEFITS**
+
+## v2026.3.31
+
+Skipped — included transitively in v2026.4.1 upgrade. v2026.3.31 contains the critical security fixes.
+
+### Breaking Changes
+
+1. **Plugin install scan fail-closed** — Plugins with `critical` scan findings blocked by default.
+   - **Impact:** LCM has one `potential-exfiltration` warning (not critical). Should still install. **NOTED**
+
+2. **Node commands disabled until pairing approved** — Pre-pairing lockdown.
+   - **Impact:** Doesn't affect us (already paired). **NONE**
+
+### Security (5 HIGH/CRITICAL fixes)
+
+3. **GHSA-3qpv-xf3v-mm45** (HIGH) — Workspace `.env` overrides `OPENCLAW_BUNDLED_HOOKS_DIR`, allowing attacker hook code execution.
+   - **Impact:** Fixed in our v2026.4.1. **APPLIED**
+
+4. **GHSA-qcj9-wwgw-6gm8** (HIGH) — Workspace `.env` overrides `OPENCLAW_BUNDLED_PLUGINS_DIR`, allowing attacker plugin trust root substitution.
+   - **Impact:** Fixed in our v2026.4.1. **APPLIED**
+
+5. **GHSA-7ggg-pvrf-458v** (HIGH) — `PIP_INDEX_URL`/`UV_INDEX_URL` bypass host exec env sanitization. Relevant with `exec.security: full`.
+   - **Impact:** Fixed in our v2026.4.1. **APPLIED**
+
+6. **GHSA-g8xp-qx39-9jq9** (MEDIUM) — Compiler binary substitution via `CC`/`CXX` env overrides.
+   - **Impact:** Fixed in our v2026.4.1. **APPLIED**
+
+7. **GHSA-g5cg-8x5w-7jpm** (CRITICAL) — Heartbeat context inheritance bypasses sandbox via `senderIsOwner` escalation. Our heartbeat runs every 30 minutes.
+   - **Impact:** Fixed in our v2026.4.1. **APPLIED** — this was the most critical fix for our deployment.
+
+> **Note on GHSA-8rh7-6779-cjqq:** This advisory ID referenced in our v2026.3.24 notes does not appear in OpenClaw's published advisory list. The actual `.env` injection family is tracked under GHSA-3qpv/GHSA-qcj9/GHSA-7ggg/GHSA-g8xp above. The CVE class is the same.
+
+## v2026.4.1
+
+**Upgrade: v2026.3.24 → v2026.4.1** on 2026-04-02. Manual upgrade with gateway stop/start (safe update procedure per issue #54790). Commit `da64a97`.
+
+> **Scope:** This entry covers changes unique to v2026.4.1. Security fixes from v2026.3.28 and v2026.3.31 are documented above.
+
+### New Features
+
+1. **Telegram `errorPolicy` + `errorCooldownMs`** — Configurable error suppression per account/chat/topic. Prevents error spam in chats.
+   - **Impact:** Available if error messages become noisy. **CONSIDER**
+
+2. **Cron tool allowlists: `openclaw cron --tools`** — Per-job tool allowlists for cron jobs. Can tighten PARA cron permissions (e.g., deny exec for consolidation crons).
+   - **Impact:** Could lock down PARA crons to memory-only tools. **CONSIDER**
+
+3. **`agents.defaults.params`** — Global default provider parameters (temperature, max_tokens, etc.).
+   - **Impact:** Centralize Anthropic params if needed. **CONSIDER**
+
+4. **Auth failover: rate-limit profile rotation cap** — `auth.cooldowns.rateLimitedProfileRotations` knob with stepped retry before cross-provider fallback.
+   - **Impact:** Better 429 handling for our auth profile rotation. **BENEFITS**
+
+5. **Compaction model resolution** — `agents.defaults.compaction.model` now consistent across all compaction paths.
+   - **Impact:** Our Haiku compaction config should work more reliably. **BENEFITS**
+
+6. **OpenAI-compatible endpoints** — Gateway exposes `/v1/models`, `/v1/embeddings`, `/v1/chat/completions`.
+   - **Impact:** Enables external tools to use gateway as OpenAI-compatible API. **NOTED**
+
+### Security
+
+7. **`OPENCLAW_PINNED_PYTHON` blocked** from workspace `.env` override.
+   - **Impact:** Additional `.env` injection mitigation. **BENEFITS**
+
+8. **Additional exec env pivots blocked** — Package roots, runtimes, credentials.
+   - **Impact:** Hardens `exec.security: full`. **BENEFITS**
+
+9. **Webhooks timing-safe secret comparison** — Across Telegram and other handlers.
+   - **Impact:** Prevents timing attacks on webhook auth. **BENEFITS**
+
+### Bug Fixes
+
+10. **Telegram non-idempotent send safety** — `429`/`retry_after` backoff preserved on strict safe-send path.
+    - **Impact:** More reliable Telegram delivery. **BENEFITS**
+
+11. **Anthropic thinking blocks** — Preserved across replay, cache-control patching, context pruning.
+    - **Impact:** Prevents compacted Anthropic sessions from breaking. **BENEFITS**
+
+12. **Auth profiles store** — Misplaced SecretRef objects coerced safely during store load (prevents `.trim()` crash).
+    - **Impact:** Prevents auth crash after upgrade. **BENEFITS**
+
+13. **Memory session indexing** — Full reindexes no longer skip session transcripts.
+    - **Impact:** Memory reindex after restart works correctly. **BENEFITS**
+
+14. **Memory QMD** — `--mask` preferred over `--glob` for collections; prevents restart collisions.
+    - **Impact:** embeddinggemma collections more stable. **BENEFITS**
+
+15. **Gateway startup config writes** — No longer trigger restart loops.
+    - **Impact:** Prevents restart loop on upgrade. **BENEFITS**
+
+16. **Heartbeat `senderIsOwner` sandbox fix** — From v2026.3.31, included here for completeness. Heartbeat context no longer escalates to owner-level permissions.
+    - **Impact:** Critical fix for our 30m heartbeat cron. **APPLIED**
+
+17. **Config `groupMentionsOnly` migration** — Auto-migrated to `groups["*"].requireMention`.
+    - **Impact:** Check if legacy config key exists. **INVESTIGATE**
+
+### Operational Notes
+
+- Upgraded manually 2026-04-02 with safe stop/start procedure.
+- `openclaw doctor --fix` run post-upgrade: added `browser` to plugins.entries.
+- `openclaw config validate`: passed.
+- `openclaw security audit --deep`: passed (same warnings as v2026.3.24 — permissive tool policy, unpinned LCM).
+- Gateway starts cleanly. LCM loaded with `(override)` Haiku model.
+- All 5 crons running with `ok` status.
+- Auto-update script fixed to stop gateway before `npm install -g` (issue #54790).
+- `node-llama-cpp` — verify with `openclaw memory status --deep` (embeddinggemma may need rebuild after major version jump).
 
 ---
 

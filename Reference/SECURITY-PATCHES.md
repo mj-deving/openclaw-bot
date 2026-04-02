@@ -272,6 +272,53 @@ Cumulative security hardening across all versions we've tracked:
 | **Media** | sandbox reject hardlink/symlink, file:// URL blocking, UNC path blocking | v2026.2.24, v2026.3.22 |
 | **Config** | fail-closed loading, config validate CLI, per-agent reasoning defaults | v2026.3.4, v2026.3.2, v2026.3.22 |
 
+## v2026.3.28 / v2026.3.31 / v2026.4.1
+
+Upgrade from v2026.3.24 → v2026.4.1 (skipping v2026.3.28 and v2026.3.31). Installed 2026-04-02 via manual upgrade with safe stop/start procedure.
+
+### Critical / Config-Relevant
+
+| Item | Impact | Our Action |
+|------|--------|------------|
+| **GHSA-3qpv-xf3v-mm45** (HIGH) — workspace `.env` overrides `OPENCLAW_BUNDLED_HOOKS_DIR` | Attacker `.env` in workspace could load malicious hook code. Our `ReadOnlyPaths` on workspace mitigates, but fix is definitive. | APPLIED (v2026.4.1) |
+| **GHSA-qcj9-wwgw-6gm8** (HIGH) — workspace `.env` overrides `OPENCLAW_BUNDLED_PLUGINS_DIR` | Attacker could substitute plugin trust root. Similar mitigation via our hardening. | APPLIED (v2026.4.1) |
+| **GHSA-7ggg-pvrf-458v** (HIGH) — `PIP_INDEX_URL`/`UV_INDEX_URL` bypass exec env sanitization | Relevant with `exec.security: full` — pip/uv installs could pull from attacker index. | APPLIED (v2026.4.1) |
+| **GHSA-g8xp-qx39-9jq9** (MEDIUM) — compiler binary substitution via `CC`/`CXX` env overrides | Build commands could use attacker compiler binaries. | APPLIED (v2026.4.1) |
+| **GHSA-g5cg-8x5w-7jpm** (CRITICAL) — heartbeat `senderIsOwner` sandbox escalation | **Most critical for our deployment.** Heartbeat context inheritance bypassed sandbox, granting owner-level permissions to heartbeat sessions. Our heartbeat runs every 30 minutes. | APPLIED (v2026.4.1) |
+| **Plugin install fail-closed** (v2026.3.31 BREAKING) — plugins with critical scan findings blocked | LCM has `potential-exfiltration` warning (not critical severity). Still installs. | NOTED |
+| **Cron tool allowlists** (`--tools` flag) — per-job tool restrictions for cron jobs | Can lock down PARA crons to memory-only tools, removing shell access. | CONSIDER |
+| **`auto-update.sh` fixed** — now stops gateway before `npm install -g` | Prevents in-place dist/ overwrite crash (issue #54790). | APPLIED (script deployed) |
+| **Compaction model resolution** — `agents.defaults.compaction.model` consistent everywhere | Our Haiku compaction config now works reliably across all compaction paths. | BENEFITS |
+
+### Security Fixes (Auto-Applied)
+
+- Security/Exec: `OPENCLAW_PINNED_PYTHON` blocked from workspace `.env` override
+- Security/Exec: additional host env override pivots blocked (package roots, runtimes, credentials)
+- Security/Exec: `PIP_INDEX_URL`, `UV_INDEX_URL` stripped from host exec env
+- Security/Exec: compiler binary env vars (`CC`, `CXX`, etc.) sanitized
+- Security/Webhooks: timing-safe secret comparison for Telegram and other handlers
+- Security/Sandbox: media dispatch bypass (`mediaUrl`/`fileUrl` alias) closed
+- Security/Heartbeat: `senderIsOwner` escalation via heartbeat context fixed
+- Security/Plugins: install scan failures fail closed (critical findings block plugin)
+- Security/Agents: `sensitive` stop reason handled gracefully (no crash)
+- Security/Telegram: whitespace-only replies no longer cause GrammyError 400 crashes
+- Security/Auth: rate-limit cooldowns scoped per model (not per auth profile)
+- Security/Auth: misplaced SecretRef objects coerced safely (prevents `.trim()` crash)
+- Security/Memory: session indexing fixed — reindexes no longer skip transcripts
+- Security/Gateway: startup config writes no longer trigger restart loops
+- Security/Gateway: per-channel boot isolation — single broken channel doesn't block others
+
+### Security Evolution (v2026.3.23 → v2026.4.1)
+
+| Category | Controls Added | Version |
+|----------|---------------|---------|
+| **Exec sandbox** | `.env` injection family (hooks, plugins, pip, compilers, python, runtimes) | v2026.3.31, v2026.4.1 |
+| **Heartbeat** | `senderIsOwner` sandbox escalation fixed | v2026.3.31 |
+| **Auth** | rate-limit scoping per model, SecretRef coercion, profile rotation cap | v2026.3.28, v2026.4.1 |
+| **Telegram** | whitespace crash fix, long message split fix, timing-safe webhooks, error policy | v2026.3.28, v2026.4.1 |
+| **Plugins** | install scan fail-closed, media dispatch bypass fixed | v2026.3.31, v2026.4.1 |
+| **Memory** | session indexing fix, QMD mask fix, compaction model resolution | v2026.3.28, v2026.4.1 |
+
 ---
 
 ## How To Use This File

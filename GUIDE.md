@@ -1341,7 +1341,10 @@ OpenClaw's built-in security has improved significantly across releases. This ta
 | **v2026.3.13** | Telegram SSRF hardening with IPv4 fallback, webhook pre-auth, plugin command validation, exec trust binding | Media, Network, Plugins |
 | **v2026.3.22** | `file://` URL blocking, CSP hardening, plugin manifest validation, JVM/dependency injection hardening, device token enforcement (CLI WS fix), pluggable sandbox backends | Media, Gateway, Exec, Auth |
 | **v2026.3.23** | Auth-profile credential reversion fix, bundled plugin packaging fix | Auth, Supply chain |
-| **v2026.3.24** | See [UPGRADE-NOTES.md](Reference/UPGRADE-NOTES.md) for full details | Auto-updated |
+| **v2026.3.24** | Sandbox media dispatch fix, LCM env var logging, plugin hooks | Auto-updated |
+| **v2026.3.28** | Anthropic `sensitive` stop fix, Telegram message split, heartbeat timer fix, compaction timeout recovery | Skipped |
+| **v2026.3.31** | `.env` injection family (5 HIGH/CRITICAL CVEs), plugin install fail-closed, heartbeat sandbox escalation fix | Skipped |
+| **v2026.4.1** | Additional exec env hardening, timing-safe webhooks, cron tool allowlists, compaction model fix | Upgraded 2026-04-02 |
 
 **Trend:** Each major release adds 3-8 security hardening measures. Most are auto-applied — no config changes needed. The cumulative effect is significant: a v2026.3.23 deployment is substantially more secure than a v2026.2.22 deployment even with identical user configuration.
 

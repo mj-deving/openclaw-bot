@@ -1,7 +1,7 @@
 # Security Posture Assessment
 
-> **Assessment date:** 2026-03-24
-> **OpenClaw version:** v2026.3.12 (current) | v2026.3.23 (target upgrade)
+> **Assessment date:** 2026-03-24 (original) | 2026-04-02 (updated)
+> **OpenClaw version:** v2026.4.1 (upgraded 2026-04-02 from v2026.3.24)
 > **Assessor:** Pentesting agent (Rook Blackburn methodology)
 > **Scope:** Infrastructure + AI agent security assessment (NOT web application pentest)
 > **Assessment type:** Documentation-based review with threat modeling
