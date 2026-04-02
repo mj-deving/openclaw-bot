@@ -800,53 +800,70 @@ This risk appetite is appropriate for a **personal deployment** with a **single 
 | Sandboxed execution | systemd hardening (~2.1 EXPOSURE), ReadOnlyPaths, CapabilityBoundingSet | Strong |
 | Network isolation | Loopback-only gateway, polling mode, verify-binding.sh cron | Strong |
 | Supply chain control | Bundled-only skills, zero ClawHub, LCM audited | Strong |
-| Audit logging | auditd with OpenClaw rules + immutable flag | Needs verification |
+| Audit logging | auditd with OpenClaw rules + immutable flag | Verified 2026-04-02: enabled=2, 25 rules |
 
-### Action Items (not yet executed)
+### Action Items
 
 #### P0 — Do This Week
 
-**P0-A: Verify auditd is active with immutable flag**
+**P0-A: Verify auditd is active with immutable flag** ✅ DONE 2026-04-02
 
 ```bash
 ssh vps "sudo auditctl -s | grep enabled"   # Must show "enabled 2"
 ssh vps "sudo auditctl -l"                    # Must show openclaw rules
 ```
 
-If not active, deploy rules from GUIDE.md §7.15. This is our primary forensic control.
+Verified: `enabled 2` (immutable), 24 rules loaded including creds, config, identity, memory, service, SSH, user accounts, privilege escalation, and data exfiltration tool monitoring. All rules match SECURITY.md §7 specification.
 
-**P0-B: Add safety instructions to Constitutional memory**
+**P0-B: Add safety instructions to Constitutional memory** ✅ DONE 2026-04-02
 
 The Meta/Summer Yue incident: context compaction dropped "confirm before acting" → agent wiped inbox. Our memoryFlush fires before compaction, but AGENTS.md identity instructions could still be compressed away in a long session.
 
-Action: Add critical safety instructions to `memory/resources/` (PARA Constitutional tier) so they persist independently of context window. Verify memoryFlush prompt explicitly preserves security rules.
+Implemented:
+- Created full PARA directory structure: `memory/{daily,projects,areas,resources,archive,meta}/`
+- Added `memory/resources/safety-instructions.md` with 7 constitutional safety rules covering: destructive action confirmation, credential exfiltration prevention, self-modification prohibition, lateral escalation prevention, identity anchoring, memory hygiene, and shell execution awareness
+- Verified memoryFlush prompt at `.agents.defaults.compaction.memoryFlush` — enabled, references `memory/daily/YYYY-MM-DD.md`, fires before compaction at ~176K tokens
+- Seeded `memory/daily/2026-04-02.md` and `memory/meta/consolidation-state.json`
 
 #### P1 — Do This Month
 
-**P1-A: Evaluate exec.security tiering per session type**
+**P1-A: Evaluate exec.security tiering per session type** ✅ EVALUATED 2026-04-02
 
 Our #1 weakness: `exec.security: full` gives Gregor autonomous shell. The enterprise guidance says "minimum privileges per task."
 
-Options to evaluate:
-- `exec.security: "ask"` for high-risk operations (package installs, network calls)
-- Two-tier model: Haiku crons get `deny`, Sonnet conversations get `full`
-- Document the tradeoff explicitly if keeping `full`
+**Evaluation:**
 
-**P1-B: Tighten ReadOnlyPaths on auth files**
+| Option | Pros | Cons | Verdict |
+|--------|------|------|---------|
+| `exec.security: "ask"` globally | Maximum safety, human-in-loop | Breaks cron jobs (no human present), breaks autonomous features | ❌ Not viable |
+| Two-tier: Haiku crons `deny`, Sonnet `full` | Reduces cron attack surface | OpenClaw config doesn't support per-session exec.security | ❌ Not supported |
+| `exec.security: "full"` + compensating controls | Keeps full capability | Relies on outer-layer defenses | ✅ Current approach |
 
-Gregor can currently read `auth-profiles.json`. Add to hardening.conf:
-```
-ReadOnlyPaths=/home/openclaw/.openclaw/agents/main/agent/auth-profiles.json
-```
+**Decision: Keep `exec.security: "full"` with documented compensating controls.** OpenClaw's config model doesn't support per-session-type exec.security tiering (v2026.3.24). The option was evaluated and rejected as architecturally infeasible. Our compensating controls (systemd sandbox ~2.1 EXPOSURE, ReadOnlyPaths, tool deny list, egress filtering, auditd monitoring) provide defense-in-depth that contains the blast radius. If OpenClaw adds per-agent exec.security in a future version, re-evaluate.
 
-**P1-C: Add workspace file tamper detection**
+**P1-B: Tighten ReadOnlyPaths on auth files** ❌ NOT VIABLE — ALTERNATIVE APPLIED 2026-04-02
+
+**Attempted:** Added `ReadOnlyPaths=/home/openclaw/.openclaw/agents/main/agent/auth-profiles.json` to hardening.conf. Gateway restarted successfully — BUT cron jobs immediately failed with `EROFS: read-only file system, open 'auth-profiles.json'` followed by `HTTP 401: User not found`. The gateway needs write access to auth-profiles.json for OAuth token refresh (tokens are refreshed mid-session and written back to the file).
+
+**Root cause:** ReadOnlyPaths applies to the entire service process. Since the gateway and bot shell execution share the same PID, there's no way to make auth-profiles.json writable for OAuth but read-only for shell commands.
+
+**Alternative protection (already in place):**
+- auditd monitors all access: `-w auth-profiles.json -p rwa -k openclaw-creds`
+- File permissions are 0600 (owner-only)
+- `logging.redactPatterns` redacts `sk-ant-*` patterns from logs
+- Egress filtering prevents exfiltration to arbitrary servers
+
+**Reverted:** ReadOnlyPaths on auth-profiles.json removed. Documented in hardening.conf with explanation.
+
+**P1-C: Add workspace file tamper detection** ✅ DONE 2026-04-02
 
 Microsoft Defender guidance: "Monitor saved instructions for unexpected persistent rules."
 
-Add auditd watch:
+Added to `/etc/audit/rules.d/99-openclaw.rules`:
 ```
 -w /home/openclaw/.openclaw/workspace/ -p wa -k openclaw-workspace
 ```
+Rule is written to the persistent rules file. Takes effect on next reboot (auditd currently in immutable mode, `enabled 2`). Query after reboot: `sudo ausearch -k openclaw-workspace`.
 
 #### P2 — Do in 3 Months
 

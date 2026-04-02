@@ -1107,6 +1107,35 @@ Released 2026-03-14 (auto-updated from v2026.3.12). **Rolled back to v2026.3.12*
 - `node-llama-cpp` reinstalled after rollback.
 - Startup time after rollback: ~2min (major version change direction).
 
+## v2026.3.24
+
+Auto-updated from v2026.3.23-2 by weekly auto-update cron (Sun 04:00). Confirmed running 2026-04-02. Commit `cff6dc9`.
+
+### Observed Changes
+
+1. **LCM plugin env var logging** — Plugin startup now logs `(default)` or `(override)` after the compaction summarization model, indicating whether `LCM_SUMMARY_MODEL` env var was picked up. CLI commands (`openclaw cron list`, etc.) show `(default)` because they spin up a temporary gateway context without systemd env vars — the actual gateway service correctly reads `(override)`.
+   - **Impact:** Diagnostic improvement. Explains confusing `(default)` in CLI output vs correct `(override)` in gateway logs. **NOTED**
+
+2. **Cron edit timeout support** — `openclaw cron edit <id> --timeout-seconds <n>` works correctly for adjusting agent job timeouts.
+   - **Impact:** Used to increase PARA Nightly timeout from 300s to 600s. **APPLIED**
+
+3. **Cron scheduler tagline rotation** — Gateway startup shows rotating taglines (cosmetic).
+   - **Impact:** Cosmetic. **NONE**
+
+### No Breaking Changes Observed
+
+- Gateway starts cleanly with existing v2026.3.23 config
+- All crons continue running (heartbeat, daily-report, PARA suite)
+- LCM plugin loads correctly with existing env vars
+- ReadOnlyPaths and systemd hardening unaffected
+- Auth profiles stable (no credential reversion observed)
+
+### Operational Notes
+
+- Auto-update applied v2026.3.24 between 2026-03-31 and 2026-04-01 (weekly cron).
+- Auto-update re-enabled since v2026.3.22 fixed CLI WS regression.
+- PARA Nightly was already in `error` state before upgrade (timeout issue, not version-related).
+
 ---
 
 ## Config Decisions Tracker

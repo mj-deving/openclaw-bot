@@ -1207,6 +1207,13 @@ sudo systemctl start auditd
 # safety instructions or inject malicious directives.
 -w /home/openclaw/.openclaw/agents/ -p wa -k openclaw-identity
 
+# ─── Workspace Tamper Detection ──────────────────────────────────
+# Alert on write/attribute changes to workspace directory.
+# Attack detected: Compromised bot modifies saved instructions,
+# persistent rules, or injects malicious directives into workspace files
+# that survive across sessions (Microsoft Defender guidance: ASI06).
+-w /home/openclaw/.openclaw/workspace/ -p wa -k openclaw-workspace
+
 # ─── Memory Database ───────────────────────────────────────────────
 # Alert on read access to the memory database from non-openclaw processes.
 # Attack detected: External process exfiltrating conversation history.

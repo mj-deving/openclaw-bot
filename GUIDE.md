@@ -737,6 +737,8 @@ ReadWritePaths=/home/openclaw/.openclaw /home/openclaw/workspace
 # More specific ReadOnlyPaths overrides the broader ReadWritePaths above.
 ReadOnlyPaths=/home/openclaw/.openclaw/openclaw.json
 ReadOnlyPaths=/home/openclaw/.openclaw/workspace/lattice/identity.json
+# NOTE: auth-profiles.json must NOT be ReadOnlyPaths — gateway needs write
+# access for OAuth token refresh. Protected by auditd monitoring instead.
 PrivateTmp=true               # Isolated /tmp (no cross-process tmp attacks)
 ProtectKernelTunables=true    # Can't modify /proc/sys
 ProtectKernelModules=true     # Can't load kernel modules (no rootkits)
@@ -1004,6 +1006,13 @@ echo '"deny": []' >> ~/.openclaw/openclaw.json
 > 4. **auditd kernel audit logging** (§7.15) — records all file access and command execution at the kernel level. Immutable rules prevent an attacker from silently disabling the audit trail.
 >
 > Together these mean: even if a prompt injection tricks the bot into running shell commands, it can't rewrite its own rules, it can't send your data to an attacker's server, and every action leaves a forensic trail.
+>
+> **What about per-session exec.security tiering?** Enterprise guidance recommends "minimum privileges per task" — e.g., Haiku cron jobs getting `deny` while Sonnet conversations keep `full`. As of v2026.3.24, OpenClaw's config model doesn't support per-session-type exec.security. The `exec.security` setting is global across all sessions. If a future version adds per-agent exec policies, revisit this — cron jobs don't need shell access.
+>
+> **ReadOnlyPaths hardened paths** (as of 2026-04-02):
+> - `openclaw.json` — config integrity
+> - `workspace/lattice/identity.json` — lattice key protection
+> - ~~`auth-profiles.json`~~ — **cannot** be ReadOnlyPaths because the gateway needs write access for OAuth token refresh. Protected by auditd monitoring (`-k openclaw-creds`) instead.
 
 ### 7.4 Per-User Egress Filtering
 
@@ -1199,6 +1208,10 @@ sudo systemctl start auditd
 # Identity/workspace changes — alert on modifications to agent directory
 -w /home/openclaw/.openclaw/agents/ -p wa -k openclaw-identity
 
+# Workspace tamper detection — alert on saved instructions or persistent rules
+# Detects: prompt injection persisting malicious instructions to workspace files
+-w /home/openclaw/.openclaw/workspace/ -p wa -k openclaw-workspace
+
 # Systemd service tampering
 -w /etc/systemd/system/openclaw.service -p wa -k openclaw-service
 
@@ -1328,6 +1341,7 @@ OpenClaw's built-in security has improved significantly across releases. This ta
 | **v2026.3.13** | Telegram SSRF hardening with IPv4 fallback, webhook pre-auth, plugin command validation, exec trust binding | Media, Network, Plugins |
 | **v2026.3.22** | `file://` URL blocking, CSP hardening, plugin manifest validation, JVM/dependency injection hardening, device token enforcement (CLI WS fix), pluggable sandbox backends | Media, Gateway, Exec, Auth |
 | **v2026.3.23** | Auth-profile credential reversion fix, bundled plugin packaging fix | Auth, Supply chain |
+| **v2026.3.24** | See [UPGRADE-NOTES.md](Reference/UPGRADE-NOTES.md) for full details | Auto-updated |
 
 **Trend:** Each major release adds 3-8 security hardening measures. Most are auto-applied — no config changes needed. The cumulative effect is significant: a v2026.3.23 deployment is substantially more secure than a v2026.2.22 deployment even with identical user configuration.
 
@@ -1337,7 +1351,7 @@ OpenClaw's built-in security has improved significantly across releases. This ta
 
 - [ ] Gateway bound to loopback only
 - [ ] Tool deny list configured
-- [ ] Shell bypass mitigations in place (ReadOnlyPaths drop-in for config + lattice key)
+- [ ] Shell bypass mitigations in place (ReadOnlyPaths drop-in for config + lattice key; auditd for auth-profiles)
 - [ ] Per-user egress filtering active (HTTPS + DNS only for openclaw user)
 - [ ] Audit logging active (auditd with OpenClaw rules and immutable flag)
 - [ ] mDNS disabled
@@ -2240,6 +2254,35 @@ openclaw memory status
 
 > **Full reference:** `Reference/MEMORY-PLUGIN-RESEARCH.md §8` — decision analysis, alternatives evaluated, research archive link.
 
+#### Troubleshooting: PARA Crons
+
+**PARA Nightly shows `error` status:**
+
+The most common cause is the `memory/daily/` directory not existing. The PARA directory structure must be created *before* the crons are registered — but if the PARA setup was done in one session and the actual directory creation was skipped or the gateway was reinstalled, the directories may be missing.
+
+**Diagnosis:**
+```bash
+# Check if directories exist
+ssh vps "ls -la ~/.openclaw/memory/"
+# Expected: daily/, projects/, areas/, resources/, archive/, meta/
+
+# Check cron error
+ssh vps "sudo journalctl -u openclaw --since '14 hours ago' | grep 'cron.*error\|lane.*error.*3f77'"
+# Look for: "LLM request timed out" or "FailoverError"
+```
+
+**Fix:** Create the missing directories and seed an initial daily file:
+```bash
+ssh vps "mkdir -p ~/.openclaw/memory/{daily,projects,areas,resources,archive,meta}"
+ssh vps "echo '# $(date +%Y-%m-%d)\n\n## System\n\n- PARA directory structure initialized' > ~/.openclaw/memory/daily/$(date +%Y-%m-%d).md"
+```
+
+**Why it times out instead of failing fast:** The cron prompt tells the model to "read today's daily memory file" — when the file doesn't exist, the model spends time trying alternative approaches (searching for files, listing directories) before exhausting the 300-second timeout. The timeout error (`FailoverError: LLM request timed out`) masks the underlying "file not found" issue.
+
+**Other common causes:**
+- Model connectivity: If Anthropic API is slow or down, Haiku requests may time out
+- Token budget: If daily files grow very large, consolidation may exceed the 300s window — consider increasing `--timeout-seconds` to 600
+
 ### ✅ Phase 10 Checkpoint
 
 - [ ] Daily backups running (`crontab -l` shows backup entry)
@@ -2248,7 +2291,7 @@ openclaw memory status
 - [ ] Auto-update scheduled weekly
 - [ ] SQLite in WAL journal mode
 - [ ] Context pruning explicitly configured (TTL >= 2h, keepLastAssistants >= 8)
-- [ ] PARA directories created (`ls ~/.openclaw/workspace/memory/` shows projects, areas, resources, archive, daily, meta)
+- [ ] PARA directories created (`ls ~/.openclaw/memory/` shows projects, areas, resources, archive, daily, meta)
 - [ ] Daily files relocated to `memory/daily/`
 - [ ] Flush prompt updated to reference `memory/daily/` path
 - [ ] Nightly, weekly, and monthly PARA crons registered (`openclaw cron list`)
@@ -3049,6 +3092,10 @@ Instead of discarding old messages when the context window fills up, LCM compact
 - **Key property:** "Acyclic" means summaries only point down to sources, never loop — you can always trace back to the original messages
 
 Configuration is in [Phase 7.7](#77-plugins--selective-enable). Full analysis with DAG diagrams: [Reference/CONTEXT-ENGINEERING.md §9](Reference/CONTEXT-ENGINEERING.md).
+
+> **LCM troubleshooting — empty DAG:** If `lcm.db` exists but all tables show 0 rows, that's normal — LCM only populates the DAG when compaction triggers, which requires conversations long enough to approach the context threshold (`LCM_CONTEXT_THRESHOLD`, default 0.75). Short Telegram exchanges won't trigger compaction. Verify LCM is loaded: check gateway logs for `[lcm] Plugin loaded (enabled=true)`. The `(default)` vs `(override)` tag after the summarization model indicates whether the `LCM_SUMMARY_MODEL` env var was picked up — CLI commands show `(default)` because they don't load systemd env vars; the actual gateway process should show `(override)`.
+>
+> **To force-populate the DAG for testing:** Have a long conversation with Gregor (50+ back-and-forth messages), or send `/compact` to trigger manual compaction.
 
 **Compaction** — When context nears the window limit, OpenClaw auto-summarizes older history, keeping recent messages verbatim. With LCM installed, compaction feeds into the DAG instead of discarding. You can also trigger it manually:
 ```
