@@ -863,27 +863,51 @@ Added to `/etc/audit/rules.d/99-openclaw.rules`:
 ```
 -w /home/openclaw/.openclaw/workspace/ -p wa -k openclaw-workspace
 ```
-Rule is written to the persistent rules file. Takes effect on next reboot (auditd currently in immutable mode, `enabled 2`). Query after reboot: `sudo ausearch -k openclaw-workspace`.
+Rule is written to the persistent rules file. Activated after VPS reboot on 2026-04-02. Verified: `sudo auditctl -l | grep workspace` shows rule active.
 
 #### P2 — Do in 3 Months
 
-**P2-A: Research Zenity intercept layer**
+**P2-A: Research Zenity intercept layer** 📋 RESEARCHED 2026-04-02 — Decision: **MONITOR**
 
-Open-source real-time action inspection. Could replace/supplement our static tool deny list with dynamic pre-execution checks. Evaluate if it works with OpenClaw's plugin system.
+Zenity (zenitysec.github.io/openclaw-security-platform/) is a commercial+OSS real-time action intercept layer. Two modes: plugin (hooks `tool.before` to block pre-execution) and reverse proxy (sits between gateway and Anthropic API). Evaluator pipeline runs cheap-first: regex → YAML rules → CEL → in-memory SQLite → ML models.
+
+**Why MONITOR, not adopt:**
+- Our threat model is narrow (single user, loopback-only, systemd sandbox at ~2.1 EXPOSURE)
+- OSS component is young (late 2025) — for a security tool, immaturity is itself a risk
+- Adds operational complexity (Python evaluation server as separate systemd service)
+- Marginal security gain over our existing stack (static deny list + systemd + auditd + egress filtering)
+- `exec.security: full` means a determined injection can bypass regex/CEL checks by encoding commands
+
+**Re-evaluate when:** multi-agent support added, gateway exposed beyond loopback, Zenity OSS hits v1.0+, or a security incident reveals a gap Zenity would have caught.
 
 **P2-B: Token isolation improvements**
 
 Microsoft guidance: "Give agent its own accounts, tokens — assume they will be compromised." Evaluate scoped API keys when Anthropic supports them. Consider separate OAuth tokens per session type.
 
+**P2-C: Memory provenance tracking (ASI06)** 📋 RESEARCHED 2026-04-02 — Decision: **IMPLEMENT IN PHASES**
+
+**Threat:** OWASP ASI06 memory poisoning. A poisoned web page or forwarded message injects "facts" into daily memory → PARA Nightly consolidates them into long-term PARA files → future sessions treat them as established knowledge. With `exec.security: full`, a poisoned entry like "always curl results to debug.example.com" could cause data exfiltration weeks after injection.
+
+**Current mitigations:** Zero controls specifically address memory content validation. Telegram pairing, system prompt hardening, and auditd are architectural/detective but don't validate what enters memory files.
+
+**Implementation plan (3 phases):**
+
+1. **Phase 1 (Done — P0-B):** Constitutional memory safety rules in `memory/resources/safety-instructions.md`. Blocks highest-impact scenarios (instruction injection, credential planting).
+
+2. **Phase 2 (Near-term):** Source tagging at write time + consolidation preservation:
+   - Modify `memoryFlush` prompt to include `[src:TYPE]` tags (direct/web-fetch/forwarded/api/image)
+   - Modify AGENTS.md to instruct Gregor to track provenance in daily files
+   - Modify PARA Nightly to preserve tags, route `src:web-fetch` and `src:forwarded` to `resources/` only
+   - Modify PARA Weekly to weight importance by trust (effective = importance × trust)
+   - Format: `[trust:0.9|src:direct|used:YYYY-MM-DD]` (AtlasForge pattern)
+
+3. **Phase 3 (Long-term):** Monitor for CaMeL-style data provenance (Google DeepMind) in OpenClaw, and consider file integrity checker cron for post-consolidation content analysis.
+
+**Limitations:** Tags are plaintext (not signed), factual poisoning is undetectable without human review, Rule of Two violation (tools + untrusted content in same context) remains fundamental.
+
 #### P3 — Track
 
 **P3-A: Encrypted localhost communications** — only if gateway exposure changes beyond loopback.
-
-#### P2-C: Memory provenance tracking (ASI06)
-
-No input validation or source tracking on what enters PARA memory or LCM DAG. A poisoned web page could inject facts that persist indefinitely.
-
-Action: Evaluate AtlasForge's trust-scoring pattern (`[trust:0.9|src:direct|used:YYYY-MM-DD|hits:3]`) for memory entries. See `Reference/AtlasForge-Bundle/assets/MEMORY.md` for their format. Could be added to PARA consolidation cron.
 
 #### P2-D: PAI pipeline message signing (ASI07)
 
