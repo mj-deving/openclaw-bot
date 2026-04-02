@@ -2180,7 +2180,8 @@ openclaw cron add \
   --cron "0 3 * * *" \
   --model "haiku" \
   --session isolated \
-  --timeout-seconds 300 \
+  --timeout-seconds 600 \
+  --tools "read,write,edit,memory_search,memory_get" \
   --tz "Europe/Berlin" \
   --message 'Read today'\''s daily memory file from memory/daily/. Extract:
 1. Active project updates → append to the relevant file in memory/projects/
@@ -2204,6 +2205,7 @@ openclaw cron add \
   --model "haiku" \
   --session isolated \
   --timeout-seconds 300 \
+  --tools "read,write,edit,memory_search,memory_get" \
   --tz "Europe/Berlin" \
   --message 'Review all PARA memory files (memory/projects/, memory/areas/, memory/resources/). For each file:
 1. Deduplicate entries (merge similar facts into single entries)
@@ -2225,6 +2227,7 @@ openclaw cron add \
   --model "haiku" \
   --session isolated \
   --timeout-seconds 300 \
+  --tools "read,write,edit,memory_search,memory_get" \
   --tz "Europe/Berlin" \
   --message 'Check memory/daily/ for files older than 90 days. For each month with old files:
 1. Read all daily files from that month
@@ -2540,6 +2543,20 @@ openclaw cron add \
 | `--timeout` | Max seconds per run |
 | `--model` | Override model for this job (Haiku = cheapest) |
 | `--thinking off` | Disable extended thinking (unnecessary for posts) |
+| `--tools` | Comma-separated tool allowlist (v2026.4.1+). Restricts which tools the cron job can use. |
+
+> **Security hardening with `--tools`:** PARA consolidation crons should be locked to `read,write,edit,memory_search,memory_get` — they only need file and memory operations. Without `--tools`, a cron job gets the agent's full tool access including `exec` (shell), which is unnecessary for memory consolidation and creates attack surface. Apply least-privilege: if a cron doesn't need shell access, don't give it shell access.
+
+> **Telegram error suppression with `errorPolicy`:** (v2026.4.1+) Configure in `channels.telegram`:
+> ```jsonc
+> "errorPolicy": "once",       // "always" | "once" | "silent"
+> "errorCooldownMs": 30000     // 30s between error messages
+> ```
+> - `"always"` — send every error to chat (noisy)
+> - `"once"` — send one error per cooldown window, suppress duplicates (recommended)
+> - `"silent"` — never send errors to chat (log only)
+>
+> This prevents error spam when a cron or tool fails repeatedly. Errors still appear in gateway logs regardless of this setting.
 | `--announce` | Post output to Telegram |
 
 ### 12.3 Model Selection for Cron
