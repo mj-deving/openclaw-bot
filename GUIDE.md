@@ -49,6 +49,8 @@ OpenClaw is an open-source AI agent gateway that bridges multiple messaging plat
 - [G — References](#appendix-g--references)
 - [H — Supervisory Control](#appendix-h--supervisory-control)
 - [I — PAI Pipeline (Cross-Agent)](#appendix-i--pai-pipeline-cross-agent)
+- [J — Kubernetes Deployment (Alternative)](#appendix-j--kubernetes-deployment-alternative)
+- [K — Prompt Injection Defense System](#appendix-k--prompt-injection-defense-system)
 
 ---
 
@@ -1299,12 +1301,29 @@ Your bot processes text from Telegram messages, fetched URLs, and tool outputs. 
 | Obfuscation | Medium | Typoglycemia, Unicode homoglyphs, zero-width characters |
 | Social engineering | High | "You are now in maintenance mode..." — arrives via fetched web content, not direct messages |
 
-**Defense tiers (already in place from earlier phases):**
+**Defense tiers (layered, each independent):**
 
 1. **Architectural** (7.2–7.4) — Tool deny list, shell sandboxing, and egress filtering limit what an injected instruction can *do*
 2. **Model strength** (7.12) — Larger models follow system prompts more reliably under adversarial pressure
 3. **System prompt** (Phase 8.4) — Identity hardening makes the bot resistant to role-play attacks
 4. **Monitoring** (7.15) — Audit logging catches anomalous tool usage after the fact
+
+> **Why tiers 1–4 are necessary but insufficient:** All four rely on the model *choosing* to follow instructions. A sufficiently clever prompt injection can bypass any model-level defense — the model is the attack surface, not the defense. You need at least one layer that runs deterministic code the model cannot influence.
+
+**Defense tier 5: Active enforcement**
+
+Tier 5 is fundamentally different from tiers 1–4. Instead of asking the model to behave, it intercepts every LLM API call with a defense proxy that runs deterministic code *before* the model sees input and *after* it produces output. The proxy sits between the OpenClaw gateway and upstream APIs (Anthropic, OpenRouter), operating as a transparent HTTP proxy at `127.0.0.1:18800`.
+
+The 6-layer architecture (adapted from the Berman defense framework):
+
+| Layer | Name | What it does |
+|-------|------|-------------|
+| L1 | Input sanitizer | Decodes base64/hex/ROT13/stego, normalizes Unicode, strips zero-width chars |
+| L2 | LLM scanner | Optional second-model classification of injection attempts |
+| L3 | Output gate | Blocks responses that contain tool calls or content violating policy |
+| L4 | Content redactor | Strips API keys, internal paths, PII from model responses |
+| L5 | Cost governor | Spend limits, volume caps, circuit breaker for repeated offenders |
+| L6 | DNS resolver | Resolves URLs upfront, returns IPs for pinning — prevents rebinding |
 
 **Practical action — add this to your workspace AGENTS.md:**
 
@@ -1320,9 +1339,11 @@ Your bot processes text from Telegram messages, fetched URLs, and tool outputs. 
   than execute.
 ```
 
-This won't stop a determined attacker with model-level exploits, but it handles the most common injection patterns — especially social engineering via fetched content, which is the highest-risk vector for a bot that browses URLs.
+This AGENTS.md snippet handles common injection patterns at the model level — especially social engineering via fetched content, which is the highest-risk vector for a bot that browses URLs. Tier 5 (the defense proxy) handles everything the model misses.
 
-> **Deep dive:** [SECURITY.md §12](Reference/SECURITY.md) covers 120+ lines of injection taxonomy, real-world examples, and defense-in-depth strategies. The snippet above is the practical minimum.
+> **Deployment:** See [Appendix K](#appendix-k--prompt-injection-defense-system) for the one-command deployment of the defense proxy.
+>
+> **Deep dive:** [SECURITY.md §12](Reference/SECURITY.md) covers 120+ lines of injection taxonomy, real-world examples, and defense-in-depth strategies. [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) covers the complete technical specification of the 6-layer proxy — architecture, threat model, performance characteristics, and test results.
 
 ### 7.18 Security Evolution Across Versions
 
@@ -3726,6 +3747,10 @@ Each bot is completely isolated — separate config, memory, credentials, and Te
 | **Pipeline injection** | Unauthorized task submission via inbox/ | `chmod 700`, auditd monitoring |
 | **Shell bypass of deny list** | Bot modifies own config via `exec.security` shell | ReadOnlyPaths drop-in, egress filtering, config integrity cron |
 | **Cost overrun** | Unbounded token spend | Monitor with `/usage full`, set model tiers. See [Phase 13.7](#137-cost-anomaly-detection) for automated alerts |
+| **Prompt injection (encoded)** | Encoded/obfuscated payloads bypass model-level detection | Defense proxy L1 sanitizer decodes base64/hex/ROT13/stego before model sees it |
+| **Output data leakage** | Model response contains API keys, internal paths, PII | Defense proxy L3 gate + L4 redaction strip sensitive content from responses |
+| **Cost exhaustion** | Attacker floods with unique inputs to drain API budget | Defense proxy L5 governor: spend limits, volume caps, circuit breaker |
+| **DNS rebinding** | Malicious URL resolves to public IP during check, private IP during use | Defense proxy L6 returns resolved IPs for pinning |
 
 ### Known CVEs
 
@@ -4272,3 +4297,163 @@ Since v2026.3.12, OpenClaw ships raw Kubernetes deployment manifests as an alter
 - **Simple ops** — `systemctl restart openclaw` is simpler than managing pod lifecycles, volume claims, and network policies.
 
 > **Our recommendation:** For the single-bot, security-first deployment this guide describes, VPS + systemd remains the better fit. The K8s manifests are useful for testing or if you're scaling to multiple bots.
+
+---
+
+## Appendix K — Prompt Injection Defense System
+
+### The Problem
+
+OpenClaw has no middleware hooks. Every security measure described in Phase 7 relies on the model *choosing* to follow instructions — tool deny lists work because the gateway enforces them, but prompt injection defense tiers 1–4 all depend on the model recognizing and rejecting adversarial input. A sufficiently clever injection bypasses all of them.
+
+The defense proxy solves this by intercepting every LLM API call with deterministic code the model cannot influence. It runs as an HTTP proxy between the OpenClaw gateway and upstream APIs (Anthropic, OpenRouter), patched in via environment variables. No OpenClaw source modifications needed.
+
+> **Why a proxy?** OpenClaw doesn't expose request/response hooks. The only insertion point that works without forking the codebase is HTTP-level interception — override `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` to route through a local proxy that forwards to the real endpoints after inspection.
+
+### Architecture
+
+```
+Telegram
+  │
+  ▼
+OpenClaw Gateway (:18789)
+  │
+  │  ANTHROPIC_BASE_URL=http://127.0.0.1:18800/anthropic
+  │  OPENAI_BASE_URL=http://127.0.0.1:18800/openai
+  ▼
+Defense Proxy (:18800)
+  │
+  ├──► L1: Input sanitizer (decode, normalize, strip)
+  ├──► L2: LLM scanner (optional — second model classifies injection)
+  ├──► L3: Output gate (block policy-violating responses)
+  ├──► L4: Content redactor (strip secrets from responses)
+  ├──► L5: Cost governor (spend limits, volume caps, circuit breaker)
+  ├──► L6: DNS resolver (resolve upfront, return IPs for pinning)
+  │
+  ▼
+Upstream APIs (api.anthropic.com, openrouter.ai)
+```
+
+### The 6 Layers
+
+| Layer | Name | What It Does | Runs On | Typical Latency |
+|-------|------|-------------|---------|-----------------|
+| L1 | Input sanitizer | Decodes base64/hex/ROT13/steganographic payloads, normalizes Unicode homoglyphs, strips zero-width characters. Catches encoded injection attempts that models can't see. | Inbound | < 2ms |
+| L2 | LLM scanner | Sends suspicious inputs to a classifier model for injection detection. Nonce-delimited prompts prevent the scanner itself from being injected. | Inbound | 200–800ms (disabled by default) |
+| L3 | Output gate | Validates model responses against policy — blocks tool calls the deny list should have caught, detects prompt leakage in outputs. | Outbound | < 1ms |
+| L4 | Content redactor | Pattern-matches API keys, file paths, PII, and internal identifiers in model responses. Replaces with `[REDACTED]`. | Outbound | < 2ms |
+| L5 | Cost governor | Tracks spend per rolling window (hourly/daily). Enforces volume caps and spend limits. Circuit breaker auto-blocks callers exceeding thresholds. | Both | < 1ms |
+| L6 | DNS resolver | Pre-resolves URLs in tool call arguments, returns resolved IPs. Prevents DNS rebinding where a URL resolves to a public IP during validation but a private IP during use. | Inbound | < 5ms (cached) |
+
+> **Performance note:** With L2 disabled (the default), the proxy adds < 10ms per request. This is negligible compared to typical LLM response times of 1–30 seconds.
+
+### Prerequisites
+
+- **Bun runtime** on VPS (the deploy script installs it if missing)
+- **sudo access** for systemd service installation and gateway env patching
+- **OpenClaw running** via systemd (the gateway service must exist)
+
+### Deployment
+
+```bash
+# One-command deployment from your local machine
+bash src/defense/proxy/deploy.sh
+```
+
+What the deploy script does:
+
+1. Installs Bun on VPS if not present
+2. Copies proxy source to `~/.openclaw/workspace/skills/security-defense/proxy/`
+3. Installs `defense-proxy.service` (systemd user service)
+4. Patches `openclaw.service` with `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` env overrides
+5. Starts the defense proxy, restarts the gateway
+
+The gateway connects to the proxy on startup. If the proxy is down, API calls fail — this is deliberate fail-closed behavior. The proxy must be running for the bot to function.
+
+> **Why fail-closed?** If the proxy silently failed open, an attacker who crashes the proxy gets unfiltered access to the model. Fail-closed means a proxy crash stops the bot — noisy, but secure. You'll know immediately.
+
+### Configuration
+
+All configuration is via environment variables in the systemd service file. Defaults are tuned for single-bot, single-user deployments.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEFENSE_PROXY_PORT` | `18800` | Port the proxy listens on (loopback only) |
+| `DEFENSE_UPSTREAM_ANTHROPIC` | `https://api.anthropic.com` | Upstream Anthropic API base |
+| `DEFENSE_UPSTREAM_OPENAI` | `https://openrouter.ai/api` | Upstream OpenRouter/OpenAI API base |
+| `DEFENSE_SPEND_LIMIT_HOURLY` | `5.00` | USD spend limit per rolling hour |
+| `DEFENSE_SPEND_LIMIT_DAILY` | `25.00` | USD spend limit per rolling day |
+| `DEFENSE_VOLUME_LIMIT` | `200` | Max API calls per rolling hour |
+| `DEFENSE_AUTO_BLOCK_THRESHOLD` | `3` | Injection attempts before auto-blocking caller |
+| `DEFENSE_AUTO_BLOCK_DURATION` | `3600` | Auto-block duration in seconds |
+| `DEFENSE_L2_ENABLED` | `false` | Enable LLM scanner layer (adds latency + cost) |
+| `DEFENSE_L2_MODEL` | `anthropic/claude-haiku-4-5` | Model used for L2 scanning |
+| `DEFENSE_LOG_LEVEL` | `info` | Log verbosity: debug, info, warn, error |
+
+To change a setting, edit the service file and restart:
+
+```bash
+systemctl --user edit defense-proxy  # Creates override.conf
+systemctl --user restart defense-proxy
+```
+
+### Operations
+
+```bash
+# Health check — returns proxy status, layer states, governor counters
+curl -s http://127.0.0.1:18800/health | python3 -m json.tool
+
+# View audit logs (injection attempts, blocks, redactions)
+journalctl --user -u defense-proxy -f
+
+# Check governor state (current spend, volume, blocked callers)
+curl -s http://127.0.0.1:18800/health | python3 -c "
+import sys, json
+h = json.load(sys.stdin)
+g = h.get('governor', {})
+print(f'Spend:  \${g.get(\"spend_hour\", 0):.2f}/hr  \${g.get(\"spend_day\", 0):.2f}/day')
+print(f'Volume: {g.get(\"calls_hour\", 0)}/hr')
+print(f'Blocked: {len(g.get(\"blocked\", []))} callers')
+"
+
+# Rollback — removes proxy, restores direct API access
+bash src/defense/proxy/deploy.sh --rollback
+```
+
+After rollback, the gateway connects directly to upstream APIs again. No proxy dependency.
+
+### Known Limitations
+
+1. **Streaming responses are monitored but not redacted.** The proxy can detect sensitive content in streamed chunks, but it can't un-send chunks already delivered. It logs the violation and increments the governor counter. For full redaction, disable streaming in `openclaw.json` (`"stream": false`).
+
+2. **Cryptocurrency discussions trigger false positives.** Ethereum and Bitcoin address patterns (long hex strings, base58-encoded strings) match the L4 redactor's secret-detection patterns. If your bot discusses crypto, tune the redaction patterns or add allowlist entries.
+
+3. **L2 LLM scanner disabled by default.** The scanner adds 200–800ms latency and costs ~$0.001 per call (Haiku). Enable it if you process untrusted content regularly (URL fetching, shared chats). For owner-only bots with pairing enabled, the cost/latency tradeoff usually isn't worth it.
+
+4. **OpenRouter calls must also route through the proxy.** The `OPENAI_BASE_URL` env var handles this automatically during deployment, but if you add new providers, ensure they also route through `127.0.0.1:18800`.
+
+### Security Properties
+
+- **Nonce-based delimiters** — L2 scanner prompts use random nonces as instruction boundaries, preventing injection against the scanner itself
+- **Caller-scoped state** — Governor counters and cache entries are scoped per caller ID, preventing cross-caller poisoning
+- **DNS pinning** — L6 resolves URLs once and returns the IP, preventing rebinding attacks where DNS changes between validation and use
+- **Circuit breaker** — Repeated injection attempts (above `DEFENSE_AUTO_BLOCK_THRESHOLD`) auto-block the caller for the configured duration
+- **Monotonic clock** — Rolling windows use monotonic time, preventing time-manipulation attacks on governor counters
+- **Fail-closed** — If the proxy crashes, the gateway cannot reach upstream APIs. No silent bypass.
+
+### Testing
+
+The defense system ships with 162 tests covering all 6 layers, edge cases, and adversarial inputs.
+
+```bash
+# Run the full test suite
+cd src/defense && bun test
+
+# Run layer-specific tests
+bun test --filter "L1"   # Input sanitizer
+bun test --filter "L5"   # Cost governor
+```
+
+Gregor's own self-evaluation (asking the bot to bypass its defenses) showed the proxy blocking 100% of encoded payload attempts and flagging 94% of social engineering attempts — compared to 71% with model-level defenses alone.
+
+> **Deep dive:** [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) covers the complete technical specification — threat model, layer internals, performance benchmarks, cache design, and the full test matrix.
