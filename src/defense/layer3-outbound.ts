@@ -179,11 +179,27 @@ export function gate(text: string): OutboundGateResult {
     ...checkFinancialData(text),
   ];
 
-  // Only redact if secrets were found (avoids re-running all patterns)
+  // Redact all violation types from cleaned output
   let cleaned = text;
-  if (violations.some((v) => v.type === "leaked_secret")) {
+  if (violations.length > 0) {
     for (const { pattern } of SECRET_PATTERNS) {
       cleaned = cleaned.replace(pattern, "[REDACTED_SECRET]");
+    }
+    for (const pattern of INTERNAL_PATH_PATTERNS) {
+      pattern.lastIndex = 0;
+      cleaned = cleaned.replace(pattern, "[REDACTED_PATH]");
+    }
+    for (const pattern of INJECTION_ARTIFACT_PATTERNS) {
+      pattern.lastIndex = 0;
+      cleaned = cleaned.replace(pattern, "[REDACTED_ARTIFACT]");
+    }
+    for (const pattern of EXFIL_URL_PATTERNS) {
+      pattern.lastIndex = 0;
+      cleaned = cleaned.replace(pattern, "[REDACTED_URL]");
+    }
+    for (const { pattern } of FINANCIAL_PATTERNS) {
+      pattern.lastIndex = 0;
+      cleaned = cleaned.replace(pattern, "[REDACTED_FINANCIAL]");
     }
   }
 
