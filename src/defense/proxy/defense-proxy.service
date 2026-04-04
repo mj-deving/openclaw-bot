@@ -1,0 +1,39 @@
+[Unit]
+Description=Defense Proxy — 6-layer prompt injection defense for OpenClaw
+After=network-online.target
+Before=openclaw.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+Group=openclaw
+WorkingDirectory=/home/openclaw/.openclaw/workspace/skills/security-defense
+
+# Proxy configuration
+Environment=DEFENSE_PROXY_PORT=18800
+Environment=DEFENSE_PROXY_BIND=127.0.0.1
+Environment=DEFENSE_ANTHROPIC_UPSTREAM=https://api.anthropic.com
+Environment=DEFENSE_OPENROUTER_UPSTREAM=https://openrouter.ai/api
+Environment=DEFENSE_SPEND_LIMIT=50
+Environment=DEFENSE_VOLUME_LIMIT=500
+Environment=DEFENSE_AUTO_BLOCK_THRESHOLD=5
+Environment=DEFENSE_AUDIT_LOG=true
+
+# PATH for bun
+Environment=PATH=/home/openclaw/.bun/bin:/home/openclaw/.npm-global/bin:/usr/local/bin:/usr/bin:/bin
+
+ExecStart=/home/openclaw/.bun/bin/bun run /home/openclaw/.openclaw/workspace/skills/security-defense/proxy/server.ts
+
+Restart=on-failure
+RestartSec=5
+
+# Security hardening (match openclaw.service)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/openclaw/.openclaw
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
