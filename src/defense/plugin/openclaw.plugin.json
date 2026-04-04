@@ -1,0 +1,49 @@
+{
+  "id": "defense-shield",
+  "name": "Defense Shield",
+  "version": "1.0.0",
+  "description": "6-layer prompt injection defense — L1 sanitizer on inbound messages, L3 gate + L4 redaction on outbound responses",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true
+      },
+      "autoBlockThreshold": {
+        "type": "integer",
+        "default": 5,
+        "minimum": 1,
+        "maximum": 50
+      },
+      "workDomains": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": []
+      },
+      "logVerdicts": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  },
+  "uiHints": {
+    "enabled": {
+      "label": "Enabled",
+      "help": "Enable or disable the defense shield"
+    },
+    "autoBlockThreshold": {
+      "label": "Auto-Block Threshold",
+      "help": "Number of L1 detections + highSeverity that triggers auto-block (default: 5)"
+    },
+    "workDomains": {
+      "label": "Work Email Domains",
+      "help": "Email domains to preserve in outbound redaction (e.g., company.com)"
+    },
+    "logVerdicts": {
+      "label": "Log Verdicts",
+      "help": "Log every inbound/outbound scan verdict to the plugin logger"
+    }
+  }
+}

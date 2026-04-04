@@ -1,0 +1,7 @@
+{
+  "name": "defense-shield",
+  "version": "1.0.0",
+  "description": "6-layer prompt injection defense plugin for OpenClaw",
+  "main": "index.ts",
+  "type": "module"
+}
