@@ -186,10 +186,8 @@ export class CallGovernor {
 
   /** (C-3) Hash includes callerId so same prompt from different callers is distinct */
   private hashPrompt(callerId: string, prompt: string): string {
-    // Use Bun's built-in hasher for fast content hashing
-    const hasher = new Bun.CryptoHasher("sha256");
-    hasher.update(callerId + ":" + prompt);
-    return hasher.digest("hex");
+    const { createHash } = require("node:crypto");
+    return createHash("sha256").update(callerId + ":" + prompt).digest("hex");
   }
 }
 
