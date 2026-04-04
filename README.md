@@ -33,8 +33,26 @@ This repo closes those gaps with defense-in-depth, documented from first princip
 | 2. Exec gating | `exec.security: "full"` | Unrestricted shell with no audit trail |
 | 3. Network isolation | Loopback-only gateway (`127.0.0.1:18789`) | Remote exploitation, direct API access |
 | 4. Identity hardening | DM pairing + system prompt security | Impersonation, prompt extraction |
+| 5. Defense proxy | 6-layer prompt injection defense (`127.0.0.1:18800`) | Injection, exfiltration, credential leaks |
 
 Plus: zero community skills (bundled-only policy), supply chain lockdown, local embeddings.
+
+## Prompt Injection Defense
+
+A 6-layer defense system intercepts all LLM API calls, providing app-level protection against prompt injection, jailbreaks, and data exfiltration. Based on [Matthew Berman's architecture](https://x.com/MatthewBerman/status/2030423565355676100), informed by attack research from Pliny the Prompter's repos.
+
+| Layer | Name | What It Does |
+|-------|------|-------------|
+| L1 | Deterministic Sanitizer | Unicode homoglyphs, base64/hex/ROT13 decoding, injection pattern detection (24+ patterns), zero-width/Zalgo/steganography removal, wallet flagging |
+| L2 | LLM Frontier Scanner | Nonce-delimited classification prompt, risk scoring 0-100, attack category detection |
+| L3 | Outbound Content Gate | Catches leaked API keys (18 patterns), internal paths, exfil URLs, financial data in responses |
+| L4 | Redaction Pipeline | Strips API keys, personal emails, phone numbers, dollar amounts before delivery |
+| L5 | Call Governor | Spend/volume limits, duplicate detection, circuit breaker per caller |
+| L6 | Access Control | Path guards (30+ denied filenames), URL safety with DNS pinning, private IP blocking |
+
+The defense proxy runs as a Bun HTTP server at `127.0.0.1:18800`, transparently intercepting API calls via `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` environment variables. Includes a deploy script with `--rollback` support.
+
+**162 tests** covering all attack vectors. See [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) for the full reference.
 
 ## What You Get
 
