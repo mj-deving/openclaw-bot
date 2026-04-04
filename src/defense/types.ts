@@ -32,6 +32,14 @@ export interface SanitizerStats {
   whitespaceNormalized: number;
   /** Number of wallet addresses flagged */
   walletAddressesFlagged: number;
+  /** Number of emoji steganography patterns detected */
+  emojiStegoDetected: number;
+  /** Number of Unicode Private Use Area characters detected */
+  unicodePuaDetected: number;
+  /** Number of Zalgo/combining diacritical abuse detected */
+  zalgoDetected: number;
+  /** Number of whitespace steganography patterns detected */
+  whitespaceStegoDetected: number;
 }
 
 export interface SanitizerResult {
@@ -45,6 +53,19 @@ export interface SanitizerResult {
   totalDetections: number;
   /** Whether any high-severity patterns were found */
   highSeverity: boolean;
+}
+
+/**
+ * Safe external result — strips internal detection details.
+ * Use this when returning results to untrusted callers (H-4).
+ */
+export interface ExternalScanResult {
+  /** Final verdict */
+  verdict: ScanVerdict;
+  /** Whether input was flagged */
+  flagged: boolean;
+  /** Whether input was blocked */
+  blocked: boolean;
 }
 
 // ── Layer 2: Frontier Scanner ───────────────────────────────────────
@@ -99,6 +120,24 @@ export interface InputScanResult {
   /** Whether the input was blocked before reaching the scanner */
   blockedBySanitizer: boolean;
 }
+
+/**
+ * Audit log entry for every scan decision (H-5).
+ * Integrators persist these for forensic trail.
+ */
+export interface AuditEntry {
+  timestamp: string;
+  source: string;
+  verdict: ScanVerdict;
+  score: number | null;
+  totalDetections: number;
+  highSeverity: boolean;
+  blockedBySanitizer: boolean;
+  categories: AttackCategory[];
+}
+
+/** Audit callback — integrators provide this to persist scan decisions */
+export type AuditCallback = (entry: AuditEntry) => void;
 
 // ── Layer 3: Outbound Content Gate ──────────────────────────────────
 
@@ -158,6 +197,10 @@ export interface GovernorConfig {
   lifetimeLimit: number;
   /** TTL for duplicate cache entries in milliseconds */
   dedupTtlMs: number;
+  /** Circuit breaker: max blocked requests per source before auto-block (H-6) */
+  circuitBreakerThreshold?: number;
+  /** Circuit breaker window in ms (default: 60_000) */
+  circuitBreakerWindowMs?: number;
 }
 
 export interface GovernorCallRequest {
@@ -172,7 +215,7 @@ export interface GovernorCallRequest {
 export type GovernorDecision =
   | { allowed: true; cached: false }
   | { allowed: true; cached: true; cachedResult: string }
-  | { allowed: false; reason: "spend_limit" | "volume_limit" | "lifetime_limit" };
+  | { allowed: false; reason: "spend_limit" | "volume_limit" | "lifetime_limit" | "circuit_breaker" };
 
 // ── Layer 6: Access Control ─────────────────────────────────────────
 
@@ -184,6 +227,8 @@ export interface PathCheckResult {
 export interface UrlCheckResult {
   allowed: boolean;
   reason?: string;
+  /** Resolved IP addresses — use these for the actual connection (C-2 DNS pinning) */
+  resolvedIps?: string[];
 }
 
 export interface AccessControlConfig {

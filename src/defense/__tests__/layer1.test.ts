@@ -249,6 +249,10 @@ describe("Layer 1: Deterministic Text Sanitizer", () => {
       expect(result.stats).toHaveProperty("zeroWidthRemoved");
       expect(result.stats).toHaveProperty("whitespaceNormalized");
       expect(result.stats).toHaveProperty("walletAddressesFlagged");
+      expect(result.stats).toHaveProperty("emojiStegoDetected");
+      expect(result.stats).toHaveProperty("unicodePuaDetected");
+      expect(result.stats).toHaveProperty("zalgoDetected");
+      expect(result.stats).toHaveProperty("whitespaceStegoDetected");
     });
 
     test("returns totalDetections sum", () => {
@@ -271,6 +275,61 @@ describe("Layer 1: Deterministic Text Sanitizer", () => {
       const input = "test\u200Binput";
       const result = sanitize(input);
       expect(result.original).toBe(input);
+    });
+  });
+
+  // ── Emoji Steganography ──────────────────────────────────────────
+
+  describe("Emoji steganography detection", () => {
+    test("variation selectors are stripped by zero-width removal (defense in depth)", () => {
+      // FE0E/FE0F are in the zero-width regex range, so Step 1 removes them
+      // before Step 3 (emoji stego) runs — this is defense in depth
+      const input = "text \uFE0F\uFE0E\uFE0E\uFE0F\uFE0F\uFE0E more";
+      const result = sanitize(input);
+      // Variation selectors are caught by zeroWidthRemoved, not emojiStego
+      expect(result.stats.zeroWidthRemoved).toBeGreaterThan(0);
+      expect(result.cleaned).not.toContain("\uFE0F");
+      expect(result.cleaned).not.toContain("\uFE0E");
+    });
+
+    test("emojiStegoDetected stat field exists in result", () => {
+      const result = sanitize("clean text");
+      expect(result.stats).toHaveProperty("emojiStegoDetected");
+      expect(result.stats.emojiStegoDetected).toBe(0);
+    });
+  });
+
+  // ── Unicode PUA Detection ──────────────────────────────────────────
+
+  describe("Unicode PUA detection", () => {
+    test("detects Tags block characters (U+E0000-U+E007F)", () => {
+      // Tags block used for invisible text encoding
+      const input = "normal text \u{E0001}\u{E0020}\u{E0041} hidden";
+      const result = sanitize(input);
+      expect(result.stats.unicodePuaDetected).toBeGreaterThan(0);
+    });
+  });
+
+  // ── Zalgo Detection ────────────────────────────────────────────────
+
+  describe("Zalgo text detection", () => {
+    test("detects excessive combining diacritical marks", () => {
+      // Zalgo: stacking 3+ combining marks (U+0300-U+036F) triggers detection
+      const input = "t\u0300\u0301\u0302\u0303\u0304\u0305\u0306\u0307e\u0300\u0301\u0302\u0303\u0304\u0305s\u0300\u0301\u0302\u0303t";
+      const result = sanitize(input);
+      expect(result.stats.zalgoDetected).toBeGreaterThan(0);
+    });
+  });
+
+  // ── Whitespace Steganography ───────────────────────────────────────
+
+  describe("Whitespace steganography detection", () => {
+    test("detects 8-char space/tab blocks encoding binary data", () => {
+      // Pattern: 2+ groups of exactly 8 space/tab chars, >50% of text, text>16
+      const stegoBlock = " \t \t \t \t".repeat(4); // 32 chars of space/tab in 8-char groups
+      const input = stegoBlock; // 100% stego, >16 chars
+      const result = sanitize(input);
+      expect(result.stats.whitespaceStegoDetected).toBeGreaterThan(0);
     });
   });
 

@@ -245,5 +245,40 @@ describe("Layer 6: Access Control", () => {
       expect(_internals.isPrivateIp("fc00::1")).toBe(true);
       expect(_internals.isPrivateIp("fd12:3456:789a::1")).toBe(true);
     });
+
+    test("identifies RFC 3849 documentation prefix (M-3)", () => {
+      expect(_internals.isPrivateIp("2001:db8::1")).toBe(true);
+      expect(_internals.isPrivateIp("2001:0db8:85a3::8a2e:370:7334")).toBe(true);
+    });
+
+    test("identifies IPv6 multicast (M-3)", () => {
+      expect(_internals.isPrivateIp("ff02::1")).toBe(true);
+      expect(_internals.isPrivateIp("ff01::1")).toBe(true);
+    });
+
+    test("does not false-positive on public IPv6 (M-3)", () => {
+      expect(_internals.isPrivateIp("2607:f8b0:4004:800::200e")).toBe(false);
+    });
+  });
+
+  // ── DNS Timeout (M-5) ───────────────────────────────────────────
+
+  describe("DNS timeout", () => {
+    test("DNS_TIMEOUT_MS is set to 3 seconds", () => {
+      expect(_internals.DNS_TIMEOUT_MS).toBe(3_000);
+    });
+  });
+
+  // ── Resolved IPs (C-2) ─────────────────────────────────────────
+
+  describe("DNS pinning — resolvedIps", () => {
+    test("returns resolvedIps array for allowed URLs", async () => {
+      const result = await checkUrl("https://example.com");
+      // Whether DNS resolves or not, the field should exist
+      expect(result).toHaveProperty("resolvedIps");
+      if (result.allowed) {
+        expect(Array.isArray(result.resolvedIps)).toBe(true);
+      }
+    });
   });
 });

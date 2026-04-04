@@ -90,6 +90,23 @@ describe("Layer 4: Redaction Pipeline", () => {
       expect(result.redacted).toContain("user@someunknowndomain.io");
       expect(result.counts.emails).toBe(0);
     });
+
+    test("preserves subdomain work emails (M-4)", () => {
+      const text = "Contact: alice@mail.company.com and bob@internal.corp.org";
+      const result = redact(text, defaultConfig);
+      expect(result.redacted).toContain("alice@mail.company.com");
+      expect(result.redacted).toContain("bob@internal.corp.org");
+      expect(result.counts.emails).toBe(0);
+    });
+
+    test("does not match attacker-crafted domain spoofing work domain (M-4)", () => {
+      const text = "Contact: user@company.com.evil.com";
+      const result = redact(text, defaultConfig);
+      // company.com.evil.com does NOT match company.com (not a subdomain)
+      // It's an unknown domain, so it passes through (conservative)
+      expect(result.redacted).toContain("user@company.com.evil.com");
+      expect(result.counts.emails).toBe(0);
+    });
   });
 
   // ── Phone Number Redaction ─────────────────────────────────────────

@@ -24,6 +24,7 @@ import type {
   ScannerResult,
   ScannerConfig,
   InputScanResult,
+  ExternalScanResult,
   OutboundGateResult,
   RedactionResult,
   RedactionConfig,
@@ -34,6 +35,8 @@ import type {
   UrlCheckResult,
   AccessControlConfig,
   ScanVerdict,
+  AuditCallback,
+  AuditEntry,
 } from "./types";
 
 // ── Combined Entry Point: L1 + L2 ───────────────────────────────────
@@ -45,6 +48,18 @@ import type {
 const AUTO_BLOCK_THRESHOLD = 5;
 
 /**
+ * Convert an internal InputScanResult to a safe ExternalScanResult (H-4).
+ * Strips stats, evidence, reasoning — only exposes verdict, flagged, blocked.
+ */
+export function toExternalResult(result: InputScanResult): ExternalScanResult {
+  return {
+    verdict: result.finalVerdict,
+    flagged: result.finalVerdict !== "allow",
+    blocked: result.finalVerdict === "block",
+  };
+}
+
+/**
  * Combined input scanning: Layer 1 sanitization → Layer 2 classification.
  *
  * If L1 detects high-severity patterns above the auto-block threshold,
@@ -52,23 +67,29 @@ const AUTO_BLOCK_THRESHOLD = 5;
  *
  * @param input - Raw untrusted input text
  * @param scannerConfig - L2 scanner config (LLM call function + source risk)
+ * @param auditCallback - Optional callback for audit trail (H-5)
  * @returns Combined result from both layers with final verdict
  */
 export async function scanInput(
   input: string,
-  scannerConfig: ScannerConfig
+  scannerConfig: ScannerConfig,
+  auditCallback?: AuditCallback
 ): Promise<InputScanResult> {
   // Layer 1: Deterministic sanitization (always runs)
   const sanitizerResult = sanitize(input);
 
   // Auto-block if sanitizer found overwhelming evidence
   if (sanitizerResult.highSeverity && sanitizerResult.totalDetections > AUTO_BLOCK_THRESHOLD) {
-    return {
+    const result: InputScanResult = {
       sanitizer: sanitizerResult,
       scanner: null,
       finalVerdict: "block",
       blockedBySanitizer: true,
     };
+    if (auditCallback) {
+      auditCallback(buildAuditEntry(result, scannerConfig.sourceRisk));
+    }
+    return result;
   }
 
   // Layer 2: LLM frontier scanner on the cleaned text
@@ -80,11 +101,33 @@ export async function scanInput(
     finalVerdict = "review";
   }
 
-  return {
+  const result: InputScanResult = {
     sanitizer: sanitizerResult,
     scanner: scannerResult,
     finalVerdict,
     blockedBySanitizer: false,
+  };
+
+  if (auditCallback) {
+    auditCallback(buildAuditEntry(result, scannerConfig.sourceRisk));
+  }
+
+  return result;
+}
+
+/**
+ * Build an AuditEntry from an InputScanResult (H-5).
+ */
+function buildAuditEntry(result: InputScanResult, source: string): AuditEntry {
+  return {
+    timestamp: new Date().toISOString(),
+    source,
+    verdict: result.finalVerdict,
+    score: result.scanner?.score ?? null,
+    totalDetections: result.sanitizer.totalDetections,
+    highSeverity: result.sanitizer.highSeverity,
+    blockedBySanitizer: result.blockedBySanitizer,
+    categories: result.scanner?.categories ?? [],
   };
 }
 
@@ -113,6 +156,7 @@ export type {
   ScannerResult,
   ScannerConfig,
   InputScanResult,
+  ExternalScanResult,
   OutboundGateResult,
   RedactionResult,
   RedactionConfig,
@@ -123,4 +167,6 @@ export type {
   UrlCheckResult,
   AccessControlConfig,
   ScanVerdict,
+  AuditCallback,
+  AuditEntry,
 };

@@ -142,6 +142,24 @@ describe("Layer 3: Outbound Content Gate", () => {
     });
   });
 
+  // ── Windows Path Detection ────────────────────────────────────────
+
+  describe("Windows paths", () => {
+    test("detects any-drive Windows paths", () => {
+      const text = "Found config at D:\\Users\\admin\\secrets.txt";
+      const result = gate(text);
+      expect(result.passed).toBe(false);
+      expect(result.violations.some((v) => v.type === "internal_path")).toBe(true);
+    });
+
+    test("detects UNC paths", () => {
+      const text = "Access \\\\fileserver\\share\\credentials.txt";
+      const result = gate(text);
+      expect(result.passed).toBe(false);
+      expect(result.violations.some((v) => v.type === "internal_path")).toBe(true);
+    });
+  });
+
   // ── Clean Content ──────────────────────────────────────────────────
 
   describe("Clean content passes", () => {

@@ -201,6 +201,39 @@ describe("Layer 2: LLM Frontier Scanner", () => {
     });
   });
 
+  describe("Nonce-based delimiter (C-1)", () => {
+    test("prompt template contains {NONCE} placeholder", () => {
+      expect(_internals.CLASSIFICATION_PROMPT_TEMPLATE).toContain("{NONCE}");
+    });
+
+    test("generated nonce is unpredictable UUID-based string", () => {
+      const nonce1 = _internals.generateNonce();
+      const nonce2 = _internals.generateNonce();
+      expect(nonce1).not.toBe(nonce2);
+      expect(nonce1.length).toBeGreaterThanOrEqual(32);
+    });
+
+    test("nonce replaces {NONCE} in prompt at call time", async () => {
+      let capturedPrompt = "";
+      const config: ScannerConfig = {
+        llmCall: async (prompt: string) => {
+          capturedPrompt = prompt;
+          return JSON.stringify({
+            verdict: "allow", score: 5, categories: [],
+            reasoning: "test", evidence: [],
+          });
+        },
+        sourceRisk: "low",
+      };
+      await scan("test input", config);
+      // Prompt should not contain literal {NONCE} — it should be replaced
+      expect(capturedPrompt).not.toContain("{NONCE}");
+      // Should contain _START and _END markers with the nonce
+      expect(capturedPrompt).toContain("_START");
+      expect(capturedPrompt).toContain("_END");
+    });
+  });
+
   describe("Internal helpers", () => {
     test("applyScoreOverride corrects mismatches", () => {
       expect(_internals.applyScoreOverride("allow", 90)).toEqual({
@@ -214,6 +247,20 @@ describe("Layer 2: LLM Frontier Scanner", () => {
       expect(_internals.applyScoreOverride("block", 90)).toEqual({
         verdict: "block",
         overridden: false,
+      });
+    });
+
+    test("symmetric override: review at score >= 71 becomes block", () => {
+      expect(_internals.applyScoreOverride("review", 75)).toEqual({
+        verdict: "block",
+        overridden: true,
+      });
+    });
+
+    test("symmetric override: review at score <= 20 becomes allow", () => {
+      expect(_internals.applyScoreOverride("review", 15)).toEqual({
+        verdict: "allow",
+        overridden: true,
       });
     });
 

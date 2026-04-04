@@ -134,18 +134,19 @@ export function checkPath(
 function isPrivateIp(ip: string): boolean {
   const parts = ip.split(".").map(Number);
   if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) {
-    // Could be IPv6 — check common private IPv6 patterns
+    // Could be IPv6 — check common private IPv6 patterns (M-3)
     const lower = ip.toLowerCase();
-    return (
-      lower === "::1" ||                          // IPv6 loopback
-      lower.startsWith("fc") ||                   // RFC 4193 unique local
-      lower.startsWith("fd") ||                   // RFC 4193 unique local
-      lower.startsWith("fe80:") ||                // Link-local
-      lower === "::ffff:127.0.0.1" ||            // IPv4-mapped loopback
-      lower.startsWith("::ffff:10.") ||          // IPv4-mapped private
-      lower.startsWith("::ffff:192.168.") ||     // IPv4-mapped private
-      lower.startsWith("::ffff:172.")            // IPv4-mapped private (partial)
-    );
+    if (lower === "::1") return true;                                  // IPv6 loopback
+    if (/^fc[0-9a-f]{2}:/.test(lower)) return true;                   // RFC 4193 unique local (fc00::/7)
+    if (/^fd[0-9a-f]{0,2}:/.test(lower)) return true;                 // RFC 4193 unique local (fc00::/7)
+    if (lower.startsWith("fe80:")) return true;                        // Link-local
+    if (lower.startsWith("2001:db8:") || lower.startsWith("2001:0db8:")) return true;  // RFC 3849 documentation
+    if (/^ff[0-9a-f]{2}:/.test(lower)) return true;                   // Multicast (ff00::/8)
+    if (lower === "::ffff:127.0.0.1") return true;                     // IPv4-mapped loopback
+    if (lower.startsWith("::ffff:10.")) return true;                   // IPv4-mapped private
+    if (lower.startsWith("::ffff:192.168.")) return true;              // IPv4-mapped private
+    if (lower.startsWith("::ffff:172.")) return true;                  // IPv4-mapped private (partial)
+    return false;
   }
 
   const a = parts[0]!;
@@ -221,14 +222,16 @@ export async function checkUrl(url: string): Promise<UrlCheckResult> {
   }
 
   // DNS resolution check — resolve hostname and check all IPs
+  let resolvedIps: string[] = [];
   try {
     // Try to resolve the hostname
-    const addresses = await resolveHostname(hostname);
-    for (const addr of addresses) {
+    resolvedIps = await resolveHostname(hostname);
+    for (const addr of resolvedIps) {
       if (isPrivateIp(addr)) {
         return {
           allowed: false,
           reason: `Hostname ${hostname} resolves to private IP ${addr}`,
+          resolvedIps,
         };
       }
     }
@@ -237,17 +240,27 @@ export async function checkUrl(url: string): Promise<UrlCheckResult> {
     // The caller can decide to block on resolution failure based on context
   }
 
-  return { allowed: true };
+  return { allowed: true, resolvedIps };
 }
 
+/** DNS resolution timeout in milliseconds (M-5) */
+const DNS_TIMEOUT_MS = 3_000;
+
 /**
- * Resolve hostname to IPv4 addresses.
- * Uses node:dns/promises for compatibility.
+ * Resolve hostname to IPv4 addresses with timeout.
+ * Uses node:dns/promises with a 3-second race guard (M-5).
  */
 async function resolveHostname(hostname: string): Promise<string[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await resolve4(hostname);
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("DNS timeout")), DNS_TIMEOUT_MS);
+    });
+    const result = await Promise.race([resolve4(hostname), timeout]);
+    clearTimeout(timer);
+    return result;
   } catch {
+    clearTimeout(timer);
     return [];
   }
 }
@@ -258,4 +271,5 @@ export const _internals = {
   DENY_EXTENSIONS,
   isPrivateIp,
   LOCALHOST_HOSTNAMES,
+  DNS_TIMEOUT_MS,
 };

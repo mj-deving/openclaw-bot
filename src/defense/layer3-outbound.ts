@@ -30,8 +30,10 @@ const INTERNAL_PATH_PATTERNS: RegExp[] = [
   /\/var\/(?:log|lib|run|spool)\/[^\s'">)}\]]{3,}/g,
   // /tmp with sensitive-looking content
   /\/tmp\/[^\s'">)}\]]*(?:key|secret|token|pass|cred|auth)[^\s'">)}\]]*/gi,
-  // Windows paths
-  /[A-Z]:\\(?:Users|Windows|Program Files)[^\s'">)}\]]{3,}/g,
+  // (M-2) Windows paths — any drive letter with backslash path
+  /[A-Z]:\\(?:[a-zA-Z0-9._\-]+\\)+[^\s'">)}\]]{1,}/g,
+  // (M-2) UNC paths (\\server\share\...)
+  /\\\\[a-zA-Z0-9.\-]+\\[^\s'">)}\]]{3,}/g,
   // .dotfile paths
   /(?:\/|~\/)\.[a-z]+\/[^\s'">)}\]]{3,}/g,
 ];
@@ -39,13 +41,14 @@ const INTERNAL_PATH_PATTERNS: RegExp[] = [
 // ── Injection Artifact Patterns ──────────────────────────────────────
 
 const INJECTION_ARTIFACT_PATTERNS: RegExp[] = [
-  // Leaked system prompt markers
-  /\[(?:SYSTEM|INST|\/INST)\]/gi,
+  // Leaked system prompt markers (L-21: expanded with space tolerance)
+  /\[\s*(?:SYSTEM|INST|\/INST|SYS|\/SYS)\s*\]/gi,
   /<<\s*(?:SYS|SYSTEM)\s*>>/gi,
   /<\|(?:system|endoftext|im_start|im_end)\|>/gi,
-  // Prompt injection fragments surviving into output
-  /ignore\s+previous\s+instructions/gi,
-  /you\s+are\s+now\s+(?:a|the)/gi,
+  // (L-21) Prompt injection fragments — expanded verb forms
+  /ignor(?:e|ing)\s+(?:all\s+)?previous\s+(?:instructions?|rules?)/gi,
+  /you\s+are\s+(?:now\s+)?(?:a|an|the|being|acting\s+as)/gi,
+  /disregard\s+(?:all\s+)?(?:previous|prior|above)/gi,
   // Role labels that shouldn't appear in output
   /^(?:Human|Assistant|System|User)\s*:/gm,
 ];

@@ -3,10 +3,14 @@
  *
  * Synchronous pipeline that defends against:
  * - Unicode homoglyphs and invisible characters (P4RS3LT0NGV3)
- * - Base64/hex/ROT13 encoded payloads (P4RS3LT0NGV3)
+ * - Base64/base64url/hex/ROT13 encoded payloads (P4RS3LT0NGV3)
  * - HTML/markdown injection (L1B3RT4S)
  * - System prompt overrides and role injection (L1B3RT4S)
  * - Zero-width character smuggling (P4RS3LT0NGV3)
+ * - Emoji steganography via variation selectors (P4RS3LT0NGV3)
+ * - Unicode Private Use Area hidden text (P4RS3LT0NGV3)
+ * - Zalgo text / combining diacritical abuse (P4RS3LT0NGV3)
+ * - Whitespace steganography (P4RS3LT0NGV3)
  * - Whitespace/delimiter flooding
  * - Wallet address patterns (TOKEN80M8/TOKENADE)
  *
@@ -107,13 +111,13 @@ const ROLE_INJECTION_PATTERNS: RegExp[] = [
 
 /**
  * Wallet address patterns from TOKEN80M8/TOKENADE repos.
- * Ethereum, Bitcoin (legacy + segwit), Solana, and common token patterns.
+ * Ethereum, Bitcoin (legacy + segwit), Tron.
+ * (H-7: Solana removed — base58 32-44 char regex caused massive false positives)
  */
 const WALLET_PATTERNS: RegExp[] = [
-  /\b0x[a-fA-F0-9]{40}\b/,                    // Ethereum
+  /\b0x[a-fA-F0-9]{40}\b/,                    // Ethereum (40 hex chars)
   /\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b/,      // Bitcoin legacy
   /\bbc1[a-zA-HJ-NP-Z0-9]{25,90}\b/,          // Bitcoin segwit
-  /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/,          // Solana (base58, 32-44 chars)
   /\bT[a-zA-Z0-9]{33}\b/,                      // Tron TRC20
 ];
 
@@ -162,12 +166,14 @@ function normalizeUnicode(text: string, stats: SanitizerStats): string {
 }
 
 function detectBase64(text: string, stats: SanitizerStats): string {
-  // Match base64 strings of 20+ chars (to avoid short false positives)
-  const base64Regex = /\b[A-Za-z0-9+/]{20,}={0,2}\b/g;
+  // (H-3): Match both standard base64 AND URL-safe base64 (- and _ instead of + and /)
+  const base64Regex = /\b[A-Za-z0-9+/\-_]{20,}={0,2}\b/g;
   let count = 0;
   const result = text.replace(base64Regex, (match) => {
     try {
-      const decoded = atob(match);
+      // Try standard base64 first, then URL-safe
+      const normalized = match.replace(/-/g, "+").replace(/_/g, "/");
+      const decoded = atob(normalized);
       // Only flag if decoded content looks like text (printable ASCII)
       if (/^[\x20-\x7E\n\r\t]+$/.test(decoded) && decoded.length >= 8) {
         count++;
@@ -183,12 +189,12 @@ function detectBase64(text: string, stats: SanitizerStats): string {
 }
 
 function detectHex(text: string, stats: SanitizerStats): string {
-  // Match hex strings with common prefixes or long hex sequences
-  const hexRegex = /(?:0x|\\x)?([0-9a-fA-F]{2}(?:\s*[0-9a-fA-F]{2}){7,})/g;
+  // (M-8): Flexible delimiters between hex bytes — supports spaces, dashes, pipes, colons, commas
+  const hexRegex = /(?:0x|\\x)?([0-9a-fA-F]{2}(?:[\s\-_|,:]*[0-9a-fA-F]{2}){7,})/g;
   let count = 0;
   const result = text.replace(hexRegex, (match, hexPart) => {
     try {
-      const clean = hexPart.replace(/\s+/g, "").replace(/^(?:0x|\\x)/, "");
+      const clean = hexPart.replace(/[\s\-_|,:]+/g, "").replace(/^(?:0x|\\x)/, "");
       const bytes = clean.match(/.{2}/g);
       if (bytes) {
         const decoded = bytes.map((b: string) => String.fromCharCode(parseInt(b, 16))).join("");
@@ -207,16 +213,14 @@ function detectHex(text: string, stats: SanitizerStats): string {
 }
 
 function detectRot13(text: string, stats: SanitizerStats): string {
-  // Look for ROT13 markers or common ROT13 encoded instruction words
   const rot13Markers = /\b(?:rot13|ROT13|ebg13)\b/gi;
   let count = 0;
+  let result = text;
 
   // If there's an explicit ROT13 marker, decode the adjacent text
-  if (rot13Markers.test(text)) {
+  if (rot13Markers.test(result)) {
     count++;
-    stats.rotDetected = count;
-    // Decode any text after the marker
-    return text.replace(
+    result = result.replace(
       /(?:rot13|ROT13|ebg13)\s*[:\-=]?\s*([A-Za-z\s]{10,})/gi,
       (_match, encoded) => {
         const decoded = rot13Decode(encoded);
@@ -225,18 +229,24 @@ function detectRot13(text: string, stats: SanitizerStats): string {
     );
   }
 
-  // Also check if the whole text looks like ROT13 of known attack phrases
+  // (H-2): Also check known ROT13 attack phrases AND sanitize them
   const knownRot13Attacks = [
     "vtaber", "vtaber cerivbhf", "lbh ner abj", "flfgrz cebzcg",
     "wnyvyoernx", "olcnff", "bireevqr",
   ];
   for (const attackRot of knownRot13Attacks) {
-    if (text.toLowerCase().includes(attackRot)) {
+    if (result.toLowerCase().includes(attackRot)) {
       count++;
+      // Replace the ROT13 attack phrase with decoded marker
+      const decoded = rot13Decode(attackRot);
+      result = result.replace(
+        new RegExp(attackRot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
+        `[ROT13_DETECTED: ${decoded}]`
+      );
     }
   }
   stats.rotDetected = count;
-  return text;
+  return result;
 }
 
 function rot13Decode(text: string): string {
@@ -258,7 +268,7 @@ function stripMarkup(text: string, stats: SanitizerStats): string {
 
 function detectSystemOverrides(text: string, stats: SanitizerStats): string {
   let count = 0;
-  let result = text;
+  const result = text;
   for (const pattern of SYSTEM_OVERRIDE_PATTERNS) {
     if (pattern.test(result)) {
       count++;
@@ -282,8 +292,8 @@ function detectRoleInjection(text: string, stats: SanitizerStats): string {
 
 function normalizeWhitespace(text: string, stats: SanitizerStats): string {
   const original = text;
-  // Collapse runs of 3+ whitespace chars to a single space
-  let result = text.replace(/[ \t]{3,}/g, " ");
+  // (L-13): Collapse runs of 2+ whitespace chars to a single space (lowered from 3)
+  let result = text.replace(/[ \t]{2,}/g, " ");
   // Collapse runs of 3+ newlines to double newline
   result = result.replace(/\n{3,}/g, "\n\n");
   // Remove delimiter flooding (e.g., ------, ======, ******)
@@ -306,21 +316,106 @@ function flagWalletAddresses(text: string, stats: SanitizerStats): string {
   return text;
 }
 
+// ── New P4RS3LT0NGV3 Encoding Detections (H-1) ─────────────────────
+
+/**
+ * (H-1) Emoji steganography detection.
+ * P4RS3LT0NGV3 uses variation selectors (U+FE0E text, U+FE0F emoji) after
+ * carrier emojis to encode binary data. Detect suspicious density of
+ * variation selectors adjacent to emojis.
+ */
+function detectEmojiStego(text: string, stats: SanitizerStats): string {
+  // Count variation selector pairs (FE0E/FE0F) — legitimate text rarely has >2
+  const variationSelectorPairs = text.match(/[\uFE0E\uFE0F]{2,}/g);
+  // Also detect carrier emojis followed by variation selectors
+  const emojiWithSelectors = text.match(/[\u{1F40D}\u{1F409}\u{1F432}\u{1F40A}][\uFE0E\uFE0F]+/gu);
+
+  let count = 0;
+  if (variationSelectorPairs && variationSelectorPairs.length > 2) {
+    count += variationSelectorPairs.length;
+  }
+  if (emojiWithSelectors) {
+    count += emojiWithSelectors.length;
+  }
+
+  if (count > 0) {
+    // Strip variation selectors to neutralize the steganographic channel
+    const result = text.replace(/[\uFE0E\uFE0F]+/g, "");
+    stats.emojiStegoDetected = count;
+    return result;
+  }
+  stats.emojiStegoDetected = 0;
+  return text;
+}
+
+/**
+ * (H-1) Unicode Private Use Area detection.
+ * P4RS3LT0NGV3 uses U+E0000-U+E00FF to encode invisible text.
+ * These characters have zero visual width and are exclusively PUA.
+ */
+function detectUnicodePua(text: string, stats: SanitizerStats): string {
+  // Tags block: U+E0000-U+E007F (Supplementary Special-purpose Plane)
+  const puaRegex = /[\u{E0000}-\u{E007F}]/gu;
+  let count = 0;
+  const result = text.replace(puaRegex, () => { count++; return ""; });
+  stats.unicodePuaDetected = count;
+  return result;
+}
+
+/**
+ * (H-1) Zalgo text detection — combining diacritical mark abuse.
+ * Legitimate text rarely has >2 combining marks per character.
+ * Zalgo uses 10-50+ combining marks (U+0300-U+036F) to create distorted text.
+ */
+function detectZalgo(text: string, stats: SanitizerStats): string {
+  // Match sequences of 3+ combining diacritical marks
+  const zalgoRegex = /[\u0300-\u036F\u0489]{3,}/g;
+  let count = 0;
+  const result = text.replace(zalgoRegex, () => { count++; return ""; });
+  stats.zalgoDetected = count;
+  return result;
+}
+
+/**
+ * (H-1) Whitespace steganography detection.
+ * P4RS3LT0NGV3 encodes binary using space=0, tab=1 in 8-char groups.
+ * Detect text where >80% of content is spaces/tabs in groups of 8.
+ */
+function detectWhitespaceSteganography(text: string, stats: SanitizerStats): string {
+  // Look for blocks of exactly 8 space/tab characters (binary encoding)
+  const stegoPattern = /(?:[ \t]{8}){2,}/g;
+  const matches = text.match(stegoPattern);
+  if (matches) {
+    const stegoChars = matches.reduce((sum, m) => sum + m.length, 0);
+    // If stego characters make up >50% of the text, flag it
+    if (stegoChars > text.length * 0.5 && text.length > 16) {
+      stats.whitespaceStegoDetected = matches.length;
+      return text.replace(stegoPattern, "[WHITESPACE_STEGO_DETECTED]");
+    }
+  }
+  stats.whitespaceStegoDetected = 0;
+  return text;
+}
+
 // ── Main Pipeline ────────────────────────────────────────────────────
 
 /**
  * Run the full sanitization pipeline synchronously.
  * Steps execute in deterministic order:
  * 1. Zero-width character removal
- * 2. Unicode normalization (homoglyphs)
- * 3. Base64 detection
- * 4. Hex detection
- * 5. ROT13 detection
- * 6. Markup stripping
- * 7. System override detection
- * 8. Role injection detection
- * 9. Whitespace normalization
- * 10. Wallet address flagging
+ * 2. Unicode PUA detection (H-1)
+ * 3. Emoji steganography detection (H-1)
+ * 4. Unicode normalization (homoglyphs)
+ * 5. Zalgo/combining diacritical detection (H-1)
+ * 6. Base64 detection (including base64url — H-3)
+ * 7. Hex detection (flexible delimiters — M-8)
+ * 8. ROT13 detection (with sanitization — H-2)
+ * 9. Markup stripping
+ * 10. System override detection
+ * 11. Role injection detection
+ * 12. Whitespace steganography detection (H-1)
+ * 13. Whitespace normalization
+ * 14. Wallet address flagging (tightened Solana — H-7)
  */
 export function sanitize(input: string): SanitizerResult {
   // Enforce length limit to prevent ReDoS
@@ -339,20 +434,28 @@ export function sanitize(input: string): SanitizerResult {
     zeroWidthRemoved: 0,
     whitespaceNormalized: 0,
     walletAddressesFlagged: 0,
+    emojiStegoDetected: 0,
+    unicodePuaDetected: 0,
+    zalgoDetected: 0,
+    whitespaceStegoDetected: 0,
   };
 
   // Steps run in deterministic order
   let cleaned = text;
-  cleaned = removeZeroWidth(cleaned, stats);         // Step 1
-  cleaned = normalizeUnicode(cleaned, stats);         // Step 2
-  cleaned = detectBase64(cleaned, stats);             // Step 3
-  cleaned = detectHex(cleaned, stats);                // Step 4
-  cleaned = detectRot13(cleaned, stats);              // Step 5
-  cleaned = stripMarkup(cleaned, stats);              // Step 6
-  cleaned = detectSystemOverrides(cleaned, stats);    // Step 7
-  cleaned = detectRoleInjection(cleaned, stats);      // Step 8
-  cleaned = normalizeWhitespace(cleaned, stats);      // Step 9
-  cleaned = flagWalletAddresses(cleaned, stats);      // Step 10
+  cleaned = removeZeroWidth(cleaned, stats);                // Step 1
+  cleaned = detectUnicodePua(cleaned, stats);               // Step 2 (H-1)
+  cleaned = detectEmojiStego(cleaned, stats);               // Step 3 (H-1)
+  cleaned = normalizeUnicode(cleaned, stats);               // Step 4
+  cleaned = detectZalgo(cleaned, stats);                    // Step 5 (H-1)
+  cleaned = detectBase64(cleaned, stats);                   // Step 6 (H-3)
+  cleaned = detectHex(cleaned, stats);                      // Step 7 (M-8)
+  cleaned = detectRot13(cleaned, stats);                    // Step 8 (H-2)
+  cleaned = stripMarkup(cleaned, stats);                    // Step 9
+  cleaned = detectSystemOverrides(cleaned, stats);          // Step 10
+  cleaned = detectRoleInjection(cleaned, stats);            // Step 11
+  cleaned = detectWhitespaceSteganography(cleaned, stats);  // Step 12 (H-1)
+  cleaned = normalizeWhitespace(cleaned, stats);            // Step 13
+  cleaned = flagWalletAddresses(cleaned, stats);            // Step 14
 
   const totalDetections = Object.values(stats).reduce((sum, v) => sum + v, 0);
 
@@ -360,7 +463,9 @@ export function sanitize(input: string): SanitizerResult {
   const highSeverity =
     stats.systemOverrideDetected > 0 ||
     stats.roleInjectionDetected > 0 ||
-    stats.walletAddressesFlagged > 0;
+    stats.walletAddressesFlagged > 0 ||
+    stats.emojiStegoDetected > 0 ||
+    stats.unicodePuaDetected > 0;
 
   return {
     cleaned,

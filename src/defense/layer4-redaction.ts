@@ -102,8 +102,12 @@ function redactEmails(
   let count = 0;
   const result = text.replace(EMAIL_REGEX, (fullMatch, _email, domain) => {
     const domainLower = domain.toLowerCase();
-    // Skip work domains — let them through
-    if (workDomains.has(domainLower)) {
+    // Skip work domains — exact match or subdomain match (M-4)
+    // e.g., "mail.company.com" matches work domain "company.com"
+    const isWorkDomain = Array.from(workDomains).some((wd) =>
+      domainLower === wd || domainLower.endsWith("." + wd)
+    );
+    if (isWorkDomain) {
       return fullMatch;
     }
     // Redact if it's a personal provider domain

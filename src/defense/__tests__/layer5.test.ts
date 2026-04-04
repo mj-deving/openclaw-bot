@@ -191,6 +191,79 @@ describe("Layer 5: Call Governor", () => {
     });
   });
 
+  // ── Circuit Breaker (H-6) ─────────────────────────────────────────
+
+  describe("Circuit breaker", () => {
+    test("triggers after threshold blocks within window", () => {
+      const gov = createGovernor(defaultConfig({
+        spendLimitDollars: 0.001,
+        circuitBreakerThreshold: 3,
+        circuitBreakerWindowMs: 60_000,
+      }));
+      const req = makeRequest({ estimatedCostDollars: 0.01 });
+
+      // Each check will be blocked by spend_limit, incrementing circuit breaker
+      for (let i = 0; i < 3; i++) {
+        const d = gov.check(req);
+        expect(d.allowed).toBe(false);
+        if (!d.allowed) expect(d.reason).toBe("spend_limit");
+      }
+
+      // 4th check should be circuit_breaker
+      const d4 = gov.check(req);
+      expect(d4.allowed).toBe(false);
+      if (!d4.allowed) expect(d4.reason).toBe("circuit_breaker");
+    });
+
+    test("circuit breaker does not affect different callers", () => {
+      const gov = createGovernor(defaultConfig({
+        spendLimitDollars: 0.001,
+        circuitBreakerThreshold: 2,
+        circuitBreakerWindowMs: 60_000,
+      }));
+
+      // Trigger circuit breaker for caller-a
+      for (let i = 0; i < 3; i++) {
+        gov.check(makeRequest({ callerId: "caller-a", estimatedCostDollars: 0.01 }));
+      }
+
+      // caller-b should still get spend_limit, not circuit_breaker
+      const d = gov.check(makeRequest({ callerId: "caller-b", estimatedCostDollars: 0.01 }));
+      expect(d.allowed).toBe(false);
+      if (!d.allowed) expect(d.reason).toBe("spend_limit");
+    });
+  });
+
+  // ── CallerId-scoped Cache (C-3) ─────────────────────────────────
+
+  describe("CallerId-scoped cache", () => {
+    test("same prompt from different callers are not cached together", () => {
+      const gov = createGovernor(defaultConfig());
+      const prompt = "What is TypeScript?";
+
+      // Caller A records a result
+      gov.record(makeRequest({ callerId: "caller-a", prompt }), "Result A");
+
+      // Caller B with same prompt should NOT get cached result
+      const d = gov.check(makeRequest({ callerId: "caller-b", prompt }));
+      expect(d.allowed).toBe(true);
+      if (d.allowed) expect(d.cached).toBe(false);
+    });
+
+    test("same caller with same prompt gets cached result", () => {
+      const gov = createGovernor(defaultConfig());
+      const prompt = "What is TypeScript?";
+
+      gov.record(makeRequest({ callerId: "caller-a", prompt }), "Result A");
+
+      const d = gov.check(makeRequest({ callerId: "caller-a", prompt }));
+      expect(d.allowed).toBe(true);
+      if (d.allowed && d.cached) {
+        expect(d.cachedResult).toBe("Result A");
+      }
+    });
+  });
+
   // ── Configuration ──────────────────────────────────────────────────
 
   describe("Configuration", () => {
