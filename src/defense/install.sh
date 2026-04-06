@@ -342,7 +342,7 @@ else:
         dry "Copy clawkeeper-plugin/ -> ${CLAWKEEPER_DIR}"; ((deployed++))
     else
         cmd "mkdir -p '${CLAWKEEPER_DIR}'"
-        local CK_SRC="/tmp/ClawKeeper/clawkeeper-plugin"
+        CK_SRC="/tmp/ClawKeeper/clawkeeper-plugin"
         cmd "test -d '${CK_SRC}'" || CK_SRC="/tmp/ClawKeeper"
         cmd "cp -r '${CK_SRC}'/* '${CLAWKEEPER_DIR}/'"
         ok "ClawKeeper installed to ${CLAWKEEPER_DIR}"; ((deployed++))

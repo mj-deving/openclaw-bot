@@ -47,21 +47,12 @@ if is_remote; then
     SKILL_DIR="${REMOTE_HOME}/.openclaw/workspace/skills/security-defense"
 fi
 
-# Run a bun command locally or remotely
-run_bun() {
+# Run a command locally or remotely (with bun + openclaw on PATH)
+run_cmd() {
     if is_remote; then
         ssh "$REMOTE" "export PATH=\$HOME/.bun/bin:\$HOME/.npm-global/bin:\$PATH && $1"
     else
         eval "export PATH=\$HOME/.bun/bin:\$HOME/.npm-global/bin:\$PATH && $1"
-    fi
-}
-
-# Run an openclaw command locally or remotely
-run_oc() {
-    if is_remote; then
-        ssh "$REMOTE" "export PATH=\$HOME/.npm-global/bin:\$HOME/.bun/bin:\$PATH && $1"
-    else
-        eval "export PATH=\$HOME/.npm-global/bin:\$HOME/.bun/bin:\$PATH && $1"
     fi
 }
 
@@ -74,7 +65,7 @@ assert_json() {
     ((TOTAL++))
 
     local result
-    result=$(run_bun "bun -e \"${bun_expr}\"" 2>&1) || true
+    result=$(run_cmd "bun -e \"${bun_expr}\"" 2>&1) || true
 
     # Use python3 to evaluate the JSON condition (project convention)
     local check
@@ -110,7 +101,7 @@ echo ""
 echo -e "${BOLD}Preflight${NC}"
 echo "--------------------------------------------"
 
-if run_bun "bun --version >/dev/null 2>&1"; then
+if run_cmd "bun --version >/dev/null 2>&1"; then
     echo -e "  ${GREEN}OK${NC}    bun available"
 else
     echo -e "  ${RED}FAIL${NC}  bun not found"; exit 1
@@ -241,7 +232,7 @@ echo ""
 echo -e "${BOLD}ClawKeeper Audit${NC}"
 echo "--------------------------------------------"
 
-AUDIT_OUTPUT=$(run_oc "openclaw clawkeeper audit 2>&1" || true)
+AUDIT_OUTPUT=$(run_cmd "openclaw clawkeeper audit 2>&1" || true)
 if [[ -n "$AUDIT_OUTPUT" ]]; then
     SCORE_LINE=$(echo "$AUDIT_OUTPUT" | grep -i "score\|Score" | head -1 || true)
     if [[ -n "$SCORE_LINE" ]]; then
