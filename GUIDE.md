@@ -4309,6 +4309,23 @@ Since v2026.3.12, OpenClaw ships raw Kubernetes deployment manifests as an alter
 
 ## Appendix K — Prompt Injection Defense System
 
+### Quick Start
+
+```bash
+# On a fresh VPS with OpenClaw already running (after Phase 6):
+git clone https://github.com/mj-deving/openclaw-hardened.git
+cd openclaw-hardened
+bash src/defense/install.sh          # Install Defense Shield + ClawKeeper
+bash src/defense/validate.sh         # Verify everything works
+```
+
+From a local machine (deploys via SSH):
+
+```bash
+bash src/defense/install.sh --remote vps      # Install to VPS
+bash src/defense/validate.sh --remote vps     # Validate remotely
+```
+
 ### The Problem
 
 Every security measure described in Phase 7 tiers 1-4 relies on the model *choosing* to follow instructions. A sufficiently clever injection bypasses all of them. The defense system solves this by running deterministic code the model cannot influence.
