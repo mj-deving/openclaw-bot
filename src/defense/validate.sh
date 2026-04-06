@@ -13,7 +13,17 @@ set -euo pipefail
 # ── Config ───────────────────────────────────────────────────────────
 
 REMOTE=""
-SKILL_DIR="$HOME/.openclaw/workspace/skills/security-defense"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Smart SKILL_DIR detection:
+#   - If layer1-sanitizer.ts exists next to this script, we're in the skill dir
+#     (standalone mode: validate.sh was downloaded alongside the layers)
+#   - Otherwise, fall back to the standard skill path (repo checkout mode)
+if [[ -f "${SCRIPT_DIR}/layer1-sanitizer.ts" ]]; then
+    SKILL_DIR="$SCRIPT_DIR"
+else
+    SKILL_DIR="$HOME/.openclaw/workspace/skills/security-defense"
+fi
 PASS=0
 FAIL=0
 TOTAL=0
@@ -33,8 +43,13 @@ while [[ $# -gt 0 ]]; do
             [[ $# -lt 2 ]] && { echo "ERROR: --remote requires HOST"; exit 1; }
             REMOTE="$2"; shift 2 ;;
         --help|-h)
-            echo "Usage: bash src/defense/validate.sh [--remote HOST]"
+            echo "Usage: bash validate.sh [--remote HOST]"
+            echo ""
             echo "  --remote HOST    Run tests on HOST via SSH"
+            echo ""
+            echo "Auto-detects location: if layer1-sanitizer.ts is next to this"
+            echo "script (standalone install), uses local dir. Otherwise uses"
+            echo "~/.openclaw/workspace/skills/security-defense/."
             exit 0 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac

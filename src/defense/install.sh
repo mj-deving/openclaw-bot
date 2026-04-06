@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 # Defense system installer — deploys Defense Shield plugin + ClawKeeper
 #
-# Two contexts:
-#   ./install.sh                    Run ON the VPS directly
-#   ./install.sh --remote vps       Deploy to VPS via SSH
+# Three contexts:
+#   ./install.sh                    Run ON the VPS directly (repo checkout)
+#   ./install.sh --remote vps       Deploy to VPS via SSH (repo checkout)
+#   ./install.sh --standalone       Download from GitHub (no repo needed)
+#
+# Standalone mode is auto-detected when:
+#   - The script is run from /tmp, or
+#   - layer1-sanitizer.ts doesn't exist next to the script
 #
 # Flags:
 #   --remote HOST       Deploy via SSH to HOST
+#   --standalone        Force standalone mode (download from GitHub)
 #   --dry-run           Preview without making changes
 #   --uninstall         Remove both plugins, restart gateway
 #   --skip-clawkeeper   Install only Defense Shield plugin
@@ -20,13 +26,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# GitHub raw URL for standalone downloads
+GITHUB_RAW="https://raw.githubusercontent.com/mj-deving/openclaw-hardened/main/src/defense"
 
 # Defaults
 DRY_RUN=false
 REMOTE=""
 UNINSTALL=false
 SKIP_CLAWKEEPER=false
+STANDALONE=false
 OPENCLAW_DIR="$HOME/.openclaw"
 SKILL_DIR="$OPENCLAW_DIR/workspace/skills/security-defense"
 PLUGIN_DIR="$SKILL_DIR/plugin"
@@ -63,13 +72,28 @@ scp_to()     { scp -q "$1" "${REMOTE}:${2}"; }
 deploy_one() {
     local src="$1" dst="$2" label="$3"
     if [[ ! -f "$src" ]]; then
-        err "Source missing: ${src}"; ((errors++)); return; fi
+        err "Source missing: ${src}"; errors=$((errors + 1)); return; fi
     if cmd "test -f '${dst}'" && ! $DRY_RUN; then
-        skip "${label} -- already exists"; ((skipped++)); return; fi
+        skip "${label} -- already exists"; skipped=$((skipped + 1)); return; fi
     if $DRY_RUN; then
-        dry "Copy ${label} -> ${dst}"; ((deployed++)); return; fi
+        dry "Copy ${label} -> ${dst}"; deployed=$((deployed + 1)); return; fi
     if is_remote; then scp_to "$src" "$dst"; else cp "$src" "$dst"; fi
-    ok "Deployed ${label}"; ((deployed++))
+    ok "Deployed ${label}"; deployed=$((deployed + 1))
+}
+
+# Fetch a single file from GitHub to remote/local dst (idempotent, standalone mode)
+fetch_one() {
+    local url="$1" dst="$2" label="$3"
+    if cmd "test -f '${dst}'" && ! $DRY_RUN; then
+        skip "${label} -- already exists"; skipped=$((skipped + 1)); return; fi
+    if $DRY_RUN; then
+        dry "Download ${label} from GitHub"; deployed=$((deployed + 1)); return; fi
+    if is_remote; then
+        cmd "curl -fsSL '${url}' -o '${dst}'" || { err "Failed to download ${label}"; errors=$((errors + 1)); return; }
+    else
+        curl -fsSL "$url" -o "$dst" || { err "Failed to download ${label}"; errors=$((errors + 1)); return; }
+    fi
+    ok "Downloaded ${label}"; deployed=$((deployed + 1))
 }
 
 # ── Argument parsing ─────────────────────────────────────────────────
@@ -79,17 +103,25 @@ show_help() {
 Defense System Installer — installs Defense Shield plugin + ClawKeeper
 
 Usage:
-  bash src/defense/install.sh                    Install on local VPS
-  bash src/defense/install.sh --remote vps       Install via SSH
-  bash src/defense/install.sh --dry-run          Preview actions
-  bash src/defense/install.sh --uninstall        Remove both plugins
+  bash install.sh                              Install on local VPS (repo checkout)
+  bash install.sh --remote vps                 Install via SSH (repo checkout)
+  bash install.sh --standalone                 Download from GitHub + install (no repo)
+  bash install.sh --dry-run                    Preview actions
+  bash install.sh --uninstall                  Remove both plugins
+
+  # One-liner for fresh VPS (standalone auto-detected):
+  curl -fsSL https://raw.githubusercontent.com/mj-deving/openclaw-hardened/main/src/defense/install.sh | bash
 
 Flags:
   --remote HOST       Deploy to HOST via SSH
+  --standalone        Force standalone mode (download from GitHub instead of local copy)
   --dry-run           Preview without making changes
   --uninstall         Remove both plugins and restart gateway
   --skip-clawkeeper   Install only Defense Shield (no ClawKeeper)
   --help              This message
+
+Standalone mode auto-detects when layer1-sanitizer.ts is not found next to
+the script (e.g., when piped from curl or run from /tmp).
 EOF
 }
 
@@ -100,6 +132,7 @@ while [[ $# -gt 0 ]]; do
             REMOTE="$2"; shift 2 ;;
         --dry-run)       DRY_RUN=true; shift ;;
         --uninstall)     UNINSTALL=true; shift ;;
+        --standalone)    STANDALONE=true; shift ;;
         --skip-clawkeeper) SKIP_CLAWKEEPER=true; shift ;;
         --help|-h)       show_help; exit 0 ;;
         *)               die "Unknown option: $1 (try --help)" ;;
@@ -109,6 +142,16 @@ done
 # ── Context detection ────────────────────────────────────────────────
 
 is_remote() { [[ -n "$REMOTE" ]]; }
+
+# Auto-detect standalone mode: if the layer files don't exist next to the
+# script, or the script is running from /tmp (piped from curl), switch to
+# standalone and download from GitHub instead of copying local files.
+if ! $STANDALONE; then
+    if [[ ! -f "${SCRIPT_DIR}/layer1-sanitizer.ts" ]] || [[ "$SCRIPT_DIR" == /tmp* ]]; then
+        STANDALONE=true
+        info "Auto-detected standalone mode (source files not found locally)"
+    fi
+fi
 
 # When remote, commands run over SSH; adjust paths to the remote home
 if is_remote; then
@@ -138,8 +181,10 @@ if is_remote; then
 else
     echo "  Target: localhost (direct)"
 fi
-$DRY_RUN  && echo "  Mode: DRY RUN (no changes will be made)"
-$UNINSTALL && echo "  Mode: UNINSTALL"
+$DRY_RUN    && echo "  Mode: DRY RUN (no changes will be made)"
+$UNINSTALL  && echo "  Mode: UNINSTALL"
+$STANDALONE && echo "  Source: GitHub (standalone)"
+! $STANDALONE && echo "  Source: local repo (${SCRIPT_DIR})"
 echo "================================================================"
 echo ""
 
@@ -218,11 +263,20 @@ else
     fi
 fi
 
+# In standalone mode, verify curl is available (needed for downloads)
+if $STANDALONE; then
+    if command -v curl >/dev/null 2>&1; then
+        ok "curl available (needed for standalone downloads)"
+    else
+        die "curl is required for standalone mode"
+    fi
+fi
+
 # ── Step 2: Deploy Defense Shield source files ───────────────────────
 
 section "2/7" "Deploying Defense Shield source files"
 
-# List of TS files to copy (excluding __tests__ and proxy/)
+# List of TS files to deploy (excluding __tests__ and proxy/)
 TS_FILES=(
     "index.ts"
     "layer1-sanitizer.ts"
@@ -238,7 +292,11 @@ TS_FILES=(
 if $DRY_RUN; then dry "mkdir -p ${SKILL_DIR}"; else cmd "mkdir -p '${SKILL_DIR}'"; fi
 
 for ts_file in "${TS_FILES[@]}"; do
-    deploy_one "${SCRIPT_DIR}/${ts_file}" "${SKILL_DIR}/${ts_file}" "$ts_file"
+    if $STANDALONE; then
+        fetch_one "${GITHUB_RAW}/${ts_file}" "${SKILL_DIR}/${ts_file}" "$ts_file"
+    else
+        deploy_one "${SCRIPT_DIR}/${ts_file}" "${SKILL_DIR}/${ts_file}" "$ts_file"
+    fi
 done
 
 # ── Step 3: Deploy Defense Shield plugin ─────────────────────────────
@@ -251,7 +309,11 @@ LOCAL_PLUGIN_DIR="${SCRIPT_DIR}/plugin"
 if $DRY_RUN; then dry "mkdir -p ${PLUGIN_DIR}"; else cmd "mkdir -p '${PLUGIN_DIR}'"; fi
 
 for pf in "${PLUGIN_FILES[@]}"; do
-    deploy_one "${LOCAL_PLUGIN_DIR}/${pf}" "${PLUGIN_DIR}/${pf}" "plugin/${pf}"
+    if $STANDALONE; then
+        fetch_one "${GITHUB_RAW}/plugin/${pf}" "${PLUGIN_DIR}/${pf}" "plugin/${pf}"
+    else
+        deploy_one "${LOCAL_PLUGIN_DIR}/${pf}" "${PLUGIN_DIR}/${pf}" "plugin/${pf}"
+    fi
 done
 
 # Register plugin with OpenClaw
@@ -337,15 +399,15 @@ else:
 
     # Copy to extensions directory
     if cmd "test -d '${CLAWKEEPER_DIR}'"; then
-        skip "ClawKeeper already installed at ${CLAWKEEPER_DIR}"; ((skipped++))
+        skip "ClawKeeper already installed at ${CLAWKEEPER_DIR}"; skipped=$((skipped + 1))
     elif $DRY_RUN; then
-        dry "Copy clawkeeper-plugin/ -> ${CLAWKEEPER_DIR}"; ((deployed++))
+        dry "Copy clawkeeper-plugin/ -> ${CLAWKEEPER_DIR}"; deployed=$((deployed + 1))
     else
         cmd "mkdir -p '${CLAWKEEPER_DIR}'"
         CK_SRC="/tmp/ClawKeeper/clawkeeper-plugin"
         cmd "test -d '${CK_SRC}'" || CK_SRC="/tmp/ClawKeeper"
         cmd "cp -r '${CK_SRC}'/* '${CLAWKEEPER_DIR}/'"
-        ok "ClawKeeper installed to ${CLAWKEEPER_DIR}"; ((deployed++))
+        ok "ClawKeeper installed to ${CLAWKEEPER_DIR}"; deployed=$((deployed + 1))
     fi
 fi
 
@@ -361,7 +423,7 @@ else
     else
         err "Could not restart gateway (no sudo?)"
         info "Restart manually: sudo systemctl restart openclaw"
-        ((errors++))
+        errors=$((errors + 1))
     fi
 fi
 
@@ -384,7 +446,7 @@ else
     else
         err "Defense Shield plugin not found in plugins list"
         info "Check logs: sudo journalctl -u openclaw -n 30"
-        ((errors++))
+        errors=$((errors + 1))
     fi
 
     if ! $SKIP_CLAWKEEPER; then
@@ -393,7 +455,7 @@ else
         else
             err "ClawKeeper not found in plugins list"
             info "Check: ls ${CLAWKEEPER_DIR}/"
-            ((errors++))
+            errors=$((errors + 1))
         fi
     fi
 fi
@@ -419,6 +481,16 @@ else
     skip "ClawKeeper not installed"
 fi
 
+# ── Standalone: download validation script ───────────────────────────
+
+if $STANDALONE; then
+    section "+" "Downloading validation script (standalone)"
+    fetch_one "${GITHUB_RAW}/validate.sh" "${SKILL_DIR}/validate.sh" "validate.sh"
+    if ! $DRY_RUN; then
+        cmd "chmod +x '${SKILL_DIR}/validate.sh'" 2>/dev/null || true
+    fi
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────
 
 echo ""
@@ -439,7 +511,11 @@ echo ""
 if ! $DRY_RUN && (( deployed > 0 )); then
     echo "  Next steps:"
     echo "    1. Verify: openclaw plugins list"
-    echo "    2. Validate: bash src/defense/validate.sh"
+    if $STANDALONE; then
+        echo "    2. Validate: bash ${SKILL_DIR}/validate.sh"
+    else
+        echo "    2. Validate: bash src/defense/validate.sh"
+    fi
     echo "    3. Check logs: sudo journalctl -u openclaw | grep defense-shield"
     echo ""
 fi

@@ -4309,10 +4309,27 @@ Since v2026.3.12, OpenClaw ships raw Kubernetes deployment manifests as an alter
 
 ## Appendix K — Prompt Injection Defense System
 
-### Quick Start
+### Quick Start (Standalone)
+
+No repo clone needed. On a fresh VPS with OpenClaw already running (after Phase 6):
 
 ```bash
-# On a fresh VPS with OpenClaw already running (after Phase 6):
+# One-liner — downloads installer from GitHub, auto-detects standalone mode:
+curl -fsSL https://raw.githubusercontent.com/mj-deving/openclaw-hardened/main/src/defense/install.sh | bash
+
+# Or download first, then run (recommended for inspection):
+curl -fsSL -o defense-install.sh https://raw.githubusercontent.com/mj-deving/openclaw-hardened/main/src/defense/install.sh
+bash defense-install.sh
+
+# Validate (downloaded automatically by the installer in standalone mode):
+bash ~/.openclaw/workspace/skills/security-defense/validate.sh
+```
+
+### Quick Start (Developer — Repo Checkout)
+
+If you have the repo checked out (for development or customization):
+
+```bash
 git clone https://github.com/mj-deving/openclaw-hardened.git
 cd openclaw-hardened
 bash src/defense/install.sh          # Install Defense Shield + ClawKeeper
