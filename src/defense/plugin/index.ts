@@ -15,7 +15,7 @@
  */
 
 import { createGovernor } from "../layer5-governor";
-import type { RedactionConfig, AccessControlConfig } from "../types";
+import type { RedactionConfig, AccessControlConfig, ScannerConfig } from "../types";
 import type { PluginApi } from "./types";
 import {
   createInboundHandler,
@@ -56,6 +56,13 @@ const defensePlugin = {
     const redactionConfig: RedactionConfig = { workDomains };
     const accessConfig: AccessControlConfig = { allowedDirectories };
 
+    // L2 scanner config — optional, requires an LLM call function
+    // When provided, L2 fires on high-risk (non-Telegram) channels only
+    const l2LlmCall = pluginConfig.l2LlmCall as ((prompt: string) => Promise<string>) | undefined;
+    const scannerConfig: ScannerConfig | undefined = l2LlmCall
+      ? { llmCall: l2LlmCall, sourceRisk: "high" }
+      : undefined;
+
     // Initialize L5 governor (stateful, lives for the process lifetime)
     const governor = createGovernor({
       spendLimitDollars: (pluginConfig.spendLimitDollars as number) ?? 50,
@@ -71,12 +78,12 @@ const defensePlugin = {
     // ── Hook 1: message_received → L1 inbound defense ────────
     api.registerHook(
       "message_received",
-      createInboundHandler({ autoBlockThreshold, logVerdicts, logger: api.logger }),
+      createInboundHandler({ autoBlockThreshold, logVerdicts, logger: api.logger, scannerConfig }),
       {
         name: "defense-shield-inbound",
         description:
-          "L1 sanitizer on inbound messages — blocks prompt injection, " +
-          "encoding attacks, wallet drains",
+          "L1 sanitizer on all inbound + L2 LLM scanner on high-risk " +
+          "(non-Telegram) channels when L1 detects something suspicious",
       }
     );
 
@@ -139,6 +146,7 @@ const defensePlugin = {
           `workDomains=${workDomains.length} | ` +
           `allowedDirs=${allowedDirectories.length} | ` +
           `cancelOnCritical=${cancelOnCritical} | ` +
+          `l2Scanner=${scannerConfig ? "enabled (high-risk channels)" : "disabled"} | ` +
           `logVerdicts=${logVerdicts}`
         );
       },

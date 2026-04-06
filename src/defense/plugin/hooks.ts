@@ -12,11 +12,12 @@
  */
 
 import { sanitize } from "../layer1-sanitizer";
+import { scan } from "../layer2-scanner";
 import { gate } from "../layer3-outbound";
 import { redact } from "../layer4-redaction";
 import { checkPath, checkUrl } from "../layer6-access";
 import type { CallGovernor } from "../layer5-governor";
-import type { RedactionConfig, AccessControlConfig } from "../types";
+import type { RedactionConfig, AccessControlConfig, ScannerConfig } from "../types";
 import type { PluginLogger, HookEvent } from "./types";
 
 /** Violation types that warrant message cancellation (not just redaction) */
@@ -37,18 +38,34 @@ const URL_TOOLS = new Set([
 // ── Hook 1: message_received (void) ──────────────────────────────────
 
 /**
- * L1 sanitizer on inbound messages. Pushes warning to event.messages[]
- * if high-severity injection detected.
+ * Channels considered trusted (paired DMs from the operator).
+ * Messages from these channels skip L2 scanner (too expensive for trusted input).
+ * All other channels (email, webhooks, web content, pipeline) get L2.
+ */
+const TRUSTED_CHANNELS = new Set(["telegram"]);
+
+/**
+ * L1 sanitizer on ALL inbound messages.
+ * L2 LLM scanner on HIGH-RISK sources only (non-telegram channels).
+ *
+ * L2 fires when: channel is not trusted AND L1 found detections but
+ * didn't auto-block (the ambiguous zone where deterministic checks
+ * see something but not enough to be certain).
  */
 export function createInboundHandler(config: {
   autoBlockThreshold: number;
   logVerdicts: boolean;
   logger: PluginLogger;
+  scannerConfig?: ScannerConfig;
 }) {
   return async (event: HookEvent): Promise<void> => {
     const content = (event.context?.content ?? event.content) as string | undefined;
     if (!content || typeof content !== "string" || content.length === 0) return;
 
+    const channelId = (event.context?.channelId ?? event.channelId ?? "unknown") as string;
+    const isTrustedChannel = TRUSTED_CHANNELS.has(channelId.toLowerCase());
+
+    // ── L1: Always runs (deterministic, instant, free) ────────
     const result = sanitize(content);
 
     if (config.logVerdicts) {
@@ -56,10 +73,11 @@ export function createInboundHandler(config: {
         `[defense-shield] inbound | detections=${result.totalDetections} | ` +
         `highSeverity=${result.highSeverity} | ` +
         `from=${event.context?.from ?? event.from ?? "unknown"} | ` +
-        `channel=${event.context?.channelId ?? event.channelId ?? "unknown"}`
+        `channel=${channelId} | trusted=${isTrustedChannel}`
       );
     }
 
+    // Auto-block: L1 found overwhelming evidence
     if (result.highSeverity && result.totalDetections > config.autoBlockThreshold) {
       config.logger.warn(
         `[defense-shield] BLOCKED inbound | detections=${result.totalDetections} | ` +
@@ -70,6 +88,49 @@ export function createInboundHandler(config: {
         `(${result.totalDetections} indicators). If this is legitimate, ` +
         "contact the operator."
       );
+      return;
+    }
+
+    // ── L2: Fires only for high-risk (untrusted) sources ──────
+    // Skip L2 for trusted channels (Telegram paired DMs from operator)
+    // Skip L2 if L1 found nothing (no reason to spend on classification)
+    if (
+      !isTrustedChannel &&
+      result.totalDetections > 0 &&
+      config.scannerConfig
+    ) {
+      config.logger.info(
+        `[defense-shield] L2 scanner triggered | channel=${channelId} | ` +
+        `l1Detections=${result.totalDetections}`
+      );
+
+      try {
+        const scanResult = await scan(result.cleaned, config.scannerConfig);
+
+        config.logger.info(
+          `[defense-shield] L2 verdict=${scanResult.verdict} | ` +
+          `score=${scanResult.score} | ` +
+          `categories=${scanResult.categories.join(",")}`
+        );
+
+        if (scanResult.verdict === "block") {
+          event.messages.push(
+            "Message blocked by L2 security scanner: " +
+            `${scanResult.reasoning} (score: ${scanResult.score}/100)`
+          );
+        } else if (scanResult.verdict === "review") {
+          event.messages.push(
+            "Security notice: this message was flagged for review " +
+            `(score: ${scanResult.score}/100). Processing with caution.`
+          );
+        }
+      } catch (err) {
+        config.logger.warn(
+          `[defense-shield] L2 scanner error: ${String(err)} — ` +
+          `falling back to L1-only verdict`
+        );
+        // L2 failure: fall through to L1-only verdict (already handled above)
+      }
     }
   };
 }
