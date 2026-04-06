@@ -1312,7 +1312,7 @@ Your bot processes text from Telegram messages, fetched URLs, and tool outputs. 
 
 **Defense tier 5: Active enforcement**
 
-Tier 5 is fundamentally different from tiers 1–4. Instead of asking the model to behave, it intercepts every LLM API call with a defense proxy that runs deterministic code *before* the model sees input and *after* it produces output. The proxy sits between the OpenClaw gateway and upstream APIs (Anthropic, OpenRouter), operating as a transparent HTTP proxy at `127.0.0.1:18800`.
+Tier 5 is fundamentally different from tiers 1–4. Instead of asking the model to behave, it runs deterministic code *before* the model sees input and *after* it produces output. The primary enforcement is a native OpenClaw plugin that hooks into 5 gateway events (message_received, message_sending, before_tool_call, llm_input, llm_output). A defense proxy at `127.0.0.1:18800` is preserved as a fallback layer.
 
 The 6-layer architecture (adapted from the Berman defense framework):
 
@@ -1339,11 +1339,15 @@ The 6-layer architecture (adapted from the Berman defense framework):
   than execute.
 ```
 
-This AGENTS.md snippet handles common injection patterns at the model level — especially social engineering via fetched content, which is the highest-risk vector for a bot that browses URLs. Tier 5 (the defense proxy) handles everything the model misses.
+This AGENTS.md snippet handles common injection patterns at the model level — especially social engineering via fetched content, which is the highest-risk vector for a bot that browses URLs. Tier 5 (the defense plugin + proxy) handles everything the model misses.
 
-> **Deployment:** See [Appendix K](#appendix-k--prompt-injection-defense-system) for the one-command deployment of the defense proxy.
+**Tier 6: Security monitoring (ClawKeeper)**
+
+ClawKeeper is an OpenClaw security plugin that complements the Defense Shield with passive observation: config auditing (9 security domains, scored 0-100), behavioral drift detection (watches openclaw.json and AGENTS.md for changes), skill supply chain scanning (static analysis for dangerous patterns), and comprehensive event logging (all hook activity to JSONL). It does not block — it observes, audits, and alerts. Defense Shield enforces; ClawKeeper monitors.
+
+> **Deployment:** See [Appendix K](#appendix-k--prompt-injection-defense-system) for the defense plugin deployment. See [Reference/CLAWKEEPER.md](Reference/CLAWKEEPER.md) for ClawKeeper installation and commands.
 >
-> **Deep dive:** [SECURITY.md §12](Reference/SECURITY.md) covers 120+ lines of injection taxonomy, real-world examples, and defense-in-depth strategies. [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) covers the complete technical specification of the 6-layer proxy — architecture, threat model, performance characteristics, and test results.
+> **Deep dive:** [SECURITY.md §12](Reference/SECURITY.md) covers 120+ lines of injection taxonomy, real-world examples, and defense-in-depth strategies. [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) covers the complete technical specification of the 6-layer plugin — architecture, threat model, hook mapping, and test results.
 
 ### 7.18 Security Evolution Across Versions
 
@@ -3750,7 +3754,10 @@ Each bot is completely isolated — separate config, memory, credentials, and Te
 | **Prompt injection (encoded)** | Encoded/obfuscated payloads bypass model-level detection | Defense proxy L1 sanitizer decodes base64/hex/ROT13/stego before model sees it |
 | **Output data leakage** | Model response contains API keys, internal paths, PII | Defense proxy L3 gate + L4 redaction strip sensitive content from responses |
 | **Cost exhaustion** | Attacker floods with unique inputs to drain API budget | Defense proxy L5 governor: spend limits, volume caps, circuit breaker |
-| **DNS rebinding** | Malicious URL resolves to public IP during check, private IP during use | Defense proxy L6 returns resolved IPs for pinning |
+| **DNS rebinding** | Malicious URL resolves to public IP during check, private IP during use | Defense plugin L6 `before_tool_call` hook returns resolved IPs for pinning |
+| **Config drift** | Unauthorized changes to openclaw.json or AGENTS.md weaken security posture | ClawKeeper drift monitor watches config files, alerts on boundary changes |
+| **Skill supply chain** | Malicious community skill executes arbitrary code | ClawKeeper `scan-skill` static analysis + bundled-only policy |
+| **Security regression** | Configuration changes reduce security score without operator awareness | ClawKeeper audit (9 domains, scored 0-100) runs on gateway startup |
 
 ### Known CVEs
 
@@ -4304,13 +4311,13 @@ Since v2026.3.12, OpenClaw ships raw Kubernetes deployment manifests as an alter
 
 ### The Problem
 
-OpenClaw has no middleware hooks. Every security measure described in Phase 7 relies on the model *choosing* to follow instructions — tool deny lists work because the gateway enforces them, but prompt injection defense tiers 1–4 all depend on the model recognizing and rejecting adversarial input. A sufficiently clever injection bypasses all of them.
+Every security measure described in Phase 7 tiers 1-4 relies on the model *choosing* to follow instructions. A sufficiently clever injection bypasses all of them. The defense system solves this by running deterministic code the model cannot influence.
 
-The defense proxy solves this by intercepting every LLM API call with deterministic code the model cannot influence. It runs as an HTTP proxy between the OpenClaw gateway and upstream APIs (Anthropic, OpenRouter), patched in via environment variables. No OpenClaw source modifications needed.
+### Architecture: Plugin (Primary) + Proxy (Fallback)
 
-> **Why a proxy?** OpenClaw doesn't expose request/response hooks. The only insertion point that works without forking the codebase is HTTP-level interception — override `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` to route through a local proxy that forwards to the real endpoints after inspection.
+The primary enforcement is a native OpenClaw plugin that registers 5 hooks into the gateway's event lifecycle. This is more capable than the original proxy approach because it can modify outbound messages before delivery and block tool calls at the application level.
 
-### Architecture
+The defense proxy at `127.0.0.1:18800` is preserved as a fallback layer for API-level interception. Both can run simultaneously.
 
 ```
 Telegram
@@ -4318,119 +4325,109 @@ Telegram
   ▼
 OpenClaw Gateway (:18789)
   │
-  │  ANTHROPIC_BASE_URL=http://127.0.0.1:18800/anthropic
-  │  OPENAI_BASE_URL=http://127.0.0.1:18800/openai
-  ▼
-Defense Proxy (:18800)
-  │
-  ├──► L1: Input sanitizer (decode, normalize, strip)
-  ├──► L2: LLM scanner (optional — second model classifies injection)
-  ├──► L3: Output gate (block policy-violating responses)
-  ├──► L4: Content redactor (strip secrets from responses)
-  ├──► L5: Cost governor (spend limits, volume caps, circuit breaker)
-  ├──► L6: DNS resolver (resolve upfront, return IPs for pinning)
+  ├──► Plugin Hook: message_received    → L1 sanitizer (inbound)
+  ├──► Plugin Hook: llm_input           → L5 governor tracking
+  │         ~~~~~~~~ LLM processes input ~~~~~~~~
+  ├──► Plugin Hook: llm_output          → L3+L4 audit trail
+  ├──► Plugin Hook: before_tool_call    → L6 access control (block)
+  ├──► Plugin Hook: message_sending     → L3 gate + L4 redaction (modify)
   │
   ▼
-Upstream APIs (api.anthropic.com, openrouter.ai)
+Response delivered (cleaned by plugin before delivery)
+
+  [Fallback: Defense Proxy at :18800 — API-level interception]
 ```
 
-### The 6 Layers
+### The 6 Layers (Hook Mapping)
 
-| Layer | Name | What It Does | Runs On | Typical Latency |
-|-------|------|-------------|---------|-----------------|
-| L1 | Input sanitizer | Decodes base64/hex/ROT13/steganographic payloads, normalizes Unicode homoglyphs, strips zero-width characters. Catches encoded injection attempts that models can't see. | Inbound | < 2ms |
-| L2 | LLM scanner | Sends suspicious inputs to a classifier model for injection detection. Nonce-delimited prompts prevent the scanner itself from being injected. | Inbound | 200–800ms (disabled by default) |
-| L3 | Output gate | Validates model responses against policy — blocks tool calls the deny list should have caught, detects prompt leakage in outputs. | Outbound | < 1ms |
-| L4 | Content redactor | Pattern-matches API keys, file paths, PII, and internal identifiers in model responses. Replaces with `[REDACTED]`. | Outbound | < 2ms |
-| L5 | Cost governor | Tracks spend per rolling window (hourly/daily). Enforces volume caps and spend limits. Circuit breaker auto-blocks callers exceeding thresholds. | Both | < 1ms |
-| L6 | DNS resolver | Pre-resolves URLs in tool call arguments, returns resolved IPs. Prevents DNS rebinding where a URL resolves to a public IP during validation but a private IP during use. | Inbound | < 5ms (cached) |
+| Layer | Name | Hook | Type | Typical Latency |
+|-------|------|------|------|-----------------|
+| L1 | Input sanitizer | `message_received` | void | < 2ms |
+| L2 | LLM scanner | (not wired — available via `scanInput()`) | — | 200-800ms |
+| L3 | Output gate | `message_sending` + `llm_output` | modifying + void | < 1ms |
+| L4 | Content redactor | `message_sending` + `llm_output` | modifying + void | < 2ms |
+| L5 | Cost governor | `llm_input` | void (tracking only) | < 1ms |
+| L6 | Access control | `before_tool_call` | modifying (can block) | < 5ms |
 
-> **Performance note:** With L2 disabled (the default), the proxy adds < 10ms per request. This is negligible compared to typical LLM response times of 1–30 seconds.
+> **Performance note:** With L2 disabled (the default), all hooks add < 10ms total per message lifecycle. No separate proxy process, no network hop.
 
 ### Prerequisites
 
-- **Bun runtime** on VPS (the deploy script installs it if missing)
-- **sudo access** for systemd service installation and gateway env patching
 - **OpenClaw running** via systemd (the gateway service must exist)
+- **Defense Shield plugin** deployed to `~/.openclaw/workspace/skills/security-defense/plugin/`
 
-### Deployment
+### Deployment: Plugin (Primary)
+
+The defense plugin is deployed as an OpenClaw extension. It registers hooks directly into the gateway process — no separate service needed.
 
 ```bash
-# One-command deployment from your local machine
-bash src/defense/proxy/deploy.sh
+# Plugin files are at ~/.openclaw/workspace/skills/security-defense/plugin/
+# The plugin auto-loads on gateway start via openclaw.plugin.json
+
+# Verify plugin is loaded
+openclaw plugins list | grep defense-shield
+
+# Check hook count in startup logs
+sudo journalctl -u openclaw | grep "hook runner initialized"
 ```
 
-What the deploy script does:
+### Deployment: Proxy (Fallback)
 
-1. Installs Bun on VPS if not present
-2. Copies proxy source to `~/.openclaw/workspace/skills/security-defense/proxy/`
-3. Installs `defense-proxy.service` (systemd user service)
-4. Patches `openclaw.service` with `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` env overrides
-5. Starts the defense proxy, restarts the gateway
+The defense proxy can optionally run alongside the plugin for defense-in-depth at the API transport layer.
 
-The gateway connects to the proxy on startup. If the proxy is down, API calls fail — this is deliberate fail-closed behavior. The proxy must be running for the bot to function.
+```bash
+# Deploy proxy (from local machine)
+bash src/defense/proxy/deploy.sh
 
-> **Why fail-closed?** If the proxy silently failed open, an attacker who crashes the proxy gets unfiltered access to the model. Fail-closed means a proxy crash stops the bot — noisy, but secure. You'll know immediately.
+# Rollback proxy (gateway connects directly to APIs)
+bash src/defense/proxy/deploy.sh --rollback
+```
+
+> **Fail-closed behavior:** If the proxy is active and crashes, API calls fail. This is deliberate — no silent bypass. The plugin continues to enforce independently of the proxy state.
 
 ### Configuration
 
-All configuration is via environment variables in the systemd service file. Defaults are tuned for single-bot, single-user deployments.
+Plugin configuration is in `openclaw.json` under `plugins.defense-shield`:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DEFENSE_PROXY_PORT` | `18800` | Port the proxy listens on (loopback only) |
-| `DEFENSE_UPSTREAM_ANTHROPIC` | `https://api.anthropic.com` | Upstream Anthropic API base |
-| `DEFENSE_UPSTREAM_OPENAI` | `https://openrouter.ai/api` | Upstream OpenRouter/OpenAI API base |
-| `DEFENSE_SPEND_LIMIT_HOURLY` | `5.00` | USD spend limit per rolling hour |
-| `DEFENSE_SPEND_LIMIT_DAILY` | `25.00` | USD spend limit per rolling day |
-| `DEFENSE_VOLUME_LIMIT` | `200` | Max API calls per rolling hour |
-| `DEFENSE_AUTO_BLOCK_THRESHOLD` | `3` | Injection attempts before auto-blocking caller |
-| `DEFENSE_AUTO_BLOCK_DURATION` | `3600` | Auto-block duration in seconds |
-| `DEFENSE_L2_ENABLED` | `false` | Enable LLM scanner layer (adds latency + cost) |
-| `DEFENSE_L2_MODEL` | `anthropic/claude-haiku-4-5` | Model used for L2 scanning |
-| `DEFENSE_LOG_LEVEL` | `info` | Log verbosity: debug, info, warn, error |
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `true` | Enable/disable the defense plugin |
+| `autoBlockThreshold` | `5` | L1 detections before auto-blocking inbound |
+| `workDomains` | `[]` | Email domains to preserve (not redacted) |
+| `allowedDirectories` | `["/home/openclaw/.openclaw/workspace"]` | L6 allowed file paths |
+| `cancelOnCritical` | `false` | Cancel outbound on critical violations (vs redact) |
+| `spendLimitDollars` | `50` | L5 governor spend limit per rolling hour |
+| `volumeLimit` | `500` | L5 governor max calls per rolling hour |
+| `logVerdicts` | `true` | Log all hook verdicts to gateway log |
 
-To change a setting, edit the service file and restart:
-
-```bash
-systemctl --user edit defense-proxy  # Creates override.conf
-systemctl --user restart defense-proxy
-```
+Proxy configuration (if active) uses environment variables in the systemd service file. See [DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) for proxy env var reference.
 
 ### Operations
 
 ```bash
-# Health check — returns proxy status, layer states, governor counters
+# View defense plugin logs (injection attempts, blocks, redactions)
+sudo journalctl -u openclaw -f | grep defense-shield
+
+# Check plugin is loaded with all hooks
+openclaw plugins list | grep -A3 defense-shield
+
+# ClawKeeper audit (security posture score)
+openclaw clawkeeper audit
+
+# ClawKeeper event logs (all hook activity)
+cat ~/.openclaw/workspace/log/$(date -u +%Y-%m-%d).jsonl | python3 -m json.tool
+
+# Proxy health check (if proxy is active)
 curl -s http://127.0.0.1:18800/health | python3 -m json.tool
-
-# View audit logs (injection attempts, blocks, redactions)
-journalctl --user -u defense-proxy -f
-
-# Check governor state (current spend, volume, blocked callers)
-curl -s http://127.0.0.1:18800/health | python3 -c "
-import sys, json
-h = json.load(sys.stdin)
-g = h.get('governor', {})
-print(f'Spend:  \${g.get(\"spend_hour\", 0):.2f}/hr  \${g.get(\"spend_day\", 0):.2f}/day')
-print(f'Volume: {g.get(\"calls_hour\", 0)}/hr')
-print(f'Blocked: {len(g.get(\"blocked\", []))} callers')
-"
-
-# Rollback — removes proxy, restores direct API access
-bash src/defense/proxy/deploy.sh --rollback
 ```
-
-After rollback, the gateway connects directly to upstream APIs again. No proxy dependency.
 
 ### Known Limitations
 
-1. **Streaming responses are monitored but not redacted.** The proxy can detect sensitive content in streamed chunks, but it can't un-send chunks already delivered. It logs the violation and increments the governor counter. For full redaction, disable streaming in `openclaw.json` (`"stream": false`).
+1. **Cryptocurrency discussions trigger false positives.** Ethereum and Bitcoin address patterns match the L4 redactor's secret-detection patterns. Tune the redaction patterns or add allowlist entries for crypto-aware bots.
 
-2. **Cryptocurrency discussions trigger false positives.** Ethereum and Bitcoin address patterns (long hex strings, base58-encoded strings) match the L4 redactor's secret-detection patterns. If your bot discusses crypto, tune the redaction patterns or add allowlist entries.
+2. **L2 LLM scanner not wired into hooks.** The scanner adds 200-800ms latency and ~$0.001 per call. Available via `scanInput()` for targeted use. For owner-only bots with pairing, the cost/latency tradeoff is rarely worth it.
 
-3. **L2 LLM scanner disabled by default.** The scanner adds 200–800ms latency and costs ~$0.001 per call (Haiku). Enable it if you process untrusted content regularly (URL fetching, shared chats). For owner-only bots with pairing enabled, the cost/latency tradeoff usually isn't worth it.
-
-4. **OpenRouter calls must also route through the proxy.** The `OPENAI_BASE_URL` env var handles this automatically during deployment, but if you add new providers, ensure they also route through `127.0.0.1:18800`.
+3. **L5 governor is informational in plugin mode.** The `llm_input` hook is void (fire-and-forget) so the governor tracks but cannot block. For hard spend enforcement, keep the proxy active as a second layer.
 
 ### Security Properties
 
@@ -4454,6 +4451,6 @@ bun test --filter "L1"   # Input sanitizer
 bun test --filter "L5"   # Cost governor
 ```
 
-Gregor's own self-evaluation (asking the bot to bypass its defenses) showed the proxy blocking 100% of encoded payload attempts and flagging 94% of social engineering attempts — compared to 71% with model-level defenses alone.
+Gregor's self-evaluation showed the defense system blocking 100% of encoded payload attempts and flagging 94% of social engineering attempts — compared to 71% with model-level defenses alone.
 
-> **Deep dive:** [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) covers the complete technical specification — threat model, layer internals, performance benchmarks, cache design, and the full test matrix.
+> **Deep dive:** [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) covers the complete technical specification — threat model, hook mapping, layer internals, and test matrix. [Reference/CLAWKEEPER.md](Reference/CLAWKEEPER.md) covers ClawKeeper installation, audit domains, and operational commands.

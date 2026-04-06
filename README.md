@@ -33,7 +33,8 @@ This repo closes those gaps with defense-in-depth, documented from first princip
 | 2. Exec gating | `exec.security: "full"` | Unrestricted shell with no audit trail |
 | 3. Network isolation | Loopback-only gateway (`127.0.0.1:18789`) | Remote exploitation, direct API access |
 | 4. Identity hardening | DM pairing + system prompt security | Impersonation, prompt extraction |
-| 5. Defense proxy | 6-layer prompt injection defense (`127.0.0.1:18800`) | Injection, exfiltration, credential leaks |
+| 5. Defense plugin | 6-layer prompt injection defense (5 native hooks) | Injection, exfiltration, credential leaks |
+| 6. ClawKeeper | Config auditing, drift detection, skill scanning | Config regression, supply chain, behavioral drift |
 
 Plus: zero community skills (bundled-only policy), supply chain lockdown, local embeddings.
 
@@ -50,9 +51,9 @@ A 6-layer defense system intercepts all LLM API calls, providing app-level prote
 | L5 | Call Governor | Spend/volume limits, duplicate detection, circuit breaker per caller |
 | L6 | Access Control | Path guards (30+ denied filenames), URL safety with DNS pinning, private IP blocking |
 
-The defense proxy runs as a Bun HTTP server at `127.0.0.1:18800`, transparently intercepting API calls via `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` environment variables. Includes a deploy script with `--rollback` support.
+The defense system runs as a native OpenClaw plugin with 5 hooks (message_received, message_sending, before_tool_call, llm_input, llm_output), providing pre-delivery enforcement. A proxy fallback at `127.0.0.1:18800` is preserved for defense-in-depth. ClawKeeper complements with config auditing, drift detection, and skill scanning.
 
-**162 tests** covering all attack vectors. See [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) for the full reference.
+**162 tests** covering all attack vectors. See [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) for the full defense reference and [Reference/CLAWKEEPER.md](Reference/CLAWKEEPER.md) for ClawKeeper.
 
 ## What You Get
 

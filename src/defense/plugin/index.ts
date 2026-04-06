@@ -4,124 +4,31 @@
  * Hooks into OpenClaw's plugin SDK to enforce the 6-layer defense system
  * at the message lifecycle level:
  *
- * - message:received  → L1 sanitizer on inbound (blocks high-severity)
- * - message:sent       → L3 gate + L4 redaction audit on outbound
- * - gateway:startup    → initialization and startup audit
+ * - message_received   → L1 sanitizer on inbound (blocks high-severity)
+ * - message_sending     → L3 gate + L4 redaction PRE-DELIVERY enforcement
+ * - before_tool_call    → L6 access control on file/URL tool calls
+ * - llm_input           → L5 governor tracking (spend/volume monitoring)
+ * - llm_output          → L3+L4 audit on raw LLM response text
  *
  * This replaces the defense proxy with native enforcement — no extra
  * process, no latency, no single point of failure.
  */
 
-import { sanitize } from "../layer1-sanitizer";
-import { gate } from "../layer3-outbound";
-import { redact } from "../layer4-redaction";
-import type { RedactionConfig } from "../types";
+import { createGovernor } from "../layer5-governor";
+import type { RedactionConfig, AccessControlConfig } from "../types";
+import type { PluginApi } from "./types";
+import {
+  createInboundHandler,
+  createOutboundEnforcementHandler,
+  createToolCallGuard,
+  createLlmInputTracker,
+  createLlmOutputAuditor,
+} from "./hooks";
 
 // Plugin configuration defaults
 const DEFAULT_AUTO_BLOCK_THRESHOLD = 5;
 const DEFAULT_WORK_DOMAINS: string[] = [];
-
-/**
- * OpenClaw Plugin API type (subset we use).
- * Full type from "openclaw/plugin-sdk" — we declare what we need
- * to avoid import dependency on the OpenClaw package.
- */
-interface PluginApi {
-  id: string;
-  name: string;
-  pluginConfig?: Record<string, unknown>;
-  logger: {
-    info: (msg: string) => void;
-    warn: (msg: string) => void;
-    error: (msg: string) => void;
-  };
-  registerHook: (
-    events: string | string[],
-    handler: (event: HookEvent) => Promise<void> | void,
-    opts?: { name?: string; description?: string }
-  ) => void;
-}
-
-interface HookEvent {
-  type: string;
-  action: string;
-  sessionKey: string;
-  context: Record<string, unknown>;
-  timestamp: Date;
-  messages: string[];
-}
-
-// ── Hook Handlers ────────────────────────────────────────────────────
-
-function createInboundHandler(config: {
-  autoBlockThreshold: number;
-  logVerdicts: boolean;
-  logger: PluginApi["logger"];
-}) {
-  return async (event: HookEvent): Promise<void> => {
-    const content = event.context.content as string | undefined;
-    if (!content || typeof content !== "string" || content.length === 0) return;
-
-    const result = sanitize(content);
-
-    if (config.logVerdicts) {
-      config.logger.info(
-        `[defense-shield] inbound | detections=${result.totalDetections} | ` +
-        `highSeverity=${result.highSeverity} | ` +
-        `from=${event.context.from ?? "unknown"} | ` +
-        `channel=${event.context.channelId ?? "unknown"}`
-      );
-    }
-
-    // Block if L1 finds overwhelming evidence
-    if (result.highSeverity && result.totalDetections > config.autoBlockThreshold) {
-      config.logger.warn(
-        `[defense-shield] BLOCKED inbound | detections=${result.totalDetections} | ` +
-        `stats=${JSON.stringify(result.stats)}`
-      );
-      // Push warning message back to the conversation
-      event.messages.push(
-        "⚠️ Message blocked by security defense: suspicious content detected " +
-        `(${result.totalDetections} indicators). If this is legitimate, ` +
-        "contact the operator."
-      );
-    }
-  };
-}
-
-function createOutboundHandler(config: {
-  redactionConfig: RedactionConfig;
-  logVerdicts: boolean;
-  logger: PluginApi["logger"];
-}) {
-  return async (event: HookEvent): Promise<void> => {
-    const content = event.context.content as string | undefined;
-    if (!content || typeof content !== "string" || content.length === 0) return;
-
-    // L3: Outbound content gate
-    const gateResult = gate(content);
-
-    // L4: Redaction check (we log but can't modify sent messages — they're already sent)
-    const redactResult = redact(content, config.redactionConfig);
-
-    const hasViolations = !gateResult.passed ||
-      redactResult.counts.apiKeys > 0 ||
-      redactResult.counts.emails > 0;
-
-    if (hasViolations && config.logVerdicts) {
-      config.logger.warn(
-        `[defense-shield] outbound violation | ` +
-        `gateViolations=${gateResult.violations.length} | ` +
-        `redactions=${JSON.stringify(redactResult.counts)} | ` +
-        `channel=${event.context.channelId ?? "unknown"}`
-      );
-    }
-
-    // Note: message:sent fires AFTER delivery — we can audit but not modify.
-    // For pre-delivery enforcement, the proxy approach is needed.
-    // The audit trail here catches leaks for investigation.
-  };
-}
+const DEFAULT_ALLOWED_DIRECTORIES = ["/home/openclaw/.openclaw/workspace"];
 
 // ── Plugin Registration ──────────────────────────────────────────────
 
@@ -135,49 +42,104 @@ const defensePlugin = {
       return;
     }
 
+    // ── Config extraction ──────────────────────────────────────
     const autoBlockThreshold =
       (pluginConfig.autoBlockThreshold as number) ?? DEFAULT_AUTO_BLOCK_THRESHOLD;
     const workDomains =
       (pluginConfig.workDomains as string[]) ?? DEFAULT_WORK_DOMAINS;
+    const allowedDirectories =
+      (pluginConfig.allowedDirectories as string[]) ?? DEFAULT_ALLOWED_DIRECTORIES;
+    const cancelOnCritical =
+      (pluginConfig.cancelOnCritical as boolean) ?? false;
     const logVerdicts = pluginConfig.logVerdicts !== false;
 
     const redactionConfig: RedactionConfig = { workDomains };
+    const accessConfig: AccessControlConfig = { allowedDirectories };
 
-    // ── Hook: message:received → L1 inbound defense ────────────
+    // Initialize L5 governor (stateful, lives for the process lifetime)
+    const governor = createGovernor({
+      spendLimitDollars: (pluginConfig.spendLimitDollars as number) ?? 50,
+      spendWindowMs: (pluginConfig.spendWindowMs as number) ?? 3_600_000,
+      volumeLimit: (pluginConfig.volumeLimit as number) ?? 500,
+      callerOverrides: new Map(),
+      lifetimeLimit: (pluginConfig.lifetimeLimit as number) ?? 10_000,
+      dedupTtlMs: (pluginConfig.dedupTtlMs as number) ?? 300_000,
+      circuitBreakerThreshold: (pluginConfig.circuitBreakerThreshold as number) ?? 10,
+      circuitBreakerWindowMs: 60_000,
+    });
+
+    // ── Hook 1: message_received → L1 inbound defense ────────
     api.registerHook(
-      "message:received",
-      createInboundHandler({
-        autoBlockThreshold,
-        logVerdicts,
-        logger: api.logger,
-      }),
+      "message_received",
+      createInboundHandler({ autoBlockThreshold, logVerdicts, logger: api.logger }),
       {
         name: "defense-shield-inbound",
-        description: "L1 sanitizer on inbound messages — blocks prompt injection, encoding attacks, wallet drains",
+        description:
+          "L1 sanitizer on inbound messages — blocks prompt injection, " +
+          "encoding attacks, wallet drains",
       }
     );
 
-    // ── Hook: message:sent → L3+L4 outbound audit ──────────────
+    // ── Hook 2: message_sending → L3+L4 pre-delivery enforcement
     api.registerHook(
-      "message:sent",
-      createOutboundHandler({
-        redactionConfig,
-        logVerdicts,
-        logger: api.logger,
+      "message_sending",
+      createOutboundEnforcementHandler({
+        redactionConfig, logVerdicts, cancelOnCritical, logger: api.logger,
       }),
       {
         name: "defense-shield-outbound",
-        description: "L3 gate + L4 redaction audit on outbound responses",
+        description:
+          "L3 gate + L4 redaction on outbound — modifies content to " +
+          "redact secrets, PII, injection artifacts before delivery",
       }
     );
 
-    // ── Hook: gateway:startup → initialization ─────────────────
+    // ── Hook 3: before_tool_call → L6 access control ────────
+    api.registerHook(
+      "before_tool_call",
+      createToolCallGuard({ accessConfig, logVerdicts, logger: api.logger }),
+      {
+        name: "defense-shield-tool-guard",
+        description:
+          "L6 access control on tool calls — blocks file access to " +
+          "sensitive paths and URL access to internal/private networks",
+      }
+    );
+
+    // ── Hook 4: llm_input → L5 governor tracking ────────────
+    api.registerHook(
+      "llm_input",
+      createLlmInputTracker({ governor, logVerdicts, logger: api.logger }),
+      {
+        name: "defense-shield-governor",
+        description:
+          "L5 governor on LLM calls — tracks spend, volume, dedup, " +
+          "and circuit breaker state (informational, cannot block)",
+      }
+    );
+
+    // ── Hook 5: llm_output → L3+L4 audit trail ──────────────
+    api.registerHook(
+      "llm_output",
+      createLlmOutputAuditor({ redactionConfig, logVerdicts, logger: api.logger }),
+      {
+        name: "defense-shield-llm-audit",
+        description:
+          "L3+L4 audit on raw LLM responses — logs violations for " +
+          "investigation even if message_sending catches them first",
+      }
+    );
+
+    // ── Startup hook → initialization ────────────────────────
     api.registerHook(
       "gateway:startup",
       async () => {
         api.logger.info(
           `[defense-shield] Initialized | threshold=${autoBlockThreshold} | ` +
-          `workDomains=${workDomains.length} | logVerdicts=${logVerdicts}`
+          `workDomains=${workDomains.length} | ` +
+          `allowedDirs=${allowedDirectories.length} | ` +
+          `cancelOnCritical=${cancelOnCritical} | ` +
+          `logVerdicts=${logVerdicts}`
         );
       },
       {
@@ -186,7 +148,10 @@ const defensePlugin = {
       }
     );
 
-    api.logger.info("[defense-shield] Plugin registered — L1 inbound + L3/L4 outbound");
+    api.logger.info(
+      "[defense-shield] Plugin registered — 5 hooks: " +
+      "L1 inbound, L3+L4 outbound, L6 tool guard, L5 governor, L3+L4 audit"
+    );
   },
 };
 
