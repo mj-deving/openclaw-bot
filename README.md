@@ -51,7 +51,7 @@ A 6-layer defense system intercepts all LLM API calls, providing app-level prote
 | L5 | Call Governor | Spend/volume limits, duplicate detection, circuit breaker per caller |
 | L6 | Access Control | Path guards (30+ denied filenames), URL safety with DNS pinning, private IP blocking |
 
-The defense system runs as a native OpenClaw plugin with 5 hooks (message_received, message_sending, before_tool_call, llm_input, llm_output), providing pre-delivery enforcement. A proxy fallback at `127.0.0.1:18800` is preserved for defense-in-depth. ClawKeeper complements with config auditing, drift detection, and skill scanning.
+The defense system runs as a native OpenClaw plugin with 5 hook events covering all 6 layers (L1+L2 share `message_received`, with L2 firing conditionally on high-risk channels). A proxy fallback at `127.0.0.1:18800` is preserved for defense-in-depth. ClawKeeper complements with config auditing, drift detection, and skill scanning.
 
 **162 tests** covering all attack vectors. See [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) for the full defense reference and [Reference/CLAWKEEPER.md](Reference/CLAWKEEPER.md) for ClawKeeper.
 

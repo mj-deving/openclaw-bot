@@ -185,7 +185,7 @@ These logs complement Defense Shield's violation-focused logging with comprehens
 | **Drift detection** | No | Yes (watches config/AGENTS changes) |
 | **Skill scanning** | No | Yes (static analysis for dangerous patterns) |
 | **Event logging** | Violation-focused (only logs when something triggers) | Comprehensive (logs all activity) |
-| **Hook count** | 5 hooks (all active enforcement) | 5 hooks (all passive logging) |
+| **Hook count** | 5 hook events, all 6 layers (L1+L2 share `message_received`) | 5 hooks (all passive logging) |
 | **Cost tracking** | L5 governor (enforces limits) | Audit finding (reports missing limits) |
 | **Architecture** | Library code compiled into plugin | Standalone JS plugin with CLI |
 

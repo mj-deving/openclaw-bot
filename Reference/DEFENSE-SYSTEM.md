@@ -55,7 +55,7 @@ The defense system runs as a native OpenClaw plugin, hooking into 5 gateway even
 
 | Hook | Type | Layers | What It Does |
 |------|------|--------|-------------|
-| `message_received` | void (fire-and-forget) | L1 | Sanitizes inbound text, pushes block warning to conversation |
+| `message_received` | void (fire-and-forget) | L1, L2 | L1: sanitizes inbound text (always). L2: LLM scanner fires conditionally on high-risk (non-Telegram) channels when L1 detects something but doesn't auto-block. Requires `l2LlmCall` config. |
 | `message_sending` | modifying (sequential) | L3, L4 | Gates outbound content, redacts secrets/PII before delivery, can cancel |
 | `before_tool_call` | modifying (sequential) | L6 | Checks file paths and URLs against access control, blocks denied |
 | `llm_input` | void (fire-and-forget) | L5 | Tracks spend/volume via governor, logs rate limit warnings |
@@ -279,7 +279,7 @@ A STRIDE analysis was performed on the defense system. All findings were fixed b
 ## Known Limitations
 
 1. **Cryptocurrency address false positives** -- ETH (0x + 40 hex chars), BTC, and Tron patterns can match non-address strings. Solana pattern was removed entirely due to excessive false positives. Current patterns flag but do not block.
-2. **L2 scanner not wired into hooks** -- L2 (LLM scanner) adds latency and cost to every request. Available via `scanInput()` for targeted use but not registered as a hook by default.
+2. **L2 scanner conditional on channel trust** -- L2 (LLM scanner) is wired into the `message_received` hook but fires only on untrusted channels (email, webhooks, pipeline, web — not Telegram paired DMs) and only when L1 found detections > 0 but didn't auto-block. Requires `l2LlmCall` function in plugin config to be enabled (disabled by default). Adds 200-800ms latency and ~$0.001 per call when it fires.
 3. **L5 governor is informational in plugin mode** -- The `llm_input` hook is void (fire-and-forget), so the governor can track but not block. It logs warnings when limits would be exceeded. The proxy's L5 enforcement was blocking. For hard spend limits, keep the proxy active as a fallback.
 4. **L5 state is ephemeral** -- Governor state resets on process restart. Acceptable because rolling windows rebuild from live traffic.
 5. **Proxy preserved but not primary** -- The defense proxy at 127.0.0.1:18800 is still deployed and functional. It is no longer the primary enforcement mechanism (the plugin handles that), but it provides a second layer of defense for API-level interception. Both can run simultaneously without conflict.
@@ -346,7 +346,7 @@ ssh vps 'sudo systemctl status defense-proxy'
 | Node.js | v22.22.0 |
 | Bun | 1.3.11 (installed during deploy) |
 | OS | Ubuntu 24.04 LTS |
-| Defense plugin | Native hooks (5 hooks registered) |
+| Defense plugin | Native hooks (5 hook events, all 6 layers covered) |
 | Defense proxy | 127.0.0.1:18800 (preserved as fallback, not primary) |
 | Gateway | 127.0.0.1:18789 |
 
@@ -354,14 +354,14 @@ ssh vps 'sudo systemctl status defense-proxy'
 
 **Phase 1 (initial):** Defense proxy at 127.0.0.1:18800 intercepting API calls via `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` env vars. Handled L1 inbound, L3+L4 outbound (non-streaming), L5 governor. L6 not enforced (file/URL access happens inside OpenClaw, not at API boundary).
 
-**Phase 2 (current):** Native plugin with 5 hooks. All 6 layers enforced at the application level. Key improvement: `message_sending` hook enables pre-delivery redaction (proxy could only redact non-streaming responses). `before_tool_call` hook enables L6 access control (proxy couldn't intercept tool calls). Proxy preserved as fallback.
+**Phase 2 (current):** Native plugin with 5 hook events covering all 6 layers at the application level. L2 scanner wired into `message_received` alongside L1 — fires conditionally on high-risk channels when L1 detects ambiguous input (requires `l2LlmCall` config). Key improvement: `message_sending` hook enables pre-delivery redaction (proxy could only redact non-streaming responses). `before_tool_call` hook enables L6 access control (proxy couldn't intercept tool calls). Proxy preserved as fallback.
 
 ### Layer Enforcement Comparison
 
 | Layer | Proxy (Phase 1) | Plugin (Phase 2) |
 |-------|-----------------|-------------------|
 | L1 (sanitizer) | On every API request | On `message_received` hook |
-| L2 (LLM scanner) | Not enabled (cost) | Not wired (available via `scanInput()`) |
+| L2 (LLM scanner) | Not enabled (cost) | Conditional via `message_received` (high-risk channels, L1 detections > 0, requires `l2LlmCall`) |
 | L3 (gate) | Non-streaming only | Pre-delivery via `message_sending` + audit via `llm_output` |
 | L4 (redaction) | Non-streaming only | Pre-delivery via `message_sending` + audit via `llm_output` |
 | L5 (governor) | Every API call | Tracking via `llm_input` (informational — void hook) |
@@ -421,8 +421,8 @@ The bot was given the defense system files and asked to evaluate them independen
 | `src/defense/types.ts` | Shared TypeScript types for all layers |
 | `src/defense/index.ts` | Entry point: scanInput(), re-exports all layers |
 | `src/defense/__tests__/*.test.ts` | 162 tests across 6 files |
-| `src/defense/plugin/index.ts` | Plugin registration: wires 5 hooks into OpenClaw |
-| `src/defense/plugin/hooks.ts` | Hook handler factories for all 5 event types |
+| `src/defense/plugin/index.ts` | Plugin registration: wires 5 hook events (all 6 layers) into OpenClaw |
+| `src/defense/plugin/hooks.ts` | Hook handler factories for all 5 event types (L1+L2 share `message_received`) |
 | `src/defense/plugin/types.ts` | Plugin-specific type definitions |
 | `src/defense/plugin/package.json` | Plugin package manifest |
 | `src/defense/proxy/server.ts` | Bun HTTP proxy server (fallback) |

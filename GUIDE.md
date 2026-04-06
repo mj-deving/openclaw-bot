@@ -4315,7 +4315,7 @@ Every security measure described in Phase 7 tiers 1-4 relies on the model *choos
 
 ### Architecture: Plugin (Primary) + Proxy (Fallback)
 
-The primary enforcement is a native OpenClaw plugin that registers 5 hooks into the gateway's event lifecycle. This is more capable than the original proxy approach because it can modify outbound messages before delivery and block tool calls at the application level.
+The primary enforcement is a native OpenClaw plugin that registers 5 hook events into the gateway's event lifecycle, covering all 6 defense layers. This is more capable than the original proxy approach because it can modify outbound messages before delivery, block tool calls at the application level, and run L2 LLM scanning conditionally on high-risk channels.
 
 The defense proxy at `127.0.0.1:18800` is preserved as a fallback layer for API-level interception. Both can run simultaneously.
 
@@ -4325,7 +4325,7 @@ Telegram
   ▼
 OpenClaw Gateway (:18789)
   │
-  ├──► Plugin Hook: message_received    → L1 sanitizer (inbound)
+  ├──► Plugin Hook: message_received    → L1 sanitizer (always) + L2 scanner (high-risk channels)
   ├──► Plugin Hook: llm_input           → L5 governor tracking
   │         ~~~~~~~~ LLM processes input ~~~~~~~~
   ├──► Plugin Hook: llm_output          → L3+L4 audit trail
@@ -4343,13 +4343,13 @@ Response delivered (cleaned by plugin before delivery)
 | Layer | Name | Hook | Type | Typical Latency |
 |-------|------|------|------|-----------------|
 | L1 | Input sanitizer | `message_received` | void | < 2ms |
-| L2 | LLM scanner | (not wired — available via `scanInput()`) | — | 200-800ms |
+| L2 | LLM scanner | `message_received` (high-risk channels only) | void | 200-800ms |
 | L3 | Output gate | `message_sending` + `llm_output` | modifying + void | < 1ms |
 | L4 | Content redactor | `message_sending` + `llm_output` | modifying + void | < 2ms |
 | L5 | Cost governor | `llm_input` | void (tracking only) | < 1ms |
 | L6 | Access control | `before_tool_call` | modifying (can block) | < 5ms |
 
-> **Performance note:** With L2 disabled (the default), all hooks add < 10ms total per message lifecycle. No separate proxy process, no network hop.
+> **Performance note:** L2 is conditional — it only fires on untrusted channels (not Telegram DMs) when L1 found detections > 0, and requires `l2LlmCall` in plugin config. On Telegram (the common case), all hooks add < 10ms total. No separate proxy process, no network hop.
 
 ### Prerequisites
 
@@ -4425,7 +4425,7 @@ curl -s http://127.0.0.1:18800/health | python3 -m json.tool
 
 1. **Cryptocurrency discussions trigger false positives.** Ethereum and Bitcoin address patterns match the L4 redactor's secret-detection patterns. Tune the redaction patterns or add allowlist entries for crypto-aware bots.
 
-2. **L2 LLM scanner not wired into hooks.** The scanner adds 200-800ms latency and ~$0.001 per call. Available via `scanInput()` for targeted use. For owner-only bots with pairing, the cost/latency tradeoff is rarely worth it.
+2. **L2 LLM scanner is conditional.** L2 is wired into the `message_received` hook but only fires on untrusted channels (email, webhooks, pipeline, web — not Telegram paired DMs) and only when L1 found detections but didn't auto-block. Requires `l2LlmCall` function in plugin config (disabled by default). Adds 200-800ms and ~$0.001 per call when it fires. For Telegram-only bots, L2 never triggers.
 
 3. **L5 governor is informational in plugin mode.** The `llm_input` hook is void (fire-and-forget) so the governor tracks but cannot block. For hard spend enforcement, keep the proxy active as a second layer.
 
