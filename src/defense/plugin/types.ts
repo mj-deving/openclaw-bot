@@ -15,11 +15,21 @@ export interface PluginApi {
   name: string;
   pluginConfig?: Record<string, unknown>;
   logger: PluginLogger;
+  runtime?: PluginRuntime;
   registerHook: (
     events: string | string[],
     handler: (event: HookEvent) => HookReturnType,
     opts?: { name?: string; description?: string }
   ) => void;
+}
+
+/** Subset of OpenClaw's PluginRuntime we need for L2 scanner */
+export interface PluginRuntime {
+  modelAuth: {
+    resolveApiKeyForProvider: (params: {
+      provider: string;
+    }) => Promise<{ apiKey?: string }>;
+  };
 }
 
 export interface PluginLogger {

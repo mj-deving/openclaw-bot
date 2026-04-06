@@ -56,12 +56,40 @@ const defensePlugin = {
     const redactionConfig: RedactionConfig = { workDomains };
     const accessConfig: AccessControlConfig = { allowedDirectories };
 
-    // L2 scanner config — optional, requires an LLM call function
-    // When provided, L2 fires on high-risk (non-Telegram) channels only
-    const l2LlmCall = pluginConfig.l2LlmCall as ((prompt: string) => Promise<string>) | undefined;
-    const scannerConfig: ScannerConfig | undefined = l2LlmCall
-      ? { llmCall: l2LlmCall, sourceRisk: "high" }
-      : undefined;
+    // L2 scanner — uses plugin runtime to resolve Anthropic API key,
+    // then makes direct fetch() calls to the Anthropic Messages API.
+    // Enabled by default if runtime is available; disable with l2Enabled: false
+    const l2Enabled = pluginConfig.l2Enabled !== false && !!api.runtime;
+    const l2Model = (pluginConfig.l2Model as string) ?? "claude-haiku-4-5-20251001";
+    let scannerConfig: ScannerConfig | undefined;
+
+    if (l2Enabled && api.runtime) {
+      const runtime = api.runtime;
+      const llmCall = async (prompt: string): Promise<string> => {
+        const auth = await runtime.modelAuth.resolveApiKeyForProvider({ provider: "anthropic" });
+        if (!auth?.apiKey) throw new Error("No Anthropic API key available for L2 scanner");
+        const resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": auth.apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: l2Model,
+            max_tokens: 1024,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+        if (!resp.ok) throw new Error(`Anthropic API error: ${resp.status}`);
+        const data = await resp.json() as { content?: Array<{ text?: string }> };
+        return data.content?.find(c => c.text)?.text ?? "";
+      };
+      scannerConfig = { llmCall, sourceRisk: "high" };
+      api.logger.info(`[defense-shield] L2 scanner enabled (model: ${l2Model})`);
+    } else {
+      api.logger.info("[defense-shield] L2 scanner disabled (no runtime or l2Enabled=false)");
+    }
 
     // Initialize L5 governor (stateful, lives for the process lifetime)
     const governor = createGovernor({
