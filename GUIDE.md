@@ -4379,7 +4379,7 @@ Response delivered (cleaned by plugin before delivery)
 | L5 | Cost governor | `llm_input` | void (tracking only) | < 1ms |
 | L6 | Access control | `before_tool_call` | modifying (can block) | < 5ms |
 
-> **Performance note:** L2 is conditional — it only fires on untrusted channels (not Telegram DMs) when L1 found detections > 0, and requires `l2LlmCall` in plugin config. On Telegram (the common case), all hooks add < 10ms total.
+> **Performance note:** L2 is conditional — it only fires on untrusted channels (not Telegram DMs) when L1 found detections > 0, and auto-activates when Anthropic auth is available. On Telegram (the common case), all hooks add < 10ms total.
 
 ### Prerequisites
 
@@ -4437,7 +4437,7 @@ cat ~/.openclaw/workspace/log/$(date -u +%Y-%m-%d).jsonl | python3 -m json.tool
 
 1. **Cryptocurrency discussions trigger false positives.** Ethereum and Bitcoin address patterns match the L4 redactor's secret-detection patterns. Tune the redaction patterns or add allowlist entries for crypto-aware bots.
 
-2. **L2 LLM scanner is conditional.** L2 is wired into the `message_received` hook but only fires on untrusted channels (email, webhooks, pipeline, web — not Telegram paired DMs) and only when L1 found detections but didn't auto-block. Requires `l2LlmCall` function in plugin config (disabled by default). Adds 200-800ms and ~$0.001 per call when it fires. For Telegram-only bots, L2 never triggers.
+2. **L2 LLM scanner is conditional.** L2 is wired into the `message_received` hook but only fires on untrusted channels (email, webhooks, pipeline, web — not Telegram paired DMs) and only when L1 found detections but didn't auto-block. Auto-activates via plugin runtime when Anthropic auth is available. Adds 200-800ms and ~$0.001 per call when it fires. For Telegram-only bots, L2 never triggers.
 
 3. **L5 governor is informational.** The `llm_input` hook is void (fire-and-forget) so the governor tracks but cannot block. Use external spend monitoring for hard limits.
 

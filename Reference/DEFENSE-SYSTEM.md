@@ -55,7 +55,7 @@ The defense system runs as a native OpenClaw plugin, hooking into 5 gateway even
 
 | Hook | Type | Layers | What It Does |
 |------|------|--------|-------------|
-| `message_received` | void (fire-and-forget) | L1, L2 | L1: sanitizes inbound text (always). L2: LLM scanner fires conditionally on high-risk (non-Telegram) channels when L1 detects something but doesn't auto-block. Requires `l2LlmCall` config. |
+| `message_received` | void (fire-and-forget) | L1, L2 | L1: sanitizes inbound text (always). L2: LLM scanner fires conditionally on high-risk (non-Telegram) channels when L1 detects something but doesn't auto-block. Auto-activates via plugin runtime when Anthropic auth is available. |
 | `message_sending` | modifying (sequential) | L3, L4 | Gates outbound content, redacts secrets/PII before delivery, can cancel |
 | `before_tool_call` | modifying (sequential) | L6 | Checks file paths and URLs against access control, blocks denied |
 | `llm_input` | void (fire-and-forget) | L5 | Tracks spend/volume via governor, logs rate limit warnings |
@@ -230,7 +230,7 @@ A STRIDE analysis was performed on the defense system. All findings were fixed b
 ## Known Limitations
 
 1. **Cryptocurrency address false positives** -- ETH (0x + 40 hex chars), BTC, and Tron patterns can match non-address strings. Solana pattern was removed entirely due to excessive false positives. Current patterns flag but do not block.
-2. **L2 scanner conditional on channel trust** -- L2 (LLM scanner) is wired into the `message_received` hook but fires only on untrusted channels (email, webhooks, pipeline, web — not Telegram paired DMs) and only when L1 found detections > 0 but didn't auto-block. Requires `l2LlmCall` function in plugin config to be enabled (disabled by default). Adds 200-800ms latency and ~$0.001 per call when it fires.
+2. **L2 scanner conditional on channel trust** -- L2 (LLM scanner) is wired into the `message_received` hook but fires only on untrusted channels (email, webhooks, pipeline, web — not Telegram paired DMs) and only when L1 found detections > 0 but didn't auto-block. Auto-activates via plugin runtime when Anthropic auth is available. Adds 200-800ms latency and ~$0.001 per call when it fires.
 3. **L5 governor is informational** -- The `llm_input` hook is void (fire-and-forget), so the governor can track but not block. It logs warnings when limits would be exceeded. Use external spend monitoring for hard limits.
 4. **L5 state is ephemeral** -- Governor state resets on process restart. Acceptable because rolling windows rebuild from live traffic.
 
