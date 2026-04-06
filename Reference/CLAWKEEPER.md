@@ -112,16 +112,31 @@ The audit checks 9+ security domains with findings scored by severity.
 - LOW finding: -2 points
 - INFO finding: 0 points (informational only)
 
-### Our Baseline Score: 29/100
+### Audit Score: 73/100 (post-harden)
 
-Many of ClawKeeper's findings flag config patterns we handle differently:
-- **Gateway binding:** We use `"loopback"` string, ClawKeeper expects `"127.0.0.1"` literal
-- **Spending limits:** We enforce via Defense Shield L5 governor (systemd env vars), not `openclaw.json`
-- **Sandbox mode:** We use `exec.security: "full"` instead of `sandbox.mode`
-- **Plaintext API keys:** Found in third-party `node_modules/` README files, not actual credentials
-- **TLS:** Not needed -- gateway is loopback-only, never internet-exposed
+Initial score was 63/100. After running `openclaw clawkeeper harden`, it rose to **73/100**. The harden step confirmed loopback binding and injected runtime constitution rules.
 
-The score reflects ClawKeeper's generic expectations vs our hardened-but-differently-configured deployment.
+**Remaining findings and their actual status:**
+
+| Severity | ID | Finding | Our Assessment |
+|----------|-----|---------|---------------|
+| **HIGH** | `SC-CROSS-001` | Cross-layer compound attack surface | Generic warning — it sees findings spanning MAESTRO layers and warns about chained exploits. Not actionable beyond "fix other findings." |
+| **MEDIUM** | `behavior.runtime-constitution` | Agent requires runtime constitution | **Already mitigated** — AGENTS.md has "Prompt Injection Defense" section with equivalent rules. ClawKeeper wants its own specific format. |
+| **MEDIUM** | `SC-GW-006` | TLS not enabled on gateway | **By design** — gateway is loopback-only (127.0.0.1). TLS on localhost adds overhead with zero security benefit. External access goes through SSH tunnel. |
+| **MEDIUM** | `SC-EXEC-003` | Sandbox mode not set to "all" | **By design** — we use `exec.security: "full"` which is OpenClaw's strongest exec sandbox. ClawKeeper checks a different config key. |
+| **LOW** | `SC-AC-005` | No rate limiting for messages | **Mitigated differently** — Telegram pairing limits senders to operator only. L5 governor provides API-level rate limiting. |
+| **INFO** | `SC-GW-004` | Port accessibility check | Requires `--deep` flag |
+| **INFO** | `SC-GW-005` | Browser relay port check | Requires `--deep` flag |
+| **INFO** | `SC-SKILL-001` | No skills installed | **False positive** — ClawKeeper's scanner doesn't see workspace skills. |
+| **INFO** | `SC-IOC-003` | IOC database check | Requires deep scan subscription |
+
+**Why the score doesn't reflect our actual security posture:**
+
+ClawKeeper audits `openclaw.json` and AGENTS.md — it can't see our systemd hardening (ReadOnlyPaths, ProtectSystem=strict, NoNewPrivileges), iptables egress filtering, auditd rules (25 immutable), or the Defense Shield plugin that runs L1-L6 enforcement on every message. Our own security assessment rates the posture at 7.2/10 with all P0-P2 items complete and a STRIDE-reviewed defense system.
+
+The 73/100 score reflects ClawKeeper's generic expectations for a vanilla OpenClaw install, not the actual security gaps of a hardened deployment.
+
+**Harden backup location:** `~/.openclaw/.clawkeeper/backups/` (timestamped directories with manifest.json + original configs). Rollback with `openclaw clawkeeper rollback`.
 
 ## Core Security Rules
 
