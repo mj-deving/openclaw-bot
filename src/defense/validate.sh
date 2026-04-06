@@ -58,32 +58,52 @@ run_cmd() {
 
 # ── Test harness ─────────────────────────────────────────────────────
 
+# run_bun_expr EXPR — execute a bun expression locally or remotely
+# Uses a temp file to avoid shell quoting hell with SSH
+run_bun_expr() {
+    local expr="$1"
+    if is_remote; then
+        # Write expression to a temp file on remote, execute, clean up
+        local tmp="/tmp/defense-validate-$$.ts"
+        ssh "$REMOTE" "cat > ${tmp}" <<< "$expr"
+        ssh "$REMOTE" "export PATH=\$HOME/.bun/bin:\$HOME/.npm-global/bin:\$PATH && bun run ${tmp} 2>&1; rm -f ${tmp}"
+    else
+        local tmp
+        tmp=$(mktemp /tmp/defense-validate-XXXXXX.ts)
+        echo "$expr" > "$tmp"
+        export PATH="$HOME/.bun/bin:$HOME/.npm-global/bin:$PATH"
+        bun run "$tmp" 2>&1
+        rm -f "$tmp"
+    fi
+}
+
 # assert_json LABEL BUN_EXPR JQ_CONDITION EXPECT_DESC
-# Runs bun -e with the expression, pipes through python3 to check condition
+# Runs bun expression, pipes through python3 to check JSON condition
 assert_json() {
     local label="$1" bun_expr="$2" condition="$3" expect="$4"
-    ((TOTAL++))
+    TOTAL=$((TOTAL + 1))
 
     local result
-    result=$(run_cmd "bun -e \"${bun_expr}\"" 2>&1) || true
+    result=$(run_bun_expr "$bun_expr" 2>&1) || true
 
     # Use python3 to evaluate the JSON condition (project convention)
     local check
-    check=$(python3 -c "
+    check=$(echo "$result" | python3 -c "
 import json, sys
 try:
-    d = json.loads('''${result}''')
-    print('PASS' if (${condition}) else 'FAIL')
+    d = json.loads(sys.stdin.read().strip())
+    cond = ${condition}
+    print('PASS' if cond else 'FAIL')
 except Exception as e:
     print('ERROR: ' + str(e))
 " 2>&1) || check="ERROR"
 
     if [[ "$check" == "PASS" ]]; then
         echo -e "  ${GREEN}PASS${NC}  ${label} -- ${expect}"
-        ((PASS++))
+        PASS=$((PASS + 1))
     else
         echo -e "  ${RED}FAIL${NC}  ${label} -- expected ${expect}, got: ${result}"
-        ((FAIL++))
+        FAIL=$((FAIL + 1))
     fi
 }
 
