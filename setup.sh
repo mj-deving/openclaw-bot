@@ -1,5 +1,5 @@
 #!/bin/bash
-# setup.sh — One-command OpenClaw (Gregor) installer for Ubuntu 24.04 VPS
+# setup.sh — One-command OpenClaw installer for Ubuntu 24.04 VPS
 #
 # Takes a fresh Ubuntu 22.04+ server and gets an OpenClaw Telegram bot running.
 # 13 idempotent steps: prerequisites, hardening, Node.js, OpenClaw, config, systemd.
@@ -64,7 +64,7 @@ parse_args() {
 }
 
 show_help() { cat <<'EOF'
-setup.sh — One-command OpenClaw (Gregor) installer
+setup.sh — One-command OpenClaw installer
 
 Usage:
   sudo bash setup.sh                       Interactive (prompts for secrets)
@@ -386,7 +386,7 @@ MSG
 main() {
     parse_args "$@"
     echo ""; echo "==========================================================="
-    echo "  OpenClaw (Gregor) VPS Installer v${SETUP_VERSION}"
+    echo "  OpenClaw VPS Installer v${SETUP_VERSION}"
     $DRY_RUN   && echo "  Mode: DRY RUN"   || true
     $RECONCILE && echo "  Mode: RECONCILE" || true
     echo "==========================================================="

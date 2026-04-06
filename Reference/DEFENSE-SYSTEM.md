@@ -16,7 +16,7 @@ This system fills that gap with a 6-layer defense architecture based on [Matthew
 
 ## Architecture
 
-The defense system runs as a native OpenClaw plugin, hooking into 5 gateway events. The proxy (`127.0.0.1:18800`) is preserved as a fallback but is not the primary enforcement mechanism.
+The defense system runs as a native OpenClaw plugin, hooking into 5 gateway events.
 
 ```
                      OpenClaw Gateway (:18789)
@@ -191,55 +191,6 @@ Controls:
 - DNS resolution with 3-second timeout
 - Returns resolved IP addresses for DNS pinning (prevents TOCTOU attacks where DNS changes between check and connection)
 
-## Defense Proxy
-
-**Files:** `src/defense/proxy/server.ts`, `src/defense/proxy/config.ts`
-**Runtime:** Bun HTTP server
-**Bind:** `127.0.0.1:18800` (loopback only)
-**systemd:** `defense-proxy.service` (ordered `Before=openclaw.service`)
-
-### How It Works
-
-The proxy intercepts all LLM API calls by setting `ANTHROPIC_BASE_URL=http://127.0.0.1:18800` and `OPENAI_BASE_URL=http://127.0.0.1:18800` in OpenClaw's systemd environment. Both the Anthropic SDK and OpenAI-compatible SDKs (OpenRouter) respect these variables and route through the proxy.
-
-**Request flow:**
-
-1. OpenClaw sends API request to proxy (thinking it is the real API)
-2. Proxy extracts the latest user message from request body
-3. **Inbound defense:** L1 sanitizer runs on user message; auto-blocks if threshold exceeded
-4. **Governor check:** L5 validates spend/volume/dedup/circuit breaker
-5. Proxy forwards request to real upstream API with original headers
-6. **Non-streaming response:** L3 gate + L4 redaction on response text; patched response returned
-7. **Streaming response:** Chunks passed through to client; text assembled for monitoring; violations logged but cannot be redacted (already sent)
-
-**API format handling:**
-
-- Anthropic Messages API: `/v1/messages` -- content blocks with `type: "text"`
-- OpenAI-compatible: `/v1/chat/completions` -- choices[0].message.content
-- Other paths (model lists, etc.): passed through to Anthropic upstream
-
-**Health endpoint:** `GET /health` returns governor state, uptime, and status.
-
-**Audit logging:** JSON entries to stderr (captured by journald). Events: `inbound_scan`, `inbound_blocked`, `governor_blocked`, `governor_cache_hit`, `outbound_violation`, `outbound_cleaned`, `streaming_violation_detected`, `upstream_error`.
-
-### Configuration (Environment Variables)
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `DEFENSE_PROXY_PORT` | 18800 | Proxy listen port |
-| `DEFENSE_PROXY_BIND` | 127.0.0.1 | Bind address |
-| `DEFENSE_ANTHROPIC_UPSTREAM` | https://api.anthropic.com | Real Anthropic API |
-| `DEFENSE_OPENROUTER_UPSTREAM` | https://openrouter.ai/api | Real OpenRouter API |
-| `DEFENSE_AUTO_BLOCK_THRESHOLD` | 5 | L1 detections before auto-block |
-| `DEFENSE_SPEND_LIMIT` | 50 | Max dollars per rolling window |
-| `DEFENSE_SPEND_WINDOW_MS` | 3600000 | Rolling window (1 hour) |
-| `DEFENSE_VOLUME_LIMIT` | 500 | Max calls per rolling window |
-| `DEFENSE_LIFETIME_LIMIT` | 10000 | Max calls per process lifetime |
-| `DEFENSE_DEDUP_TTL_MS` | 300000 | Duplicate cache TTL (5 min) |
-| `DEFENSE_CIRCUIT_BREAKER` | 10 | Rejections before auto-block |
-| `DEFENSE_WORK_DOMAINS` | (empty) | Comma-separated work email domains to preserve |
-| `DEFENSE_AUDIT_LOG` | true | Enable JSON audit logging |
-
 ## STRIDE Threat Model Summary
 
 A STRIDE analysis was performed on the defense system. All findings were fixed before completion.
@@ -280,9 +231,8 @@ A STRIDE analysis was performed on the defense system. All findings were fixed b
 
 1. **Cryptocurrency address false positives** -- ETH (0x + 40 hex chars), BTC, and Tron patterns can match non-address strings. Solana pattern was removed entirely due to excessive false positives. Current patterns flag but do not block.
 2. **L2 scanner conditional on channel trust** -- L2 (LLM scanner) is wired into the `message_received` hook but fires only on untrusted channels (email, webhooks, pipeline, web — not Telegram paired DMs) and only when L1 found detections > 0 but didn't auto-block. Requires `l2LlmCall` function in plugin config to be enabled (disabled by default). Adds 200-800ms latency and ~$0.001 per call when it fires.
-3. **L5 governor is informational in plugin mode** -- The `llm_input` hook is void (fire-and-forget), so the governor can track but not block. It logs warnings when limits would be exceeded. The proxy's L5 enforcement was blocking. For hard spend limits, keep the proxy active as a fallback.
+3. **L5 governor is informational** -- The `llm_input` hook is void (fire-and-forget), so the governor can track but not block. It logs warnings when limits would be exceeded. Use external spend monitoring for hard limits.
 4. **L5 state is ephemeral** -- Governor state resets on process restart. Acceptable because rolling windows rebuild from live traffic.
-5. **Proxy preserved but not primary** -- The defense proxy at 127.0.0.1:18800 is still deployed and functional. It is no longer the primary enforcement mechanism (the plugin handles that), but it provides a second layer of defense for API-level interception. Both can run simultaneously without conflict.
 
 ## Test Coverage
 
@@ -299,73 +249,31 @@ A STRIDE analysis was performed on the defense system. All findings were fixed b
 
 Run tests: `bun test src/defense/`
 
-## Deployment
-
-### Deploy (from local machine)
-
-```bash
-src/defense/proxy/deploy.sh
-```
-
-This script:
-1. Checks/installs Bun on VPS
-2. Copies proxy files to `~/.openclaw/workspace/skills/security-defense/proxy/`
-3. Installs `defense-proxy.service` systemd unit
-4. Patches `openclaw.service` with ANTHROPIC_BASE_URL and OPENAI_BASE_URL env vars
-5. Starts defense proxy, restarts OpenClaw gateway
-6. Verifies health endpoint
-
-### Rollback
-
-```bash
-src/defense/proxy/deploy.sh --rollback
-```
-
-Stops proxy, removes service, strips env vars from openclaw.service, restarts gateway. OpenClaw talks directly to APIs again.
-
-### Verify
-
-```bash
-# Health check (includes governor state)
-ssh vps 'curl -s http://127.0.0.1:18800/health' | python3 -m json.tool
-
-# Audit log stream
-ssh vps 'sudo journalctl -u defense-proxy -f'
-
-# Service status
-ssh vps 'sudo systemctl status defense-proxy'
-```
-
 ## Production Deployment Record
 
 ### Deployment Environment
 
 | Component | Version/Detail |
 |-----------|---------------|
-| OpenClaw | v2026.4.1 (da64a97) |
+| OpenClaw | v2026.4.1+ (da64a97) |
 | Node.js | v22.22.0 |
 | Bun | 1.3.11 (installed during deploy) |
 | OS | Ubuntu 24.04 LTS |
 | Defense plugin | Native hooks (5 hook events, all 6 layers covered) |
-| Defense proxy | 127.0.0.1:18800 (preserved as fallback, not primary) |
 | Gateway | 127.0.0.1:18789 |
 
-### Deployment Evolution
+### Enforcement Summary
 
-**Phase 1 (initial):** Defense proxy at 127.0.0.1:18800 intercepting API calls via `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` env vars. Handled L1 inbound, L3+L4 outbound (non-streaming), L5 governor. L6 not enforced (file/URL access happens inside OpenClaw, not at API boundary).
+Native plugin with 5 hook events covering all 6 layers at the application level. L2 scanner wired into `message_received` alongside L1 — fires conditionally on high-risk channels when L1 detects ambiguous input. `message_sending` hook enables pre-delivery redaction. `before_tool_call` hook enables L6 access control.
 
-**Phase 2 (current):** Native plugin with 5 hook events covering all 6 layers at the application level. L2 scanner wired into `message_received` alongside L1 — fires conditionally on high-risk channels when L1 detects ambiguous input (requires `l2LlmCall` config). Key improvement: `message_sending` hook enables pre-delivery redaction (proxy could only redact non-streaming responses). `before_tool_call` hook enables L6 access control (proxy couldn't intercept tool calls). Proxy preserved as fallback.
-
-### Layer Enforcement Comparison
-
-| Layer | Proxy (Phase 1) | Plugin (Phase 2) |
-|-------|-----------------|-------------------|
-| L1 (sanitizer) | On every API request | On `message_received` hook |
-| L2 (LLM scanner) | Not enabled (cost) | Conditional via `message_received` (high-risk channels, L1 detections > 0, requires `l2LlmCall`) |
-| L3 (gate) | Non-streaming only | Pre-delivery via `message_sending` + audit via `llm_output` |
-| L4 (redaction) | Non-streaming only | Pre-delivery via `message_sending` + audit via `llm_output` |
-| L5 (governor) | Every API call | Tracking via `llm_input` (informational — void hook) |
-| L6 (access control) | Not enforced | Blocking via `before_tool_call` |
+| Layer | Hook | Enforcement |
+|-------|------|-------------|
+| L1 (sanitizer) | `message_received` | Always active |
+| L2 (LLM scanner) | `message_received` | Conditional (high-risk channels, L1 detections > 0, auto-activates via plugin runtime when Anthropic auth is available) |
+| L3 (gate) | `message_sending` + `llm_output` | Pre-delivery + audit |
+| L4 (redaction) | `message_sending` + `llm_output` | Pre-delivery + audit |
+| L5 (governor) | `llm_input` | Tracking (informational -- void hook) |
+| L6 (access control) | `before_tool_call` | Blocking |
 
 ### Bot Self-Evaluation Results
 
@@ -401,8 +309,7 @@ The bot was given the defense system files and asked to evaluate them independen
 
 ### Current Operational State (as of deployment)
 
-- Both `defense-proxy` and `openclaw` services active
-- Proxy health endpoint returning `status: ok`
+- `openclaw` service active with defense plugin loaded
 - Governor state: 0 lifetime calls (freshly deployed)
 - Audit logging enabled (stderr → journald)
 - First production traffic expected on next cron heartbeat (every 30m)
@@ -425,8 +332,5 @@ The bot was given the defense system files and asked to evaluate them independen
 | `src/defense/plugin/hooks.ts` | Hook handler factories for all 5 event types (L1+L2 share `message_received`) |
 | `src/defense/plugin/types.ts` | Plugin-specific type definitions |
 | `src/defense/plugin/package.json` | Plugin package manifest |
-| `src/defense/proxy/server.ts` | Bun HTTP proxy server (fallback) |
-| `src/defense/proxy/config.ts` | Environment-based configuration |
-| `src/defense/proxy/defense-proxy.service` | systemd unit file |
-| `src/defense/proxy/deploy.sh` | Deploy and rollback script |
+| `src/defense/proxy/` | Defense proxy (inactive, code preserved in repo) |
 | `Reference/DEFENSE-SYSTEM.md` | This file (authoritative reference) |

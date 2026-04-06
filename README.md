@@ -58,7 +58,7 @@ This repo closes those gaps with code-enforced defense, not just model-level saf
 | **Tool restrictions** | `tools.deny: [gateway, nodes]` + `exec.security: full` | Self-reconfiguration, unrestricted shell |
 | **Network isolation** | Loopback-only gateway, egress filtering | Remote exploitation, data exfiltration |
 | **Identity hardening** | DM pairing + system prompt security | Impersonation, prompt extraction |
-| **Defense Shield** | 6-layer native plugin (5 hooks, all 6 layers) | Injection, encoding attacks, credential leaks |
+| **Defense Shield** | 6-layer native plugin (5 hook events covering all 6 layers) | Injection, encoding attacks, credential leaks |
 | **ClawKeeper** | Config auditing, drift detection, skill scanning | Config regression, supply chain, behavioral drift |
 
 ## Prompt Injection Defense
@@ -95,7 +95,7 @@ A 6-layer defense system runs as a native OpenClaw plugin, hooking into 5 gatewa
 
 **`install.sh`** — Deploys monitoring on top of existing OpenClaw: config template, health check, ops playbook, backup, auto-update, logrotate.
 
-**`src/defense/install.sh`** — Installs the defense system. Works standalone (downloads from GitHub) or from a repo checkout. Deploys Defense Shield plugin (6 layers, 5 hooks) + ClawKeeper (config auditing). Idempotent, supports `--dry-run`, `--uninstall`, `--remote HOST`.
+**`src/defense/install.sh`** — Installs the defense system. Works standalone (downloads from GitHub) or from a repo checkout. Deploys Defense Shield plugin (all 6 defense layers) + ClawKeeper (config auditing). Idempotent, supports `--dry-run`, `--uninstall`, `--remote HOST`.
 
 **`src/defense/validate.sh`** — Runs 12 attack payloads against the installed defense and reports PASS/FAIL. Works locally on VPS or via `--remote HOST`.
 

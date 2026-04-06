@@ -1312,7 +1312,7 @@ Your bot processes text from Telegram messages, fetched URLs, and tool outputs. 
 
 **Defense tier 5: Active enforcement**
 
-Tier 5 is fundamentally different from tiers 1–4. Instead of asking the model to behave, it runs deterministic code *before* the model sees input and *after* it produces output. The primary enforcement is a native OpenClaw plugin that hooks into 5 gateway events (message_received, message_sending, before_tool_call, llm_input, llm_output). A defense proxy at `127.0.0.1:18800` is preserved as a fallback layer.
+Tier 5 is fundamentally different from tiers 1–4. Instead of asking the model to behave, it runs deterministic code *before* the model sees input and *after* it produces output. The enforcement is a native OpenClaw plugin that hooks into 5 gateway events (message_received, message_sending, before_tool_call, llm_input, llm_output).
 
 The 6-layer architecture (adapted from the Berman defense framework):
 
@@ -1339,7 +1339,7 @@ The 6-layer architecture (adapted from the Berman defense framework):
   than execute.
 ```
 
-This AGENTS.md snippet handles common injection patterns at the model level — especially social engineering via fetched content, which is the highest-risk vector for a bot that browses URLs. Tier 5 (the defense plugin + proxy) handles everything the model misses.
+This AGENTS.md snippet handles common injection patterns at the model level — especially social engineering via fetched content, which is the highest-risk vector for a bot that browses URLs. Tier 5 (the defense plugin) handles everything the model misses.
 
 **Tier 6: Security monitoring (ClawKeeper)**
 
@@ -2108,13 +2108,13 @@ OpenClaw's SQLite database (`~/.openclaw/memory/main.sqlite`) accumulates embedd
 
 **Critical gotcha:** OpenClaw stores `updated_at` as millisecond timestamps. Cleanup queries must multiply `unixepoch()` by 1000 — see `Reference/DATABASE-MAINTENANCE.md` for safe queries.
 
-> **Full reference:** `Reference/DATABASE-MAINTENANCE.md` — root causes, remediation steps, health check queries, size thresholds, and Gregor's baseline audit.
+> **Full reference:** `Reference/DATABASE-MAINTENANCE.md` — root causes, remediation steps, health check queries, size thresholds, and a baseline audit.
 
 ### 10.7 PARA Memory Structure
 
-Gregor's default memory is flat daily markdown files (`memory/YYYY-MM-DD.md`). This works, but accumulates without categorization, decay, or consolidation. PARA (Projects/Areas/Resources/Archive) adds navigable organization and LLM-driven consolidation on top of memory-core — without replacing anything.
+The bot's default memory is flat daily markdown files (`memory/YYYY-MM-DD.md`). This works, but accumulates without categorization, decay, or consolidation. PARA (Projects/Areas/Resources/Archive) adds navigable organization and LLM-driven consolidation on top of memory-core — without replacing anything.
 
-> **Why not a knowledge graph?** At Gregor's scale (~365 daily files/year, ~240K tokens), BM25+vector hybrid search handles the corpus in milliseconds. Neo4j adds 2.7-4GB RAM overhead for marginal benefit. Manus ($2B acquisition) ran on 3 markdown files. The right answer is structured flat files. See `Reference/MEMORY-PLUGIN-RESEARCH.md §8` for the full decision analysis.
+> **Why not a knowledge graph?** At a typical bot's scale (~365 daily files/year, ~240K tokens), BM25+vector hybrid search handles the corpus in milliseconds. Neo4j adds 2.7-4GB RAM overhead for marginal benefit. Manus ($2B acquisition) ran on 3 markdown files. The right answer is structured flat files. See `Reference/MEMORY-PLUGIN-RESEARCH.md §8` for the full decision analysis.
 
 #### How Memory Works (with PARA)
 
@@ -3144,7 +3144,7 @@ Configuration is in [Phase 7.7](#77-plugins--selective-enable). Full analysis wi
 
 > **LCM troubleshooting — empty DAG:** If `lcm.db` exists but all tables show 0 rows, that's normal — LCM only populates the DAG when compaction triggers, which requires conversations long enough to approach the context threshold (`LCM_CONTEXT_THRESHOLD`, default 0.75). Short Telegram exchanges won't trigger compaction. Verify LCM is loaded: check gateway logs for `[lcm] Plugin loaded (enabled=true)`. The `(default)` vs `(override)` tag after the summarization model indicates whether the `LCM_SUMMARY_MODEL` env var was picked up — CLI commands show `(default)` because they don't load systemd env vars; the actual gateway process should show `(override)`.
 >
-> **To force-populate the DAG for testing:** Have a long conversation with Gregor (50+ back-and-forth messages), or send `/compact` to trigger manual compaction.
+> **To force-populate the DAG for testing:** Have a long conversation with your bot (50+ back-and-forth messages), or send `/compact` to trigger manual compaction.
 
 **Compaction** — When context nears the window limit, OpenClaw auto-summarizes older history, keeping recent messages verbatim. With LCM installed, compaction feeds into the DAG instead of discarding. You can also trigger it manually:
 ```
@@ -3512,7 +3512,7 @@ Add to the config chain:
 }
 ```
 
-> **RAM consideration:** The base model uses ~400-500 MB during inference. On a 4 GB VPS running Gregor and PAI pipeline, this is tight but feasible for occasional fallback use. Don't use the small model (~852 MB) or larger unless you have headroom. See [Reference/VOICE-AND-AUDIO.md](Reference/VOICE-AND-AUDIO.md#3-self-hosted-stt-options) for full model size tables.
+> **RAM consideration:** The base model uses ~400-500 MB during inference. On a 4 GB VPS running the bot and PAI pipeline, this is tight but feasible for occasional fallback use. Don't use the small model (~852 MB) or larger unless you have headroom. See [Reference/VOICE-AND-AUDIO.md](Reference/VOICE-AND-AUDIO.md#3-self-hosted-stt-options) for full model size tables.
 
 ### 15.7 Telegram Voice Limitations
 
@@ -3693,7 +3693,7 @@ openclaw cron add \
 
 Pipeline scripts for send/read/status are included in `src/pipeline/`.
 
-> **Cross-agent pipeline:** For the PAI pipeline that enables Gregor and Isidore Cloud to delegate tasks to each other (bidirectional, across Linux users), see [Appendix I](#appendix-i--pai-pipeline-cross-agent) and [Reference/PAI-PIPELINE.md](Reference/PAI-PIPELINE.md).
+> **Cross-agent pipeline:** For the PAI pipeline that enables the primary bot and the local agent to delegate tasks to each other (bidirectional, across Linux users), see [Appendix I](#appendix-i--pai-pipeline-cross-agent) and [Reference/PAI-PIPELINE.md](Reference/PAI-PIPELINE.md).
 
 ---
 
@@ -3751,9 +3751,9 @@ Each bot is completely isolated — separate config, memory, credentials, and Te
 | **Pipeline injection** | Unauthorized task submission via inbox/ | `chmod 700`, auditd monitoring |
 | **Shell bypass of deny list** | Bot modifies own config via `exec.security` shell | ReadOnlyPaths drop-in, egress filtering, config integrity cron |
 | **Cost overrun** | Unbounded token spend | Monitor with `/usage full`, set model tiers. See [Phase 13.7](#137-cost-anomaly-detection) for automated alerts |
-| **Prompt injection (encoded)** | Encoded/obfuscated payloads bypass model-level detection | Defense proxy L1 sanitizer decodes base64/hex/ROT13/stego before model sees it |
-| **Output data leakage** | Model response contains API keys, internal paths, PII | Defense proxy L3 gate + L4 redaction strip sensitive content from responses |
-| **Cost exhaustion** | Attacker floods with unique inputs to drain API budget | Defense proxy L5 governor: spend limits, volume caps, circuit breaker |
+| **Prompt injection (encoded)** | Encoded/obfuscated payloads bypass model-level detection | Defense plugin L1 sanitizer decodes base64/hex/ROT13/stego before model sees it |
+| **Output data leakage** | Model response contains API keys, internal paths, PII | Defense plugin L3 gate + L4 redaction strip sensitive content from responses |
+| **Cost exhaustion** | Attacker floods with unique inputs to drain API budget | Defense plugin L5 governor: spend limits, volume caps, circuit breaker |
 | **DNS rebinding** | Malicious URL resolves to public IP during check, private IP during use | Defense plugin L6 `before_tool_call` hook returns resolved IPs for pinning |
 | **Config drift** | Unauthorized changes to openclaw.json or AGENTS.md weaken security posture | ClawKeeper drift monitor watches config files, alerts on boundary changes |
 | **Skill supply chain** | Malicious community skill executes arbitrary code | ClawKeeper `scan-skill` static analysis + bundled-only policy |
@@ -4200,9 +4200,9 @@ The PAI pipeline enables two AI agents running as separate Linux users on the sa
 
 ### What It Does
 
-- **Forward pipeline (Gregor → Isidore Cloud):** Gregor submits complex tasks that need Opus-grade processing. Isidore's bridge service picks them up, processes via `claude -p`, and writes results.
-- **Reverse pipeline (Isidore Cloud → Gregor):** Isidore delegates tasks back to Gregor. An inotify watcher detects new files and processes them via `openclaw agent`.
-- **Auto-escalation:** Gregor's cron job classifies incoming messages by complexity and automatically routes complex ones to Isidore.
+- **Forward pipeline (bot → local agent):** The bot submits complex tasks that need Opus-grade processing. The local agent's bridge service picks them up, processes via `claude -p`, and writes results.
+- **Reverse pipeline (local agent → bot):** The local agent delegates tasks back to the bot. An inotify watcher detects new files and processes them via `openclaw agent`.
+- **Auto-escalation:** The bot's cron job classifies incoming messages by complexity and automatically routes complex ones to the local agent.
 
 ### Setup
 
@@ -4238,9 +4238,9 @@ chmod 700 ~/.openclaw/pipeline/escalate
 | Layer | Direction | What It Does | Key Script |
 |-------|-----------|-------------|------------|
 | 1 | — | Shared directory with setgid permissions | (infrastructure) |
-| 2 | Forward | Bridge watcher on Isidore Cloud's side | (my-pai-cloud-solution repo) |
+| 2 | Forward | Bridge watcher on local agent's side | (companion repo) |
 | 3 | Forward | Sender scripts: submit, result, status | `pai-submit.sh` |
-| 4 | Forward | Result notification to Gregor's inbox | `pai-result-watcher.py` |
+| 4 | Forward | Result notification to bot's inbox | `pai-result-watcher.py` |
 | 5 | Forward | Auto-escalation: cron classifies → systemd routes | `pai-escalation-submit.sh` |
 | 6 | Reverse | Reverse-task watcher: inotify → `openclaw agent` | `pai-reverse-handler.sh` |
 
@@ -4266,7 +4266,7 @@ journalctl --user -u pai-reverse --since "1 hour ago"
 
 - **Why two separate watchers?** systemd user-level path units can watch `~/` (escalation uses `PathChanged`) but cannot watch `/var/lib/` (result notification and reverse-tasks use Python inotify). Two different mechanisms for two different directory locations.
 - **Why two-stage escalation?** Haiku in cron sessions cannot reliably execute shell commands — it "role-plays" running them instead. Separating classification (AI) from execution (deterministic scripts) is the robust pattern.
-- **Why `openclaw agent` for reverse tasks?** It's the Gregor-side equivalent of `claude -p` — programmatic one-shot execution through the gateway without needing cron or inbox polling.
+- **Why `openclaw agent` for reverse tasks?** It's the bot-side equivalent of `claude -p` — programmatic one-shot execution through the gateway without needing cron or inbox polling.
 
 ---
 
@@ -4347,11 +4347,9 @@ bash src/defense/validate.sh --remote vps     # Validate remotely
 
 Every security measure described in Phase 7 tiers 1-4 relies on the model *choosing* to follow instructions. A sufficiently clever injection bypasses all of them. The defense system solves this by running deterministic code the model cannot influence.
 
-### Architecture: Plugin (Primary) + Proxy (Fallback)
+### Architecture: Native Plugin
 
-The primary enforcement is a native OpenClaw plugin that registers 5 hook events into the gateway's event lifecycle, covering all 6 defense layers. This is more capable than the original proxy approach because it can modify outbound messages before delivery, block tool calls at the application level, and run L2 LLM scanning conditionally on high-risk channels.
-
-The defense proxy at `127.0.0.1:18800` is preserved as a fallback layer for API-level interception. Both can run simultaneously.
+The enforcement is a native OpenClaw plugin that registers 5 hook events into the gateway's event lifecycle, covering all 6 defense layers. It can modify outbound messages before delivery, block tool calls at the application level, and run L2 LLM scanning conditionally on high-risk channels.
 
 ```
 Telegram
@@ -4368,8 +4366,6 @@ OpenClaw Gateway (:18789)
   │
   ▼
 Response delivered (cleaned by plugin before delivery)
-
-  [Fallback: Defense Proxy at :18800 — API-level interception]
 ```
 
 ### The 6 Layers (Hook Mapping)
@@ -4383,7 +4379,7 @@ Response delivered (cleaned by plugin before delivery)
 | L5 | Cost governor | `llm_input` | void (tracking only) | < 1ms |
 | L6 | Access control | `before_tool_call` | modifying (can block) | < 5ms |
 
-> **Performance note:** L2 is conditional — it only fires on untrusted channels (not Telegram DMs) when L1 found detections > 0, and requires `l2LlmCall` in plugin config. On Telegram (the common case), all hooks add < 10ms total. No separate proxy process, no network hop.
+> **Performance note:** L2 is conditional — it only fires on untrusted channels (not Telegram DMs) when L1 found detections > 0, and requires `l2LlmCall` in plugin config. On Telegram (the common case), all hooks add < 10ms total.
 
 ### Prerequisites
 
@@ -4405,20 +4401,6 @@ openclaw plugins list | grep defense-shield
 sudo journalctl -u openclaw | grep "hook runner initialized"
 ```
 
-### Deployment: Proxy (Fallback)
-
-The defense proxy can optionally run alongside the plugin for defense-in-depth at the API transport layer.
-
-```bash
-# Deploy proxy (from local machine)
-bash src/defense/proxy/deploy.sh
-
-# Rollback proxy (gateway connects directly to APIs)
-bash src/defense/proxy/deploy.sh --rollback
-```
-
-> **Fail-closed behavior:** If the proxy is active and crashes, API calls fail. This is deliberate — no silent bypass. The plugin continues to enforce independently of the proxy state.
-
 ### Configuration
 
 Plugin configuration is in `openclaw.json` under `plugins.defense-shield`:
@@ -4433,8 +4415,6 @@ Plugin configuration is in `openclaw.json` under `plugins.defense-shield`:
 | `spendLimitDollars` | `50` | L5 governor spend limit per rolling hour |
 | `volumeLimit` | `500` | L5 governor max calls per rolling hour |
 | `logVerdicts` | `true` | Log all hook verdicts to gateway log |
-
-Proxy configuration (if active) uses environment variables in the systemd service file. See [DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) for proxy env var reference.
 
 ### Operations
 
@@ -4451,8 +4431,6 @@ openclaw clawkeeper audit
 # ClawKeeper event logs (all hook activity)
 cat ~/.openclaw/workspace/log/$(date -u +%Y-%m-%d).jsonl | python3 -m json.tool
 
-# Proxy health check (if proxy is active)
-curl -s http://127.0.0.1:18800/health | python3 -m json.tool
 ```
 
 ### Known Limitations
@@ -4461,7 +4439,7 @@ curl -s http://127.0.0.1:18800/health | python3 -m json.tool
 
 2. **L2 LLM scanner is conditional.** L2 is wired into the `message_received` hook but only fires on untrusted channels (email, webhooks, pipeline, web — not Telegram paired DMs) and only when L1 found detections but didn't auto-block. Requires `l2LlmCall` function in plugin config (disabled by default). Adds 200-800ms and ~$0.001 per call when it fires. For Telegram-only bots, L2 never triggers.
 
-3. **L5 governor is informational in plugin mode.** The `llm_input` hook is void (fire-and-forget) so the governor tracks but cannot block. For hard spend enforcement, keep the proxy active as a second layer.
+3. **L5 governor is informational.** The `llm_input` hook is void (fire-and-forget) so the governor tracks but cannot block. Use external spend monitoring for hard limits.
 
 ### Security Properties
 
@@ -4470,7 +4448,6 @@ curl -s http://127.0.0.1:18800/health | python3 -m json.tool
 - **DNS pinning** — L6 resolves URLs once and returns the IP, preventing rebinding attacks where DNS changes between validation and use
 - **Circuit breaker** — Repeated injection attempts (above `DEFENSE_AUTO_BLOCK_THRESHOLD`) auto-block the caller for the configured duration
 - **Monotonic clock** — Rolling windows use monotonic time, preventing time-manipulation attacks on governor counters
-- **Fail-closed** — If the proxy crashes, the gateway cannot reach upstream APIs. No silent bypass.
 
 ### Testing
 
@@ -4485,6 +4462,6 @@ bun test --filter "L1"   # Input sanitizer
 bun test --filter "L5"   # Cost governor
 ```
 
-Gregor's self-evaluation showed the defense system blocking 100% of encoded payload attempts and flagging 94% of social engineering attempts — compared to 71% with model-level defenses alone.
+Bot self-evaluation showed the defense system blocking 100% of encoded payload attempts and flagging 94% of social engineering attempts — compared to 71% with model-level defenses alone.
 
 > **Deep dive:** [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) covers the complete technical specification — threat model, hook mapping, layer internals, and test matrix. [Reference/CLAWKEEPER.md](Reference/CLAWKEEPER.md) covers ClawKeeper installation, audit domains, and operational commands.
