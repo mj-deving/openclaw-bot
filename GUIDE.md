@@ -300,14 +300,19 @@ After installation, OpenClaw creates:
 
 ```
 /home/openclaw/
-├── .openclaw/                  # State directory (auto-created)
-│   ├── openclaw.json           # Main configuration
-│   ├── credentials/            # OAuth tokens, API keys
-│   ├── memory/                 # SQLite memory database
-│   ├── agents/                 # Agent workspace + system prompts
-│   └── logs/                   # Gateway logs
-└── workspace/                  # Agent working directory
+└── .openclaw/                  # State directory (auto-created)
+    ├── openclaw.json           # Main configuration (gateway writes on startup)
+    ├── auth-profiles.json      # OAuth tokens, API keys (0600 permissions)
+    ├── credentials/            # OAuth credential storage
+    ├── memory/                 # SQLite memory database
+    ├── agents/                 # Agent configs + system prompts
+    ├── workspace/              # Agent working directory (skills, files)
+    └── logs/                   # Gateway logs
 ```
+
+> **Note:** The workspace is at `~/.openclaw/workspace/`, not `~/workspace/`. All bot state lives under `~/.openclaw/`. This matters for systemd `ReadWritePaths` — you only need `/home/openclaw/.openclaw`.
+>
+> **Note:** `~/.openclaw/credentials/` may not be auto-created on all versions. Run `mkdir -p ~/.openclaw/credentials` before first gateway start to avoid `openclaw doctor` CRITICAL warnings.
 
 ### ✅ Phase 2 Checkpoint
 
@@ -395,6 +400,19 @@ openclaw models list --provider openai
 ```
 
 The browser flow redirects to OpenAI's consent page, then writes credentials to `auth-profiles.json`. No API key needed — billing is through your existing ChatGPT subscription.
+
+**Headless VPS:** The OAuth callback server binds `localhost:1455` (hardcoded). On a headless VPS without a browser, the redirect fails. SSH port forwarding (`-L 1455:localhost:1455`) causes "State mismatch" errors. Instead, run OAuth on your local machine and copy the credentials:
+
+```bash
+# On LOCAL machine:
+openclaw models auth login --provider openai-codex  # completes in browser
+
+# Copy to VPS:
+scp ~/.openclaw/agents/main/agent/auth-profiles.json VPS:~/.openclaw/auth-profiles.json
+ssh VPS "chmod 600 ~/.openclaw/auth-profiles.json"
+```
+
+See [Appendix C.4](#c4-provider-auth-on-headless-vps) for the full procedure.
 
 > **Important:** Subscription auth behavior (quotas, rate limits, model availability) follows your ChatGPT plan tier. Plus gets lower rate limits than Pro. Validate with `openclaw models status` and a live test message before production rollout.
 >
@@ -616,7 +634,7 @@ See [Reference/COST-AND-ROUTING.md](Reference/COST-AND-ROUTING.md) for the full 
 - [ ] *(Optional)* Fallback chain configured: `openclaw models fallbacks list` shows entries
 - [ ] *(Optional)* Model aliases set up: `/model haiku` works in Telegram
 - [ ] *(Optional)* OpenRouter configured: free and paid models accessible via aliases
-- [ ] *(Optional)* OpenAI Codex subscription auth verified: `openclaw models auth login --provider openai-codex` completed
+- [ ] *(Optional)* OpenAI Codex subscription auth verified — on headless VPS, use local-auth-then-copy (see [§3.1.2](#312-openai-codex-subscription-auth-oauth-no-api-key))
 
 ---
 
@@ -734,13 +752,18 @@ RestartSec=10
 NoNewPrivileges=true          # No privilege escalation (no setuid/capabilities)
 ProtectSystem=strict          # Filesystem read-only except listed paths
 ProtectHome=read-only         # Can't modify other users' files
-ReadWritePaths=/home/openclaw/.openclaw /home/openclaw/workspace
-# Protect config and lattice key from bot self-modification (see 7.3).
-# More specific ReadOnlyPaths overrides the broader ReadWritePaths above.
-ReadOnlyPaths=/home/openclaw/.openclaw/openclaw.json
-ReadOnlyPaths=/home/openclaw/.openclaw/workspace/lattice/identity.json
-# NOTE: auth-profiles.json must NOT be ReadOnlyPaths — gateway needs write
-# access for OAuth token refresh. Protected by auditd monitoring instead.
+ReadWritePaths=/home/openclaw/.openclaw
+# NOTE on ReadOnlyPaths (learned the hard way):
+#   - Do NOT add ReadOnlyPaths for openclaw.json — the gateway writes to it
+#     on startup (atomic rename). ReadOnlyPaths blocks this → EBUSY restart loop.
+#     Rely on file permissions (0600) and gateway deny-list instead.
+#   - Do NOT add ReadOnlyPaths for paths that don't exist yet (e.g., lattice/
+#     identity.json before first boot). systemd validates paths at service start
+#     and crashes with NAMESPACE (226) if the path is missing.
+#   - auth-profiles.json must NOT be ReadOnlyPaths — gateway needs write
+#     access for OAuth token refresh. Protected by auditd monitoring instead.
+# If you need ReadOnlyPaths, add them AFTER the first successful boot
+# once the gateway has created all expected files.
 PrivateTmp=true               # Isolated /tmp (no cross-process tmp attacks)
 ProtectKernelTunables=true    # Can't modify /proc/sys
 ProtectKernelModules=true     # Can't load kernel modules (no rootkits)
@@ -859,8 +882,8 @@ A human with shell access thinks before running commands, recognizes social engi
 
 | Threat | Mitigation | Section |
 |--------|-----------|---------|
-| AI reconfigures itself | `tools.deny: ["gateway"]` + `ReadOnlyPaths` on config | §7.2, §6 |
-| Shell bypasses tool deny list | systemd `ReadOnlyPaths` (kernel-enforced) | §7.3 |
+| AI reconfigures itself | `tools.deny: ["gateway"]` + file permissions (0600) + auditd | §7.2, §6 |
+| Shell bypasses tool deny list | systemd sandboxing + file permissions + auditd | §7.3 |
 | Data exfiltration via curl | Per-user egress filtering (HTTPS/DNS only) | §7.4 |
 | Prompt injection via Telegram | Telegram DM pairing + identity anchoring in system prompt | §7.7, §8 |
 | Malicious community skills | Bundled-only strategy (zero ClawHub installs) | §11 |
@@ -1002,7 +1025,7 @@ echo '"deny": []' >> ~/.openclaw/openclaw.json
 
 > **Why not drop exec.security to "safe"?** Because shell execution is what makes the bot useful — it powers skills, tool chains, and any task requiring system interaction. Removing it eliminates more capability than it adds security. Instead, protect the *targets* of shell abuse:
 >
-> 1. **ReadOnlyPaths** (Phase 6 systemd unit) — kernel-enforced read-only mount on `openclaw.json` and `lattice/identity.json`. The bot can't modify its own config even via shell.
+> 1. **File permissions + auditd** — `openclaw.json` is 0600, `gateway` is in the tool deny list, and auditd monitors all config changes. ReadOnlyPaths is not viable for `openclaw.json` (gateway writes to it on startup) or files that don't exist before first boot (causes NAMESPACE crash). See §6.1 systemd unit comments for details.
 > 2. **Per-user egress filtering** (§7.4) — restricts the `openclaw` user to HTTPS and DNS outbound only, blocking data exfiltration to arbitrary servers.
 > 3. **Config integrity monitoring** — daily cron that checksums critical files and alerts on changes.
 > 4. **auditd kernel audit logging** (§7.15) — records all file access and command execution at the kernel level. Immutable rules prevent an attacker from silently disabling the audit trail.
@@ -1011,9 +1034,9 @@ echo '"deny": []' >> ~/.openclaw/openclaw.json
 >
 > **What about per-session exec.security tiering?** Enterprise guidance recommends "minimum privileges per task" — e.g., Haiku cron jobs getting `deny` while Sonnet conversations keep `full`. As of v2026.3.24, OpenClaw's config model doesn't support per-session-type exec.security. The `exec.security` setting is global across all sessions. If a future version adds per-agent exec policies, revisit this — cron jobs don't need shell access.
 >
-> **ReadOnlyPaths hardened paths** (as of 2026-04-02):
-> - `openclaw.json` — config integrity
-> - `workspace/lattice/identity.json` — lattice key protection
+> **ReadOnlyPaths status** (revised 2026-04-06 after multi-bot deployment):
+> - ~~`openclaw.json`~~ — **cannot** be ReadOnlyPaths. The gateway writes to its own config on startup (atomic rename pattern). ReadOnlyPaths blocks this and causes an EBUSY restart loop. Use file permissions (0600) + `gateway` in deny list + auditd monitoring instead.
+> - ~~`workspace/lattice/identity.json`~~ — **cannot** be ReadOnlyPaths on first boot because the file doesn't exist yet. systemd validates ReadOnlyPaths at service start and crashes with NAMESPACE (226) if the path is missing. Add ReadOnlyPaths only after first successful boot.
 > - ~~`auth-profiles.json`~~ — **cannot** be ReadOnlyPaths because the gateway needs write access for OAuth token refresh. Protected by auditd monitoring (`-k openclaw-creds`) instead.
 
 ### 7.4 Per-User Egress Filtering
@@ -1081,14 +1104,17 @@ OpenClaw broadcasts its presence via mDNS by default. Disable it.
 {
   "plugins": {
     "enabled": true,
-    "allow": ["lossless-claw"],
+    // WARNING: Do NOT set "allow" unless you specifically need to restrict
+    // plugins. In v2026.4.5, "allow" acts as a whitelist — it silently blocks
+    // ALL unlisted plugins from loading, including Telegram. No error, just
+    // silent failure. Bundled plugins load via "entries" below.
     "slots": { "memory": "memory-core" },
     "entries": {
       "telegram": { "enabled": true },
-      "device-pair": { "enabled": false },
+      "device-pair": { "enabled": true },    // Required for Telegram pairing
       "memory-core": { "enabled": true },
-      "memory-lancedb": { "enabled": false },
-      "lossless-claw": { "enabled": true }
+      "memory-lancedb": { "enabled": false }
+      // Add lossless-claw only if installed (not available in fresh v2026.4.5)
     }
   }
 }
@@ -1379,7 +1405,7 @@ OpenClaw's built-in security has improved significantly across releases. This ta
 
 - [ ] Gateway bound to loopback only
 - [ ] Tool deny list configured
-- [ ] Shell bypass mitigations in place (ReadOnlyPaths drop-in for config + lattice key; auditd for auth-profiles)
+- [ ] Shell bypass mitigations in place (file permissions 0600 on config; auditd for config + auth-profiles; `gateway` in deny list)
 - [ ] Per-user egress filtering active (HTTPS + DNS only for openclaw user)
 - [ ] Audit logging active (auditd with OpenClaw rules and immutable flag)
 - [ ] mDNS disabled
@@ -3701,30 +3727,192 @@ Pipeline scripts for send/read/status are included in `src/pipeline/`.
 
 You can run multiple OpenClaw instances on the same VPS — each with its own config, Telegram bot, and personality. This is useful for testing or running specialized bots.
 
-### Setup
+> **Battle-tested:** This appendix was validated by deploying a second bot on the same VPS (v2026.4.5, OpenAI Codex subscription auth). Every gotcha documented below was encountered and fixed in production.
 
-1. **Create a new system user** for each bot:
-   ```bash
-   sudo useradd -m -s /bin/bash openclaw-bot2
-   ```
+### C.1 Create the User
 
-2. **Install OpenClaw** for the new user (same as Phase 2)
+```bash
+sudo useradd -m -s /bin/bash BOT2
 
-3. **Use a different gateway port:**
-   ```jsonc
-   { "gateway": { "port": 18790 } }
-   ```
+# If using the PAI pipeline, add to the pai group:
+sudo usermod -aG pai BOT2
+```
 
-4. **Create a new Telegram bot** via @BotFather
+### C.2 Install OpenClaw
 
-5. **Create a separate systemd service:**
-   ```bash
-   # /etc/systemd/system/openclaw-bot2.service
-   # Same as the main service but with:
-   #   User=openclaw-bot2
-   #   WorkingDirectory=/home/openclaw-bot2
-   #   ExecStart=... --port 18790
-   ```
+Switch to the new user and follow Phase 2:
+
+```bash
+sudo -u BOT2 -i
+
+# npm global prefix (required for fresh user)
+mkdir -p ~/.npm-global
+npm config set prefix '~/.npm-global'
+echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# Create credentials directory BEFORE first gateway start
+# (openclaw doctor reports CRITICAL if this is missing)
+mkdir -p ~/.openclaw/credentials
+
+# Install
+npm install -g openclaw@latest
+openclaw --version
+```
+
+### C.3 Configure
+
+Use a **different gateway port** for each bot:
+
+```jsonc
+{
+  "gateway": { "port": 18790, "mode": "local", "bind": "loopback" },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "botToken": "YOUR_BOT2_TOKEN",
+      "streaming": "off"
+    }
+  },
+  "plugins": {
+    "enabled": true,
+    "entries": {
+      "telegram": { "enabled": true },
+      "device-pair": { "enabled": true },
+      "memory-core": { "enabled": true }
+    }
+  }
+}
+```
+
+> **v2026.4.5 config changes** — if you're copying config from an older bot, update these:
+>
+> - **Streaming:** Use `"streaming": "off"` (string). The legacy `streamMode` and `blockStreaming` keys are no longer recognized.
+> - **plugins.allow:** Do NOT set `plugins.allow` unless you specifically need to restrict plugins. In v2026.4.5, `plugins.allow` acts as a **whitelist** — setting `plugins.allow: ["openai"]` silently blocks ALL other plugins from loading, including Telegram. The channel simply doesn't start with no error message. Bundled plugins load automatically via `plugins.entries`.
+> - **lossless-claw:** Don't reference `lossless-claw` in config unless the plugin is actually installed. Fresh v2026.4.5 installs don't include it; config references cause warnings.
+> - **device-pair:** Enable `device-pair` in `plugins.entries` if you want Telegram pairing to work.
+
+After writing config, validate and run the doctor:
+
+```bash
+openclaw config validate
+openclaw doctor --fix
+```
+
+### C.4 Provider Auth on Headless VPS
+
+**Anthropic setup-token** works on headless VPS — it's a TTY-based flow, no browser needed.
+
+**OpenAI Codex subscription auth** does NOT work on headless VPS:
+
+The `openclaw models auth login --provider openai-codex` command starts a callback server on `localhost:1455`. On a headless VPS, the browser redirect fails. SSH port forwarding (`-L 1455:localhost:1455`) causes "State mismatch" errors because the OAuth state cookie is tied to the origin.
+
+**Fix — local auth, then copy credentials:**
+
+```bash
+# 1. On your LOCAL machine (not the VPS), install openclaw temporarily:
+npm install -g openclaw
+
+# 2. Run OAuth locally (opens your browser):
+openclaw models auth login --provider openai-codex
+
+# 3. Copy the auth profile to VPS:
+scp ~/.openclaw/agents/main/agent/auth-profiles.json \
+    VPS:/home/BOT2/.openclaw/auth-profiles.json
+
+# 4. On VPS, fix ownership and permissions:
+sudo chown BOT2:BOT2 /home/BOT2/.openclaw/auth-profiles.json
+sudo chmod 600 /home/BOT2/.openclaw/auth-profiles.json
+```
+
+> **Model routing for OpenAI Codex:** Use `agents.defaults.model` (singular) — not `agents.defaults.models` (map). The models map format `{"openai-codex/gpt-5.4": {}}` causes the gateway to resolve `openai/gpt-5.4` and fail auth with "No API key found for provider openai." The singular key preserves the `openai-codex` provider prefix:
+>
+> ```jsonc
+> {
+>   "agents": {
+>     "defaults": {
+>       "model": "openai-codex/gpt-5.4"  // singular "model", NOT "models" map
+>     }
+>   }
+> }
+> ```
+
+### C.5 Create a Telegram Bot
+
+Create a new bot via @BotFather (`/newbot`). Each bot needs its own token.
+
+### C.6 Systemd Service
+
+```ini
+# /etc/systemd/system/BOT2.service
+[Unit]
+Description=OpenClaw Gateway (BOT2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=BOT2
+Group=BOT2
+WorkingDirectory=/home/BOT2
+
+ExecStart=/home/BOT2/.npm-global/bin/openclaw gateway --port 18790
+ExecStop=/bin/kill -SIGTERM $MAINPID
+
+Restart=on-failure
+RestartSec=10
+
+# Security hardening — same directives as Phase 6.
+# ReadWritePaths covers the entire .openclaw directory.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/BOT2/.openclaw
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=false   # V8 JIT needs W+X memory
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> **ReadWritePaths:** Only list `~/.openclaw` — that's where the workspace, config, memory, and logs all live. Do NOT add a separate `~/workspace` path; the workspace is at `~/.openclaw/workspace/`, already covered.
+>
+> **ReadOnlyPaths:** Do NOT add ReadOnlyPaths to the initial service file. systemd validates all ReadOnlyPaths at service start and crashes with NAMESPACE (226/EXIT_NAMESPACE) if any path doesn't exist. On a fresh install, files like `lattice/identity.json` aren't created until first boot. Add ReadOnlyPaths only after the first successful gateway start, and only for files you've confirmed exist. See Phase 6.1 for details.
+
+Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable BOT2
+sudo systemctl start BOT2
+
+# Verify it stays running (wait 15+ seconds for full init)
+sleep 15
+sudo systemctl status BOT2
+ss -tlnp | grep 18790
+```
+
+### C.7 Per-Bot Checklist
+
+- [ ] Unique Linux user with home directory
+- [ ] npm global prefix configured (`~/.npmrc` + PATH in `.bashrc`)
+- [ ] `~/.openclaw/credentials/` directory exists
+- [ ] OpenClaw installed and `--version` works
+- [ ] Unique gateway port (18790, 18791, ...)
+- [ ] Unique Telegram bot token
+- [ ] Config validated (`openclaw config validate`)
+- [ ] Doctor passes (`openclaw doctor --fix`)
+- [ ] `streaming: "off"` (not legacy keys)
+- [ ] No `plugins.allow` unless specifically needed
+- [ ] systemd service with ReadWritePaths (no ReadOnlyPaths on first boot)
+- [ ] Service starts and stays running 15+ seconds
+- [ ] Other bots still running (check all ports)
+- [ ] Per-user egress filtering rules (Phase 7.4) — add rules for the new user's UID
 
 Each bot is completely isolated — separate config, memory, credentials, and Telegram channel.
 
@@ -3749,7 +3937,7 @@ Each bot is completely isolated — separate config, memory, credentials, and Te
 | **Sessions tools** | Unsolicited messages, rogue parallel sessions | Allowed for proactive alerts (Supercolony monitoring). Monitor session activity in logs |
 | **Indirect prompt injection** | Malicious instructions in fetched content | System prompt hardening, tool deny list, egress filtering |
 | **Pipeline injection** | Unauthorized task submission via inbox/ | `chmod 700`, auditd monitoring |
-| **Shell bypass of deny list** | Bot modifies own config via `exec.security` shell | ReadOnlyPaths drop-in, egress filtering, config integrity cron |
+| **Shell bypass of deny list** | Bot modifies own config via `exec.security` shell | File permissions (0600), auditd monitoring, egress filtering, config integrity cron |
 | **Cost overrun** | Unbounded token spend | Monitor with `/usage full`, set model tiers. See [Phase 13.7](#137-cost-anomaly-detection) for automated alerts |
 | **Prompt injection (encoded)** | Encoded/obfuscated payloads bypass model-level detection | Defense plugin L1 sanitizer decodes base64/hex/ROT13/stego before model sees it |
 | **Output data leakage** | Model response contains API keys, internal paths, PII | Defense plugin L3 gate + L4 redaction strip sensitive content from responses |
@@ -3800,6 +3988,11 @@ Complete `openclaw.json` with all recommended settings:
 
   "agents": {
     "defaults": {
+      // Anthropic: use "models" map. OpenAI Codex: use singular "model" key.
+      // Example (Anthropic): "models": { "anthropic/claude-sonnet-4": {} }
+      // Example (OpenAI):    "model": "openai-codex/gpt-5.4"
+      // The "models" map resolves provider incorrectly for openai-codex — it
+      // strips the codex prefix and fails auth. Singular "model" preserves it.
       "models": { "anthropic/claude-sonnet-4": {} },
       "memorySearch": {
         "sources": ["memory"],
@@ -3818,7 +4011,7 @@ Complete `openclaw.json` with all recommended settings:
         }
       },
       "compaction": { "mode": "safeguard" },
-      "blockStreamingDefault": "off",   // Anti-duplicate: disable block-level streaming
+      "streaming": "off",               // Anti-duplicate (v2026.4.5+ format)
       "maxConcurrent": 4,
       "subagents": { "maxConcurrent": 8 }
     }
@@ -3846,8 +4039,9 @@ Complete `openclaw.json` with all recommended settings:
       "dmPolicy": "pairing",
       "groupPolicy": "allowlist",
       "groups": {},
-      "streamMode": "off",              // Anti-duplicate: no draft streaming
-      "blockStreaming": false            // Anti-duplicate: no block chunking
+      "streaming": "off"                // Anti-duplicate (v2026.4.5+ format)
+      // NOTE: Legacy keys "streamMode" and "blockStreaming" are no longer
+      // recognized in v2026.4.5+. Use "streaming": "off" (string) instead.
     }
   },
 
@@ -3873,14 +4067,14 @@ Complete `openclaw.json` with all recommended settings:
 
   "plugins": {
     "enabled": true,
-    "allow": ["lossless-claw"],
+    // Do NOT set "allow" — it silently blocks unlisted plugins (see §7.7).
     "slots": { "memory": "memory-core" },
     "entries": {
       "telegram": { "enabled": true },
-      "device-pair": { "enabled": false },
+      "device-pair": { "enabled": true },    // Required for Telegram pairing
       "memory-core": { "enabled": true },
-      "memory-lancedb": { "enabled": false },
-      "lossless-claw": { "enabled": true }
+      "memory-lancedb": { "enabled": false }
+      // lossless-claw: add only if installed (not in fresh v2026.4.5)
     }
   }
 }
