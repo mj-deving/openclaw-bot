@@ -72,24 +72,26 @@ ensure_state_file() {
 is_step_done() {
     local step="$1"
     ensure_state_file
-    python3 -c "
+    python3 - "$step" "$HARDEN_STATE" << 'PYCHECK' 2>/dev/null
 import json, sys
-d = json.load(open('${HARDEN_STATE}'))
-sys.exit(0 if '${step}' in d else 1)
-" 2>/dev/null
+step, state_path = sys.argv[1], sys.argv[2]
+d = json.load(open(state_path))
+sys.exit(0 if step in d else 1)
+PYCHECK
 }
 
 mark_step_done() {
     local step="$1"
     ensure_state_file
-    python3 -c "
-import json
+    python3 - "$step" "$HARDEN_STATE" << 'PYMARK'
+import json, sys
 from datetime import datetime, timezone
-d = json.load(open('${HARDEN_STATE}'))
-d['${step}'] = datetime.now(timezone.utc).isoformat()
-with open('${HARDEN_STATE}', 'w') as f:
+step, state_path = sys.argv[1], sys.argv[2]
+d = json.load(open(state_path))
+d[step] = datetime.now(timezone.utc).isoformat()
+with open(state_path, 'w') as f:
     json.dump(d, f, indent=2)
-"
+PYMARK
 }
 
 # ── Config helpers (python3-based, safe JSON) ───────────
@@ -97,10 +99,11 @@ with open('${HARDEN_STATE}', 'w') as f:
 config_get() {
     # Usage: config_get "agents.defaults.model"
     local key_path="$1"
-    python3 -c "
+    python3 - "$key_path" "$OPENCLAW_CONFIG" << 'PYGET' 2>/dev/null
 import json, sys
-c = json.load(open('${OPENCLAW_CONFIG}'))
-keys = '${key_path}'.split('.')
+key_path, config_path = sys.argv[1], sys.argv[2]
+c = json.load(open(config_path))
+keys = key_path.split('.')
 val = c
 for k in keys:
     if isinstance(val, dict) and k in val:
@@ -108,7 +111,7 @@ for k in keys:
     else:
         sys.exit(1)
 print(json.dumps(val) if isinstance(val, (dict, list)) else str(val))
-" 2>/dev/null
+PYGET
 }
 
 config_set() {
@@ -116,38 +119,40 @@ config_set() {
     # Value must be valid JSON (string, number, object, array, bool)
     local key_path="$1"
     local value="$2"
-    python3 -c "
-import json
-c = json.load(open('${OPENCLAW_CONFIG}'))
-keys = '${key_path}'.split('.')
+    python3 - "$key_path" "$value" "$OPENCLAW_CONFIG" << 'PYSET'
+import json, sys
+key_path, value_str, config_path = sys.argv[1], sys.argv[2], sys.argv[3]
+c = json.load(open(config_path))
+keys = key_path.split('.')
 parent = c
 for k in keys[:-1]:
     if k not in parent or not isinstance(parent[k], dict):
         parent[k] = {}
     parent = parent[k]
-parent[keys[-1]] = json.loads('${value}')
-with open('${OPENCLAW_CONFIG}', 'w') as f:
+parent[keys[-1]] = json.loads(value_str)
+with open(config_path, 'w') as f:
     json.dump(c, f, indent=2)
-"
+PYSET
 }
 
 config_delete() {
     # Usage: config_delete "path.to.key"
     local key_path="$1"
-    python3 -c "
-import json
-c = json.load(open('${OPENCLAW_CONFIG}'))
-keys = '${key_path}'.split('.')
+    python3 - "$key_path" "$OPENCLAW_CONFIG" << 'PYDEL'
+import json, sys
+key_path, config_path = sys.argv[1], sys.argv[2]
+c = json.load(open(config_path))
+keys = key_path.split('.')
 parent = c
 for k in keys[:-1]:
     if k not in parent:
-        exit(0)
+        sys.exit(0)
     parent = parent[k]
 if keys[-1] in parent:
     del parent[keys[-1]]
-with open('${OPENCLAW_CONFIG}', 'w') as f:
+with open(config_path, 'w') as f:
     json.dump(c, f, indent=2)
-"
+PYDEL
 }
 
 config_has() {

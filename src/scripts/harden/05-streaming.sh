@@ -14,7 +14,7 @@ skipped=0
 STEP="streaming.telegram"
 if is_step_done "$STEP"; then
     log_skip "Telegram streaming = off"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Setting Telegram streaming to 'off'"
     log_info "Prevents duplicate messages from draft streaming and block chunking."
@@ -26,7 +26,7 @@ else
         config_delete "channels.telegram.blockStreaming" 2>/dev/null || true
         mark_step_done "$STEP"
         log_done "Telegram streaming = off (legacy keys cleaned)"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -34,7 +34,7 @@ fi
 STEP="streaming.ack_scope"
 if is_step_done "$STEP"; then
     log_skip "ack reaction scope configured"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Setting ack reaction scope to group-mentions"
     log_info "Bot only reacts to messages that @mention it in groups."
@@ -42,7 +42,7 @@ else
         config_set "messages.ackReactionScope" '"group-mentions"'
         mark_step_done "$STEP"
         log_done "ackReactionScope = group-mentions"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 

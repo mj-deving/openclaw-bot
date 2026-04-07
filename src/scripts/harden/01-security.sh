@@ -14,7 +14,7 @@ skipped=0
 STEP="security.tool_profile"
 if is_step_done "$STEP"; then
     log_skip "tool profile = full"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Setting tool profile to 'full'"
     log_info "Grants read/write/edit/memory/web tools. Dangerous tools gated by deny list."
@@ -22,7 +22,7 @@ else
         config_set "tools.profile" '"full"'
         mark_step_done "$STEP"
         log_done "tool profile = full"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -30,7 +30,7 @@ fi
 STEP="security.tool_deny"
 if is_step_done "$STEP"; then
     log_skip "tool deny list configured"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Setting tool deny list: gateway, nodes, sessions_spawn, sessions_send"
     log_info "Prevents bot from reconfiguring itself, spawning rogue sessions."
@@ -38,7 +38,7 @@ else
         config_set "tools.deny" '["gateway", "nodes", "sessions_spawn", "sessions_send"]'
         mark_step_done "$STEP"
         log_done "tool deny list set"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -46,7 +46,7 @@ fi
 STEP="security.tool_allow"
 if is_step_done "$STEP"; then
     log_skip "tool allow list configured"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Setting tool allow: cron"
     log_info "Explicitly allows cron tool for autonomous scheduling."
@@ -54,7 +54,7 @@ else
         config_set "tools.allow" '["cron"]'
         mark_step_done "$STEP"
         log_done "tool allow = [cron]"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -62,7 +62,7 @@ fi
 STEP="security.exec"
 if is_step_done "$STEP"; then
     log_skip "exec.security = full"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Setting exec.security to 'full', ask to 'off'"
     log_info "Shell commands require full security context. No interactive ask prompts."
@@ -70,7 +70,7 @@ else
         config_set "tools.exec" '{"security": "full", "ask": "off"}'
         mark_step_done "$STEP"
         log_done "exec.security = full, ask = off"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -78,7 +78,7 @@ fi
 STEP="security.elevated"
 if is_step_done "$STEP"; then
     log_skip "elevated tools disabled"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Disabling elevated tools"
     log_info "Prevents privilege escalation via tool system."
@@ -86,7 +86,7 @@ else
         config_set "tools.elevated" '{"enabled": false}'
         mark_step_done "$STEP"
         log_done "elevated tools disabled"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -94,7 +94,7 @@ fi
 STEP="security.error_policy"
 if is_step_done "$STEP"; then
     log_skip "error policy configured"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Setting Telegram errorPolicy to 'once' with 30s cooldown"
     log_info "Prevents error spam. Bot reports first error, then silences for 30s."
@@ -103,7 +103,7 @@ else
         config_set "channels.telegram.errorCooldownMs" '30000'
         mark_step_done "$STEP"
         log_done "errorPolicy = once, cooldown = 30s"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -111,7 +111,7 @@ fi
 STEP="security.mdns"
 if is_step_done "$STEP"; then
     log_skip "mDNS disabled"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Disabling mDNS/Bonjour discovery"
     log_info "Prevents network reconnaissance of your bot instance."
@@ -119,7 +119,7 @@ else
         config_set "discovery.mdns" '{"mode": "off"}'
         mark_step_done "$STEP"
         log_done "mDNS = off"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -127,7 +127,7 @@ fi
 STEP="security.gateway_auth"
 if is_step_done "$STEP"; then
     log_skip "gateway auth + rate limiting configured"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Configuring gateway auth with rate limiting"
     log_info "Token auth + 10 attempts/60s window + 5min lockout."
@@ -140,7 +140,7 @@ else
         config_set "gateway.tailscale" '{"mode": "off"}'
         mark_step_done "$STEP"
         log_done "gateway: loopback, token auth, rate limited"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -148,7 +148,7 @@ fi
 STEP="security.config_command"
 if is_step_done "$STEP"; then
     log_skip "config command disabled in chat"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Disabling /config command in chat"
     log_info "Prevents bot from being reconfigured via Telegram messages."
@@ -156,7 +156,7 @@ else
         config_set "commands.config" 'false'
         mark_step_done "$STEP"
         log_done "commands.config = false"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -164,7 +164,7 @@ fi
 STEP="security.plugins_allow"
 if is_step_done "$STEP"; then
     log_skip "plugins.allow whitelist removed"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     if config_has "plugins.allow"; then
         log_todo "Removing plugins.allow (acts as whitelist in v2026.4.5, blocks Telegram)"
@@ -173,17 +173,17 @@ else
             config_delete "plugins.allow"
             mark_step_done "$STEP"
             log_done "plugins.allow removed — all bundled plugins can load"
-            ((applied++))
+            applied=$((applied + 1))
         fi
     else
         mark_step_done "$STEP"
         log_skip "plugins.allow not present (good)"
-        ((skipped++))
+        skipped=$((skipped + 1))
     fi
 fi
 
 log_summary "$applied" "$skipped"
 
-if ((applied > 0)); then
+if [ "$applied" -gt 0 ]; then
     log_warn "Restart the gateway to apply: sudo systemctl restart <service-name>"
 fi

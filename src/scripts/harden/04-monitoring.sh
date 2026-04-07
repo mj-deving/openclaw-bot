@@ -22,7 +22,7 @@ fi
 STEP="monitoring.health_check"
 if is_step_done "$STEP"; then
     log_skip "health-check.sh deployed"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Deploy health-check.sh to ~/scripts/"
     log_info "Checks gateway binding, memory DB, disk space, service status."
@@ -33,11 +33,11 @@ else
             chmod +x "${SCRIPTS_DIR}/health-check.sh"
             mark_step_done "$STEP"
             log_done "health-check.sh deployed"
-            ((applied++))
+            applied=$((applied + 1))
         else
             log_warn "health-check.sh not found in repo. Skipping."
             log_info "Copy manually from src/scripts/health-check.sh"
-            ((skipped++))
+            skipped=$((skipped + 1))
         fi
     fi
 fi
@@ -46,7 +46,7 @@ fi
 STEP="monitoring.backup"
 if is_step_done "$STEP"; then
     log_skip "backup.sh deployed"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Deploy backup.sh to ~/scripts/"
     log_info "Backs up openclaw.json, memory DB, workspace, auth profiles."
@@ -57,11 +57,11 @@ else
             chmod +x "${SCRIPTS_DIR}/backup.sh"
             mark_step_done "$STEP"
             log_done "backup.sh deployed"
-            ((applied++))
+            applied=$((applied + 1))
         else
             log_warn "backup.sh not found in repo. Skipping."
             log_info "Copy manually from src/scripts/backup.sh"
-            ((skipped++))
+            skipped=$((skipped + 1))
         fi
     fi
 fi
@@ -70,7 +70,7 @@ fi
 STEP="monitoring.auto_update"
 if is_step_done "$STEP"; then
     log_skip "auto-update.sh deployed"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Deploy auto-update.sh to ~/scripts/"
     log_info "Weekly OpenClaw update (stops gateway, npm update, restarts)."
@@ -81,10 +81,10 @@ else
             chmod +x "${SCRIPTS_DIR}/auto-update.sh"
             mark_step_done "$STEP"
             log_done "auto-update.sh deployed"
-            ((applied++))
+            applied=$((applied + 1))
         else
             log_warn "auto-update.sh not found in repo. Skipping."
-            ((skipped++))
+            skipped=$((skipped + 1))
         fi
     fi
 fi
@@ -93,14 +93,14 @@ fi
 STEP="monitoring.web_tools"
 if is_step_done "$STEP"; then
     log_skip "web tools enabled"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Enabling web search and fetch tools"
     if confirm; then
         config_set "tools.web" '{"search": {"enabled": true}, "fetch": {"enabled": true}}'
         mark_step_done "$STEP"
         log_done "web search + fetch enabled"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 

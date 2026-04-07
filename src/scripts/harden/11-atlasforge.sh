@@ -26,19 +26,19 @@ echo ""
 STEP="atlasforge.meta_dir"
 if is_step_done "$STEP"; then
     log_skip "meta directory exists"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     mkdir -p "$META_DIR"
     mark_step_done "$STEP"
     log_done "Created memory/meta/ directory"
-    ((applied++))
+    applied=$((applied + 1))
 fi
 
 # ── Pattern 1: Claw Score (self-audit) ──────────────────
 STEP="atlasforge.claw_score"
 if is_step_done "$STEP"; then
     log_skip "Claw Score template deployed"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Deploy Claw Score self-audit template"
     log_info "6-dimension self-assessment: memory coherence, task completion,"
@@ -103,7 +103,7 @@ Compare against previous scores if they exist. Note the trend.
 PROMPT
         mark_step_done "$STEP"
         log_done "Claw Score prompt deployed to memory/meta/claw-score-prompt.md"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -111,7 +111,7 @@ fi
 STEP="atlasforge.regressions"
 if is_step_done "$STEP"; then
     log_skip "Regressions file deployed"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Deploy failure-to-guardrail regression tracking"
     log_info "Every significant failure becomes a named regression loaded at boot."
@@ -154,7 +154,7 @@ AGENTS_APPEND
 
         mark_step_done "$STEP"
         log_done "Regressions file deployed to memory/meta/regressions.md"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -162,7 +162,7 @@ fi
 STEP="atlasforge.supersede"
 if is_step_done "$STEP"; then
     log_skip "Supersede tracking prompt deployed"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Deploy supersede tracking for memory hygiene"
     log_info "Prevents 'ghost facts' — stale information that was never explicitly removed."
@@ -203,7 +203,7 @@ Append findings to memory/meta/supersede-log.json:
 SUPERSEDE
         mark_step_done "$STEP"
         log_done "Supersede tracking prompt deployed to memory/meta/"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 

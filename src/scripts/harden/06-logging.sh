@@ -14,7 +14,7 @@ skipped=0
 STEP="logging.redaction"
 if is_step_done "$STEP"; then
     log_skip "log redaction configured"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Configuring sensitive data redaction in logs"
     log_info "Redacts Anthropic API keys, OpenAI keys, and Telegram bot tokens from logs."
@@ -23,7 +23,7 @@ else
         config_set "logging.redactPatterns" '["sk-ant-[\\w-]+", "sk-[A-Za-z0-9]{48,}", "\\d{5,}:[A-Za-z0-9_-]+"]'
         mark_step_done "$STEP"
         log_done "log redaction enabled (API keys, bot tokens)"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 

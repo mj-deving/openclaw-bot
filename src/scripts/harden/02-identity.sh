@@ -24,11 +24,11 @@ fi
 STEP="identity.agents_md"
 if is_step_done "$STEP"; then
     log_skip "AGENTS.md deployed"
-    ((skipped++))
+    skipped=$((skipped + 1))
 elif [[ -f "$AGENTS_FILE" ]]; then
     log_skip "AGENTS.md already exists at ${AGENTS_FILE}"
     mark_step_done "$STEP"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Deploy AGENTS.md to workspace"
     echo ""
@@ -82,14 +82,14 @@ else
     sed "s/{{BOT_NAME}}/${bot_name}/g" "$template" > "$AGENTS_FILE"
     mark_step_done "$STEP"
     log_done "AGENTS.md deployed (template: $(basename "$template"), name: ${bot_name})"
-    ((applied++))
+    applied=$((applied + 1))
 fi
 
 # ── Session scope ───────────────────────────────────────
 STEP="identity.session_scope"
 if is_step_done "$STEP"; then
     log_skip "session scope configured"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Setting session scope to per-channel-peer"
     log_info "Each Telegram user gets their own conversation thread."
@@ -97,7 +97,7 @@ else
         config_set "session.dmScope" '"per-channel-peer"'
         mark_step_done "$STEP"
         log_done "dmScope = per-channel-peer"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
@@ -105,7 +105,7 @@ fi
 STEP="identity.commands"
 if is_step_done "$STEP"; then
     log_skip "native commands configured"
-    ((skipped++))
+    skipped=$((skipped + 1))
 else
     log_todo "Enabling native commands and skills in chat"
     if confirm; then
@@ -113,12 +113,12 @@ else
         config_set "commands.nativeSkills" '"auto"'
         mark_step_done "$STEP"
         log_done "native commands = auto, skills = auto"
-        ((applied++))
+        applied=$((applied + 1))
     fi
 fi
 
 log_summary "$applied" "$skipped"
 
-if ((applied > 0)); then
+if [ "$applied" -gt 0 ]; then
     log_warn "Restart the gateway to apply: sudo systemctl restart <service-name>"
 fi
