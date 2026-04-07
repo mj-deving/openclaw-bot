@@ -1311,6 +1311,109 @@ Skipped — included transitively in v2026.4.1 upgrade. v2026.3.31 contains the 
 
 ---
 
+## v2026.4.2
+
+**Upgrade: v2026.4.1 → v2026.4.2** on Gregor (auto-update). Dismas deployed fresh on v2026.4.5 on 2026-04-06.
+
+> **Scope:** Security-focused point release. No new features. v2026.4.3 and v2026.4.4 were never published (internal/beta only).
+
+### Security (CVEs Fixed)
+
+1. **CVE-2026-34425** (HIGH) — Exec script preflight validation skipped on complex invocations (pipes, chained interpreters). Allows bypassing exec approval for crafted shell commands.
+   - **Impact:** Critical for our `exec.security: "full"` posture. Closes a shell bypass vector. **BENEFITS**
+
+2. **CVE-2026-34426** (MEDIUM-HIGH) — Approval bypass via unvalidated environment variables. Attacker can inject env vars that skip approval checks.
+   - **Impact:** Hardens tool approval system. **BENEFITS**
+
+3. **CVE-2026-33580** (MEDIUM) — Nextcloud Talk webhook missing rate limiting on shared secret auth.
+   - **Impact:** We don't use Nextcloud Talk. **NONE**
+
+### Bug Fixes
+
+4. **Config startup writes** — Continued fix for atomic rename stability (inherited from v2026.4.1 #15).
+   - **Impact:** Reduces EBUSY risk on restart. **BENEFITS**
+
+### Operational Notes
+
+- Auto-updated via weekly cron (Sun 04:00).
+- No config changes required.
+- Gregor remains on v2026.4.2 as of 2026-04-07.
+
+---
+
+## v2026.4.5
+
+**Fresh install on Dismas** 2026-04-06. Significant feature + security jump from v2026.4.2.
+
+> **Scope:** Major release with breaking changes. v2026.4.3/4.4 were internal builds, never shipped.
+
+### Breaking Changes
+
+1. **Legacy config aliases removed** — `talk.voiceId`, `talk.apiKey`, `agents.*.sandbox.perSession`, `browser.ssrfPolicy.allowPrivateNetwork` removed.
+   - **Impact:** None of these were in our config. Run `openclaw doctor --fix` to auto-migrate if present. **NONE**
+
+2. **CLI provider backends removed** — Bundled CLI text-provider backends and `agents.defaults.cliBackends` config surface removed.
+   - **Impact:** We don't use CLI backends. **NONE**
+
+3. **Anthropic backend removed from onboarding** — Claude CLI no longer offered in new setup flows.
+   - **Impact:** Existing Gregor auth profiles unaffected. New bots must use OAuth or API key directly. **NOTED**
+
+4. **`tools.allow` acts as whitelist** — Setting `tools.allow: ["cron"]` disables ALL other tools (read, write, edit, shell). Must use `tools.alsoAllow` for additive behavior.
+   - **Impact:** Broke Dismas file tools on first deploy. Fixed by switching to `tools.alsoAllow`. **APPLIED**
+   - **Guide:** Updated hardening script 01-security.sh. **GUIDE**
+
+5. **`plugins.allow` acts as whitelist** — Setting `plugins.allow: ["openai"]` silently blocks bundled plugins (Telegram, browser, etc.) from loading. No error in logs — channel simply doesn't start.
+   - **Impact:** Broke Dismas Telegram channel. Fixed by removing `plugins.allow` entirely. **APPLIED**
+   - **Guide:** Updated Appendix C and hardening script. **GUIDE**
+
+6. **`agents.defaults.model` (singular) required for Codex OAuth** — Using `agents.defaults.models` (plural map) with `openai-codex/gpt-5.4` causes gateway to resolve to `openai/gpt-5.4` and fail auth. Must use singular `model` key.
+   - **Impact:** Broke Dismas model routing. Fixed with singular key. **APPLIED**
+   - **Guide:** Updated Appendix E. **GUIDE**
+
+7. **Streaming config format** — `streamMode` and `blockStreaming` are legacy. Current format: `streaming: "off"|"partial"|"block"|"progress"` (string enum).
+   - **Impact:** Legacy keys cause config warnings on startup. Fixed by using `streaming: "off"`. **APPLIED**
+
+### New Features
+
+8. **Media generation tools** — Built-in `video_generate`, `music_generate` (Google Lyria, MiniMax, Runway, etc.).
+   - **Impact:** Available on Dismas. Not configured. **CONSIDER**
+
+9. **New provider support** — Qwen, Fireworks AI, StepFun, Amazon Bedrock.
+   - **Impact:** Available for fallback chains if needed. **NOTED**
+
+10. **Memory dreaming phases** — Light/deep/REM phases with configurable `recencyHalfLifeDays`, `maxAgeDays`, dream diary UI.
+    - **Impact:** New memory consolidation system. Our PARA crons may overlap. **INVESTIGATE**
+
+11. **Multilingual Control UI** — Chinese, Portuguese, German, Spanish, Japanese, Korean, French, Turkish, Indonesian, Polish, Ukrainian.
+    - **Impact:** Nice for Marius (German). **NOTED**
+
+12. **Prompt cache stability** — Deterministic tool ordering, normalized system prompts, embedded image history optimization.
+    - **Impact:** Better cache hit rates. **BENEFITS**
+
+### Security Hardening
+
+13. **Fail-closed `before_tool_call` hooks** — Crashing hooks now fail closed (block the call) instead of silently passing.
+    - **Impact:** Critical for defense plugin. If L6 access control crashes, tool call is blocked not allowed. **BENEFITS**
+
+14. **Cleared Claude Code environment overrides** — `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_PLUGIN_*` env vars stripped.
+    - **Impact:** Prevents env-based config injection. **BENEFITS**
+
+15. **Loopback auth throttling per normalized origin** — Rate limiting scoped by client origin, not global.
+    - **Impact:** Better brute-force protection on loopback gateway. **BENEFITS**
+
+16. **Browser SSRF redirect bypass blocked** — Prevents redirect chains from escaping SSRF protections.
+    - **Impact:** Hardens browser tool (now enabled on Dismas). **BENEFITS**
+
+### Operational Notes
+
+- Fresh install on Dismas user (not upgrade from v2026.4.2).
+- Required extensive debugging of whitelist behaviors (#4, #5, #6 above).
+- All fixes documented in GUIDE.md Appendix C and hardening scripts.
+- `openclaw doctor --fix` run post-install: no legacy keys found.
+- Gregor should NOT upgrade to v2026.4.5 without first: (a) switching `tools.allow` to `tools.alsoAllow`, (b) removing `plugins.allow` or adding all bundled plugins, (c) updating streaming config format.
+
+---
+
 ## Config Decisions Tracker
 
 Items extracted from changelogs that may influence our configuration.

@@ -321,6 +321,73 @@ Upgrade from v2026.3.24 → v2026.4.1 (skipping v2026.3.28 and v2026.3.31). Inst
 
 ---
 
+## v2026.4.2
+
+Auto-updated on Gregor from v2026.4.1 (weekly cron). Security-focused point release.
+
+### Critical / Config-Relevant
+
+| Item | Impact | Our Action |
+|------|--------|------------|
+| **CVE-2026-34425** (HIGH) — Exec script preflight validation skipped on complex invocations (pipes, chained interpreters) | Closes shell bypass vector for `exec.security: "full"` deployments. Crafted pipe chains could skip approval. | BENEFITS (auto-applied) |
+| **CVE-2026-34426** (MEDIUM-HIGH) — Approval bypass via unvalidated environment variables | Env var injection could skip tool approval checks. | BENEFITS (auto-applied) |
+| **CVE-2026-33580** (MEDIUM) — Nextcloud Talk webhook missing rate limiting | We don't use Nextcloud Talk. | NONE |
+
+### Security Fixes (Auto-Applied)
+
+- Exec: complex interpreter pipeline validation (pipes, subshells, heredocs)
+- Exec: env var approval bypass closed
+- Config: startup atomic rename stability improvements (reduces EBUSY risk)
+
+---
+
+## v2026.4.5
+
+Fresh install on Dismas (2026-04-06). Major feature + security release. Significant breaking changes.
+
+### Critical / Config-Relevant
+
+| Item | Impact | Our Action |
+|------|--------|------------|
+| **`tools.allow` whitelist behavior** (BREAKING) — `tools.allow` now replaces profile defaults instead of adding to them. Setting `["cron"]` disables read/write/edit/shell. | Broke Dismas file tools. Must use `tools.alsoAllow` (additive) instead. | APPLIED — switched to `tools.alsoAllow` |
+| **`plugins.allow` whitelist behavior** (BREAKING) — blocks bundled plugins (Telegram, browser) from loading. Silent failure, no log entries. | Broke Dismas Telegram channel. No error visible. | APPLIED — removed `plugins.allow` entirely |
+| **Fail-closed `before_tool_call` hooks** — crashing hooks now block tool calls instead of silently passing | Critical for defense plugin: if L6 access control crashes, tool call is blocked. Previously would pass through. | BENEFITS (auto-applied) |
+| **Browser SSRF redirect bypass blocked** — redirect chains can no longer escape SSRF protections | Hardens browser tool (enabled on both bots). | BENEFITS (auto-applied) |
+| **Claude Code env overrides cleared** — `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_PLUGIN_*` stripped | Prevents env-based config injection from inherited shells. | BENEFITS (auto-applied) |
+| **Loopback auth throttling per origin** — rate limiting scoped by client, not global | Better brute-force protection on gateway API. | BENEFITS (auto-applied) |
+| **Serialized async shared-secret auth** — concurrent auth attempts serialized per client | Prevents race condition in webhook auth. | BENEFITS (auto-applied) |
+| **Legacy config aliases removed** — `talk.voiceId`, `talk.apiKey`, `agents.*.sandbox.perSession`, `browser.ssrfPolicy.allowPrivateNetwork` | Not in our config. Run `doctor --fix` to check. | NONE |
+
+### Security Fixes (Auto-Applied)
+
+- Exec: fail-closed hook error handling for `before_tool_call`
+- Browser: SSRF redirect chain bypass blocked
+- Auth: loopback throttling per normalized origin
+- Auth: serialized async shared-secret auth attempts
+- Env: Claude Code plugin env vars stripped from gateway process
+- Config: legacy key deprecation (talk, sandbox, browser.ssrfPolicy)
+
+### Security Evolution (v2026.4.1 → v2026.4.5)
+
+| Category | Controls Added | Version |
+|----------|---------------|---------|
+| **Exec sandbox** | Complex interpreter pipeline validation (CVE-2026-34425), env approval bypass (CVE-2026-34426) | v2026.4.2 |
+| **Hooks** | Fail-closed error handling for tool guard hooks | v2026.4.5 |
+| **Browser** | SSRF redirect chain bypass blocked | v2026.4.5 |
+| **Auth** | Per-origin loopback throttling, serialized shared-secret auth | v2026.4.5 |
+| **Config** | Legacy alias removal, env override stripping | v2026.4.5 |
+| **Whitelist behavior** | `tools.allow` and `plugins.allow` now restrictive (breaking) | v2026.4.5 |
+
+### Upgrade Warning for Gregor (v2026.4.2 → v2026.4.5)
+
+Before upgrading Gregor, these changes MUST be applied first:
+1. Switch `tools.alsoAllow` (already done — was `alsoAllow` on Gregor)
+2. Verify `plugins.allow` includes all bundled plugins OR remove it
+3. Update `streaming` config format (remove legacy `blockStreaming`)
+4. Test with `openclaw doctor --fix` post-upgrade
+
+---
+
 ## How To Use This File
 
 - **Before each upgrade:** Read the new version's changelog, extract security-relevant items here
