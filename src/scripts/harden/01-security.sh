@@ -48,12 +48,13 @@ if is_step_done "$STEP"; then
     log_skip "tool allow list configured"
     skipped=$((skipped + 1))
 else
-    log_todo "Setting tool allow: cron"
-    log_info "Explicitly allows cron tool for autonomous scheduling."
+    log_todo "Setting tool alsoAllow: cron"
+    log_info "Adds cron on top of profile defaults. Uses alsoAllow (additive), NOT allow (whitelist)."
     if confirm; then
-        config_set "tools.allow" '["cron"]'
+        config_set "tools.alsoAllow" '["cron"]'
+        config_delete "tools.allow"
         mark_step_done "$STEP"
-        log_done "tool allow = [cron]"
+        log_done "tool alsoAllow = [cron]"
         applied=$((applied + 1))
     fi
 fi
