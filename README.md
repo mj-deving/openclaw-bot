@@ -8,6 +8,12 @@
   6-layer injection defense &bull; Config auditing &bull; Every decision explained
 </p>
 
+<p align="center">
+
+![Shell](https://img.shields.io/badge/-Shell-4EAA25?style=flat-square) ![Security](https://img.shields.io/badge/-Security-DC3545?style=flat-square)
+
+</p>
+
 ---
 
 ## What This Is
