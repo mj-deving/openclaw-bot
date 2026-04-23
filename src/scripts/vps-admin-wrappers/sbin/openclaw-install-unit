@@ -57,10 +57,13 @@ fi
 
 # --- validate content ---
 
-# systemd-analyze verify expects a file it can locate; copy to a temp path
-# owned by root so the verifier reads a stable file.
-TMP=$(mktemp --tmpdir=/run "openclaw-unit.XXXXXX")
-trap 'rm -f "$TMP"' EXIT
+# systemd-analyze verify requires the file to have a unit-type suffix
+# (e.g. `.service`), otherwise it errors with "Failed to prepare filename
+# ...: Invalid argument". Stage inside a private tmpdir with the correct
+# filename so the verifier can parse it.
+TMP_DIR=$(mktemp -d --tmpdir=/run "openclaw-unit-XXXXXX")
+trap 'rm -rf "$TMP_DIR"' EXIT
+TMP="$TMP_DIR/openclaw.service"
 install -m 0644 -o root -g root "$STAGING" "$TMP"
 
 if ! systemd-analyze verify "$TMP" 2>&1; then
