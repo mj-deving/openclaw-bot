@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# openclaw-gateway-stop — systemctl stop openclaw
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "usage: openclaw-gateway-stop (no arguments)" >&2
+  exit 64
+fi
+
+systemctl stop openclaw
+systemctl status openclaw --no-pager --lines=5 || true

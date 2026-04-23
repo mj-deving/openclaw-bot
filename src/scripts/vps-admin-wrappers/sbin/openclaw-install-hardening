@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# openclaw-install-hardening — install systemd drop-in
+#                              /etc/systemd/system/openclaw.service.d/hardening.conf
+#                              from a validated staging file.
+#
+# Hardcoded source:      /home/openclaw/staging/hardening.conf
+# Hardcoded destination: /etc/systemd/system/openclaw.service.d/hardening.conf
+#
+# Same staging-file validation as openclaw-install-unit: regular file,
+# owner openclaw, not group/world-writable. No systemd-analyze verify
+# (drop-ins aren't verifiable standalone).
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "usage: openclaw-install-hardening (no arguments)" >&2
+  exit 64
+fi
+
+STAGING="/home/openclaw/staging/hardening.conf"
+DEST_DIR="/etc/systemd/system/openclaw.service.d"
+DEST="$DEST_DIR/hardening.conf"
+EXPECTED_OWNER="openclaw"
+
+if [[ ! -e "$STAGING" ]]; then
+  echo "error: staging file not found: $STAGING" >&2
+  exit 66
+fi
+
+if [[ -L "$STAGING" ]]; then
+  echo "error: staging path is a symlink (refusing): $STAGING" >&2
+  exit 65
+fi
+
+if [[ ! -f "$STAGING" ]]; then
+  echo "error: staging path is not a regular file: $STAGING" >&2
+  exit 65
+fi
+
+owner=$(stat -c '%U' "$STAGING")
+if [[ "$owner" != "$EXPECTED_OWNER" ]]; then
+  echo "error: staging file owner is '$owner', expected '$EXPECTED_OWNER'" >&2
+  exit 65
+fi
+
+mode=$(stat -c '%a' "$STAGING")
+if (( (8#$mode & 8#022) != 0 )); then
+  echo "error: staging file mode $mode is group- or world-writable" >&2
+  exit 65
+fi
+
+install -d -m 0755 -o root -g root "$DEST_DIR"
+install -m 0644 -o root -g root "$STAGING" "$DEST"
+systemctl daemon-reload
+
+echo "installed: $DEST"

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# openclaw-gateway-start — systemctl start openclaw
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "usage: openclaw-gateway-start (no arguments)" >&2
+  exit 64
+fi
+
+systemctl start openclaw
+systemctl status openclaw --no-pager --lines=5

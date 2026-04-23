@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# openclaw-install-nodejs — install Node.js 22 LTS from NodeSource
+#
+# Install-phase wrapper (can be revoked after Gregor install completes).
+# Hardcoded: NodeSource 22.x setup script + apt install of nodejs only.
+# No user arguments accepted. Preserves demos isolation — only installs
+# one well-known package from an allowlisted upstream.
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "usage: openclaw-install-nodejs (no arguments)" >&2
+  exit 64
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+
+# NodeSource 22.x setup script (pinned major version)
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+
+apt-get install -y nodejs
+
+node --version
+npm --version

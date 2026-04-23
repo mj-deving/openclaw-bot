@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# openclaw-ufw-default-deny — default deny incoming, allow outgoing, enable ufw
+#
+# Ongoing wrapper. Idempotent. No user arguments.
+# Should be run AFTER openclaw-ufw-allow-ssh or SSH access will be lost.
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "usage: openclaw-ufw-default-deny (no arguments)" >&2
+  exit 64
+fi
+
+ufw default deny incoming
+ufw default allow outgoing
+ufw --force enable
+ufw status verbose

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# openclaw-ufw-allow-ssh — allow inbound SSH (22/tcp)
+#
+# Ongoing wrapper. Idempotent. No user arguments.
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "usage: openclaw-ufw-allow-ssh (no arguments)" >&2
+  exit 64
+fi
+
+ufw allow 22/tcp

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# openclaw-install-unit — install /etc/systemd/system/openclaw.service
+#                         from a validated staging file
+#
+# Hardcoded source:      /home/openclaw/staging/openclaw.service
+# Hardcoded destination: /etc/systemd/system/openclaw.service
+#
+# Security checks on the staging file before copying:
+#   - must be a regular file (not a symlink — TOCTOU defence)
+#   - must be owned by uid/gid of the openclaw user
+#   - must NOT be group- or world-writable
+#   - must pass `systemd-analyze verify`
+#
+# Preserves demos isolation: cannot write anywhere except the single
+# hardcoded destination; staging file cannot be a symlink pointing
+# elsewhere.
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "usage: openclaw-install-unit (no arguments)" >&2
+  exit 64
+fi
+
+STAGING="/home/openclaw/staging/openclaw.service"
+DEST="/etc/systemd/system/openclaw.service"
+EXPECTED_OWNER="openclaw"
+
+# --- validate staging file ---
+
+if [[ ! -e "$STAGING" ]]; then
+  echo "error: staging file not found: $STAGING" >&2
+  exit 66
+fi
+
+if [[ -L "$STAGING" ]]; then
+  echo "error: staging path is a symlink (refusing): $STAGING" >&2
+  exit 65
+fi
+
+if [[ ! -f "$STAGING" ]]; then
+  echo "error: staging path is not a regular file: $STAGING" >&2
+  exit 65
+fi
+
+owner=$(stat -c '%U' "$STAGING")
+if [[ "$owner" != "$EXPECTED_OWNER" ]]; then
+  echo "error: staging file owner is '$owner', expected '$EXPECTED_OWNER'" >&2
+  exit 65
+fi
+
+mode=$(stat -c '%a' "$STAGING")
+# Reject any mode where group-write (020) or world-write (002) bits are set.
+if (( (8#$mode & 8#022) != 0 )); then
+  echo "error: staging file mode $mode is group- or world-writable" >&2
+  exit 65
+fi
+
+# --- validate content ---
+
+# systemd-analyze verify expects a file it can locate; copy to a temp path
+# owned by root so the verifier reads a stable file.
+TMP=$(mktemp --tmpdir=/run "openclaw-unit.XXXXXX")
+trap 'rm -f "$TMP"' EXIT
+install -m 0644 -o root -g root "$STAGING" "$TMP"
+
+if ! systemd-analyze verify "$TMP" 2>&1; then
+  echo "error: systemd-analyze verify failed on staging unit" >&2
+  exit 65
+fi
+
+# --- install ---
+
+install -m 0644 -o root -g root "$TMP" "$DEST"
+systemctl daemon-reload
+
+echo "installed: $DEST"

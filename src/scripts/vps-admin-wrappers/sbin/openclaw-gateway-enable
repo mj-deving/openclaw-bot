@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# openclaw-gateway-enable — systemctl enable openclaw (auto-start on boot)
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "usage: openclaw-gateway-enable (no arguments)" >&2
+  exit 64
+fi
+
+systemctl enable openclaw

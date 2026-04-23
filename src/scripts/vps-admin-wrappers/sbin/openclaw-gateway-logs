@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# openclaw-gateway-logs — journalctl -u openclaw (read-only, filtered)
+#
+# Hardcoded -u openclaw filter prevents openclaw from reading journal
+# entries for demos-node or any other service.
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "usage: openclaw-gateway-logs (no arguments — shows last 200 lines)" >&2
+  exit 64
+fi
+
+journalctl -u openclaw -n 200 --no-pager

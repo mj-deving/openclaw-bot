@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# openclaw-install-ufw — install ufw package
+#
+# Install-phase wrapper. Hardcoded apt install of ufw only.
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "usage: openclaw-install-ufw (no arguments)" >&2
+  exit 64
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get install -y ufw
