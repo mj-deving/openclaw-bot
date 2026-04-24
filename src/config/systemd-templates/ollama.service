@@ -1,0 +1,39 @@
+# User-level systemd unit for a local Ollama server used as
+# OpenClaw's embedding provider (nomic-embed-text:v1.5) and optional
+# compaction summarizer.
+#
+# Install location: ~/.config/systemd/user/ollama.service (as openclaw)
+#
+# Enable:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now ollama.service
+#
+# Persist across reboots (one-time, needs root):
+#   loginctl enable-linger openclaw
+#
+# Binary expected at ~/.local/bin/ollama (from
+# https://github.com/ollama/ollama/releases, ollama-linux-amd64.tar.zst
+# extracted to ~/.local/share/ollama/).
+
+[Unit]
+Description=Ollama local inference server (for OpenClaw embeddings + optional compaction)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=%h/.local/bin/ollama serve
+Restart=on-failure
+RestartSec=5
+Environment="HOME=%h"
+Environment="OLLAMA_HOST=127.0.0.1:11434"
+Environment="OLLAMA_KEEP_ALIVE=24h"
+
+# Safety: constrain model RAM so Ollama cannot OOM a swapless VPS.
+# 10G is plenty for 4B-7B Q4 models; tighten if only running embeddings.
+MemoryMax=10G
+MemoryHigh=8G
+TasksMax=1024
+
+[Install]
+WantedBy=default.target

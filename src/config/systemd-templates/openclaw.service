@@ -1,0 +1,21 @@
+[Unit]
+Description=OpenClaw Gateway (Gregor)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+Group=openclaw
+WorkingDirectory=/home/openclaw
+
+Environment="PATH=/home/openclaw/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+ExecStart=/home/openclaw/.npm-global/bin/openclaw gateway --port 18789
+ExecStop=/bin/kill -SIGTERM $MAINPID
+
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
