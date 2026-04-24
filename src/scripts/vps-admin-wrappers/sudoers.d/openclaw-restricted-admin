@@ -7,18 +7,19 @@
 # directory — no wrapper accepts a path argument, no wrapper invokes a
 # shell or a generic systemctl/journalctl/apt command.
 #
+# **demos-node has 100% priority on this host. openclaw is a sidekick
+# only.** Explicitly NO wrappers for starting, stopping, restarting,
+# or reading logs from demos-node — openclaw must not be able to
+# disturb or observe demos in any way. Demos boundary is inviolable.
+#
 # Install via /home/USER/projects/openclaw-bot/src/scripts/vps-admin-wrappers/install-wrappers.sh
 # (from a root shell). Do NOT edit by hand — regenerate from the repo.
 
 Defaults:openclaw  env_reset, mail_badpass, use_pty, !authenticate
 Defaults:openclaw  secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
 
-# --- existing wrappers (pre-expansion) ---
+# --- host introspection (read-only, non-disturbing) ---
 openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-system-status
-openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-demos-node-start
-openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-demos-node-stop
-openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-demos-node-restart
-openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-demos-node-logs
 openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-firewall-status
 openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-system-upgrade
 
