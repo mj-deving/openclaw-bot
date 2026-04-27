@@ -112,14 +112,45 @@ This shows per-file, per-tool token breakdown. Target: anything not essential fo
 
 **Compaction** (persistent -- rewrites transcript): Auto-triggers when context nears window limit. Summarizes older history, keeps recent messages. Can also trigger manually with `/compact`.
 
-**Memory flush** (runs before compaction): Distills session knowledge to `memory/YYYY-MM-DD.md` before summarizing. Config:
+**Memory flush** (runs before compaction): Distills session knowledge to `memory/YYYY-MM-DD.md` before summarizing.
+
+### Canonical compaction config (per [docs.openclaw.ai/concepts/compaction](https://docs.openclaw.ai/concepts/compaction))
+
+The compaction call is a SEPARATE LLM call from your chat model. It must use API-key-based auth (OpenRouter, direct Anthropic/OpenAI keys) — **OAuth providers like `openai-codex` are not reliable for compaction** because OpenAI's own Codex CLI docs warn OAuth tokens "aren't reliably maintainable across separate process invocations."
+
+**Use ONLY the `model` key, with a triple-prefixed string:**
+
 ```json
 "compaction": {
+  "model": "openrouter/openai/gpt-4.1-mini",
   "memoryFlush": {
     "enabled": true,
     "softThresholdTokens": 40000
   }
 }
+```
+
+**Do NOT pair `provider` with a slash-prefixed `model`** — this is the most common misconfiguration:
+
+```json
+// ❌ BROKEN — silently fails every compaction with "No API key found for provider 'anthropic'"
+"compaction": {
+  "provider": "openrouter",                    // Wrong key — this is for custom plugin IDs
+  "model": "anthropic/claude-haiku-4-5"        // Missing openrouter/ prefix
+}
+```
+
+Per docs: `compaction.provider` is for **custom compaction-provider plugin IDs** (a pluggable custom implementation registered via plugin). Setting it forces `mode: "safeguard"` automatically. When `model` is slash-prefixed, OpenClaw resolves the provider from the model string's first segment (`anthropic` → tries direct Anthropic key) and ignores the explicit `provider` key.
+
+**Smoking-gun journal signature for this misconfig:**
+```
+auto-compaction failed for <chat-model>: No API key found for provider "<resolved-from-prefix>"
+```
+
+**Healthy compaction signatures:**
+```
+[compaction-diag] end ... outcome=success  ← real compaction ran
+[agent/embedded] [compaction] skipping — no real conversation messages  ← protective skip, not a failure
 ```
 
 **Best practice:** Ensure `memoryFlush.enabled: true` so important context gets persisted to memory files before compaction throws it away. This is the cross-session continuity mechanism -- without it, compaction discards older context permanently.

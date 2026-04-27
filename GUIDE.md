@@ -1430,6 +1430,41 @@ Your bot's identity lives in workspace files (`~/.openclaw/workspace/*.md`). The
 >
 > **Deep reference:** [Reference/IDENTITY-AND-BEHAVIOR.md](Reference/IDENTITY-AND-BEHAVIOR.md) covers the full domain — instruction hierarchy, token-efficient design patterns, prompt injection defense, Telegram rendering constraints, persona research, anti-patterns, and cost math.
 
+### 8.0 Workspace Path Discipline (read this before §8.1)
+
+The workspace path is **configurable** via `agents.defaults.workspace` in `openclaw.json`. The default is `~/.openclaw/workspace/`, which is what the rest of this Phase assumes.
+
+**🔴 Never point `agents.defaults.workspace` at `/tmp/...`, anywhere.** Two compounding hazards:
+
+1. **`/tmp` is wiped on reboot** — your bot's identity disappears between reboots.
+2. **Toolkit test runners scaffold ephemeral workspaces under `/tmp/<toolkit>-test/...`** with FRESH default `BOOTSTRAP.md` and bare `IDENTITY.md` template files. (Example: `omniweb-toolkit` recreates `/tmp/omniweb-agents-test/.../research-agent/` on each setup/test run.)
+
+When the gateway restarts, it reloads identity from whatever path `agents.defaults.workspace` points at. If that path was just rewritten by a test runner, the bot wakes up with a bare-template identity and runs the bootstrap dialogue ("Hey. I just came online. Who am I?") at the user — even if the bot was already fully bootstrapped weeks ago.
+
+**Memory writes silently fall back** to a default location when the configured workspace is missing or wrong, so memory looks fine even when identity is lost. The single visible canary is `openclaw memory status` reporting `Issues: memory directory missing (...)` — treat that as **RED**.
+
+**Recommended workspace placement:**
+
+```jsonc
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/home/<user>/.openclaw/workspace"
+      // OR a stable, persistent project directory under your bot user's home
+    }
+  }
+}
+```
+
+**Verification after every config change AND after any toolkit/test work:**
+
+```bash
+openclaw memory status | grep -E "^Workspace:|^Issues:"
+# Healthy:
+#   Workspace: ~/.openclaw/workspace
+# Anything else, especially "Issues: memory directory missing", is a problem.
+```
+
 ### 8.1 Identity via Workspace Files
 
 Configure your bot's personality in workspace files — primarily `AGENTS.md` (operating instructions) and `SOUL.md` (persona and boundaries). OpenClaw injects all `.md` files from `~/.openclaw/workspace/` into every LLM call as bootstrap context. Structure identity content with clear sections — identity first, constraints second, capabilities third, output format last:
@@ -1833,7 +1868,57 @@ openclaw memory index --force
 openclaw memory status --deep
 ```
 
-### 9.6 Context Persistence (Memory Flush)
+### 9.6 Compaction Model Selection (canonical form)
+
+> **Source:** [docs.openclaw.ai/concepts/compaction](https://docs.openclaw.ai/concepts/compaction)
+
+Compaction summarizes older transcript turns when the context window fills. It is a separate LLM call from your chat model and **must use API-key-based auth** — OAuth providers (e.g., `openai-codex`) are not reliable across separate process invocations and will fail silently for compaction.
+
+**The ONLY canonical form** for routing compaction to a remote LLM is a single `model` key with a triple-prefixed string:
+
+```jsonc
+{
+  "agents": {
+    "defaults": {
+      "compaction": {
+        "model": "openrouter/openai/gpt-4.1-mini"
+        // OR: "openrouter/anthropic/claude-haiku-4-5"
+        // OR: "ollama/llama3.1:8b"   (local, free)
+      }
+    }
+  }
+}
+```
+
+**Common misconfiguration to avoid (this caused a real outage):**
+
+```jsonc
+// ❌ WRONG — this is a malformed pairing
+{
+  "compaction": {
+    "provider": "openrouter",                       // ← WRONG: this key is for custom plugin IDs
+    "model": "anthropic/claude-haiku-4-5"           // ← WRONG: missing the openrouter/ prefix
+  }
+}
+```
+
+**Why this fails (per docs):**
+- `compaction.provider` is for **custom compaction-provider plugin IDs** (a pluggable custom implementation registered via plugin), NOT for selecting an LLM-routing service. Setting `provider` automatically forces `mode: "safeguard"` and routes to a plugin lookup that won't find anything.
+- When `model` is a slash-prefixed string, OpenClaw resolves the provider from the **model string's first segment**, ignoring any explicit `provider` key. So `"anthropic/claude-haiku-4-5"` is parsed as provider=`anthropic`, model=`claude-haiku-4-5` — and OpenClaw looks for a direct Anthropic API credential. If the auth-profiles only have an OpenRouter key, every compaction will fail with `No API key found for provider "anthropic"`.
+- The journalctl signature of this failure: `auto-compaction failed for <chat-model>: No API key found for provider "<resolved-from-model-prefix>"`.
+
+**Verification after applying the fix:**
+
+```bash
+# Should show outcome=success when next overflow fires
+sudo journalctl -u openclaw -f | grep -iE "compaction-diag|compaction.*skipping"
+
+# Healthy "nothing to summarize" looks like:
+#   [agent/embedded] [compaction] skipping — no real conversation messages
+# (NOT a failure — protective skip when no real conversation since last compaction)
+```
+
+### 9.7 Context Persistence (Memory Flush)
 
 Without this, the bot loses knowledge when its context window fills up. OpenClaw's auto-compaction summarizes and discards older messages — but anything not explicitly saved is gone. Memory flush fixes this by giving the bot a chance to write important context to durable memory *before* compaction throws it away.
 
@@ -1842,6 +1927,7 @@ Without this, the bot loses knowledge when its context window fills up. OpenClaw
   "agents": {
     "defaults": {
       "compaction": {
+        "model": "openrouter/openai/gpt-4.1-mini",  // From section 9.6 — required
         "reserveTokensFloor": 20000,       // Buffer preserved before compaction triggers
         "memoryFlush": {
           "enabled": true,                  // THE key setting — enable pre-compaction flush
@@ -1883,9 +1969,13 @@ When the session reaches ~176K tokens:
 
 - [ ] Memory config in `openclaw.json` (hybrid search, local embeddings, session indexing)
 - [ ] `openclaw memory status` shows healthy (sources: memory + sessions)
+- [ ] **No `Issues:` line in `openclaw memory status` — especially `memory directory missing (...)` is RED**, not yellow (means workspace path drift, identity will be lost on next restart)
 - [ ] Local embeddings working (no external API calls)
+- [ ] **Compaction model uses canonical prefixed string** (`compaction.model: "openrouter/<provider>/<model>"`), NO separate `compaction.provider` key (per §9.6)
+- [ ] Compaction auth is API-key based (NOT Codex OAuth — OAuth fails across compaction calls)
 - [ ] Memory flush enabled (`compaction.memoryFlush.enabled: true`)
 - [ ] Force initial index: `openclaw memory index --force`
+- [ ] Verify a compaction run: `sudo journalctl -u openclaw | grep -iE "compaction-diag.*outcome"` should show `outcome=success` (or healthy `[compaction] skipping — no real conversation messages`), never `No API key found for provider "..."`
 
 ---
 

@@ -243,4 +243,118 @@ When OpenRouter returns HTTP 402 (payment required / insufficient credits), Open
 
 ---
 
+## 6. Compaction Auth Failure — `compaction.provider` + Slash-Prefixed Model Misconfiguration
+
+**Severity:** High (silent) | **Status:** Configuration trap | **Affected:** All versions | **Authoritative:** [docs.openclaw.ai/concepts/compaction](https://docs.openclaw.ai/concepts/compaction)
+
+Compaction silently fails on every overflow when `compaction.provider` is paired with a slash-prefixed `compaction.model` string. The bot still chats normally until context fills, then auto-compaction throws and the user sees no clear signal.
+
+### Symptom
+
+```
+[context-overflow-diag] sessionKey=... messages=1375
+context overflow detected (attempt 1/3); attempting auto-compaction
+[compaction-diag] end ... outcome=failed reason=unknown
+auto-compaction failed for <chat-model>: No API key found for provider "<X>".
+```
+
+User-visible: bot may reply but session keeps growing; eventually hits hard provider overflow. Marius noticed by needing to manually `/compact` repeatedly.
+
+### Root Cause
+
+Per official docs: `compaction.provider` is for **custom compaction-provider plugin IDs** (a pluggable custom implementation registered via plugin), NOT for selecting an LLM-routing provider. Setting it forces `mode: "safeguard"` automatically and routes to a plugin lookup that fails.
+
+When `model` is a slash-prefixed string (`anthropic/claude-haiku-4-5`), OpenClaw resolves the provider from the model string's first segment and **ignores** any explicit `provider` key. So the auth lookup goes to `anthropic` (direct API) rather than the intended OpenRouter routing.
+
+### The Misconfig
+
+```jsonc
+// ❌ BROKEN
+"compaction": {
+  "provider": "openrouter",
+  "model": "anthropic/claude-haiku-4-5"   // missing openrouter/ prefix
+}
+```
+
+### The Fix
+
+```jsonc
+// ✅ CANONICAL
+"compaction": {
+  "model": "openrouter/openai/gpt-4.1-mini"
+  // OR: "openrouter/anthropic/claude-haiku-4-5"
+  // OR: "ollama/llama3.1:8b" (local, free)
+}
+```
+
+### Auth Constraint (related)
+
+OAuth providers (`openai-codex/...`) **cannot** be used for compaction reliably — OpenAI's own Codex CLI docs state OAuth tokens "aren't reliably maintainable across separate process invocations." Compaction must use API-key-based auth. OpenRouter is the path of least resistance.
+
+### Diagnosis
+
+```bash
+# Look for the smoking-gun line
+sudo journalctl -u openclaw --since "7 days ago" | grep -E 'auto-compaction failed|compaction-diag.*outcome'
+
+# Healthy looks like:
+#   [compaction-diag] end ... outcome=success
+#   [agent/embedded] [compaction] skipping — no real conversation messages
+```
+
+### References
+
+- [docs.openclaw.ai/concepts/compaction](https://docs.openclaw.ai/concepts/compaction)
+- [GUIDE.md §9.6 Compaction Model Selection](../GUIDE.md)
+- [Reference/CONTEXT-ENGINEERING.md Recommendation 4](CONTEXT-ENGINEERING.md)
+
+---
+
+## 7. Workspace Path Drift — Identity Loss on Restart
+
+**Severity:** High | **Status:** Configuration trap | **Affected:** Any deployment using toolkits that scaffold under /tmp
+
+`agents.defaults.workspace` is a writable config key. If it points at `/tmp/...` (especially a path scaffolded by a toolkit/test runner like `omniweb-toolkit`), the bot will lose identity on every gateway restart.
+
+### Symptom
+
+After a gateway restart, the bot sends the bootstrap dialogue to the user:
+
+> "Hey. I just came online. Who am I, and who are you?"
+
+…even though the bot was fully bootstrapped weeks ago. Memory files appear intact but identity files (`IDENTITY.md`, `USER.md`, `SOUL.md`, `BOOTSTRAP.md`) load from a path containing FRESH default templates.
+
+### Root Cause
+
+1. /tmp is wiped on reboot — workspace state doesn't persist
+2. Toolkit test harnesses (omniweb-toolkit observed) scaffold ephemeral workspaces under `/tmp/<toolkit>-test/...` with default `BOOTSTRAP.md` + bare `IDENTITY.md` template files on each setup/test run
+3. Memory writes silently fall back to a default location, so memory still works — only identity is lost
+
+### Smoking-Gun Diagnostic
+
+```bash
+openclaw memory status | grep -E "^Workspace:|^Issues:"
+# Healthy:   Workspace: ~/.openclaw/workspace
+# Broken:    Issues: memory directory missing (/tmp/...)
+```
+
+The `Issues: memory directory missing` line is reported but not fatal — it's the canary, treat it as RED.
+
+### Fix
+
+```jsonc
+// ✅ Stable, persistent path under bot user's home
+"agents": {
+  "defaults": {
+    "workspace": "/home/<user>/.openclaw/workspace"
+  }
+}
+```
+
+### References
+
+- [GUIDE.md §8.0 Workspace Path Discipline](../GUIDE.md)
+
+---
+
 *This document tracks bugs confirmed through deployment experience and upstream issue research. For security-specific patches and CVEs, see [SECURITY-PATCHES.md](SECURITY-PATCHES.md).*
