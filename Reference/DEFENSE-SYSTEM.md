@@ -3,6 +3,7 @@
 > Authoritative reference for the 6-layer prompt injection defense system.
 > For quick overview, see the Defense System section in CLAUDE.md.
 > For deployment status and operational notes, see MEMORY.md.
+> For mapping against OpenClaw's official MITRE ATLAS threat model, see [THREAT-MODEL-CROSSREF.md](THREAT-MODEL-CROSSREF.md).
 
 ## Motivation
 
@@ -313,6 +314,41 @@ The bot was given the defense system files and asked to evaluate them independen
 - Governor state: 0 lifetime calls (freshly deployed)
 - Audit logging enabled (stderr → journald)
 - First production traffic expected on next cron heartbeat (every 30m)
+
+## Forensics: Trajectory Bundles
+
+OpenClaw captures a per-session "flight recorder" by default — `<session>.trajectory.jsonl` written alongside the session transcript. This is the structured replay primitive for any incident the defense system flags.
+
+**When to export:** Any time L1/L2/L3 fires in a way that warrants investigation — sanitizer block, gate violation, governor circuit-breaker trip, access-control denial.
+
+**How to export from Telegram:**
+
+```
+/export-trajectory injection-2026-04-27-001
+```
+
+Bundle is written to `~/.openclaw/trajectory-exports/openclaw-trajectory-<session>-<timestamp>/` containing:
+
+| File | Contents |
+|------|----------|
+| `manifest.json` | Bundle metadata + event counts |
+| `events.jsonl` | Ordered runtime + transcript timeline |
+| `session-branch.json` | Redacted active transcript |
+| `metadata.json` | Version, OS, model, config, plugins active at the time |
+| `artifacts.json` | Status, errors, usage, cache data |
+| `prompts.json` | Submitted prompts |
+| `system-prompt.txt` | Compiled system prompt (what the LLM actually saw) |
+| `tools.json` | Tool definitions sent to model (relevant for T-DISC-001 enumeration probes) |
+
+**Naming convention for incidents:** `<class>-<date>-<seq>` where class ∈ {`injection`, `exfil`, `dos`, `creds`, `tool-enum`} matches the relevant ATLAS threat ID. Cross-reference in [THREAT-MODEL-CROSSREF.md](THREAT-MODEL-CROSSREF.md).
+
+**Redaction:** Best-effort — strips credentials, secret-like fields, image data, local paths, home-directory paths. **Review bundles before sharing outside the team** — the docs explicitly note redaction is not exhaustive.
+
+**Limits:** 50 MiB per sidecar, 250,000 events per export. Disable via `OPENCLAW_TRAJECTORY=0`. Redirect via `OPENCLAW_TRAJECTORY_DIR`.
+
+**Why this matters:** Without trajectory export, our forensic surface was journalctl tail — line-oriented, no system-prompt snapshot, no tool-list snapshot. Trajectories give structured post-incident review without re-running anything.
+
+Source: [docs.openclaw.ai/tools/trajectory.md](https://docs.openclaw.ai/tools/trajectory.md).
 
 ## File Inventory
 

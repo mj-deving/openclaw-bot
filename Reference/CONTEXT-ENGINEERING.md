@@ -449,6 +449,61 @@ Workspace files are injected on every message via `resolveBootstrapContextForRun
 | Changing `tool_choice` | Invalidates messages cache |
 | Dynamic content in system prompt | Prevents caching entirely |
 
+### Model Failover & Auth Cooldowns
+
+OpenClaw resolves a per-call provider/model in two stages: **auth-profile rotation** within the current provider, then **model fallback** to the next candidate in the configured chain. Failover is *not* a substitute for compaction — context-overflow errors do not trigger model fallback (compaction owns that path).
+
+**Config keys:**
+
+| Key | Purpose |
+|-----|---------|
+| `agents.defaults.model.primary` | Base default model |
+| `agents.defaults.model.fallbacks` | Ordered fallback candidates (list of `provider/model` strings) |
+| `auth.profiles` / `auth.order` | Profile metadata and rotation order per provider |
+| `auth.cooldowns.overloadedProfileRotations` | Same-provider retries before model fallback (default 1) |
+| `auth.cooldowns.rateLimitedProfileRotations` | Profile rotation attempts on rate limits |
+| `auth.cooldowns.billingBackoffHours` | Initial billing backoff (default 5h, doubles per failure) |
+| `auth.cooldowns.billingMaxHours` | Billing backoff cap (default 24h) |
+| `OPENCLAW_SDK_RETRY_MAX_WAIT_SECONDS` | Env var; SDK retry-after cap (default 60s) |
+
+**What triggers fallback:** auth failures, rate limits, overloaded/provider-busy errors, timeouts, billing disables, live session model-switch errors, unrecognized errors when candidates remain.
+
+**What does NOT trigger fallback:** explicit aborts (non-timeout), context-overflow errors, final unknown errors with no candidates left.
+
+**OAuth profiles:** Named `provider:<email>` (e.g. `openai-codex:mj-deving@users.noreply.github.com`). Stored in `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`. Round-robin: OAuth profiles tried *before* API keys, ordered by `usageStats.lastUsed`. Codex OAuth is documented as unreliable across separate process invocations — failover chain to API-keyed providers is the production-correct mitigation, not a workaround.
+
+**Per-session override:** `/model …@<profileId>` pins the current session to a specific profile. Cleared on `/new`, `/reset`, or `sessions.reset`. System-driven changes (fallback rotation, compaction) do NOT mark live-switch.
+
+**Proposed Gregor failover chain (PROPOSED — not yet applied):**
+
+```jsonc
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "openai-codex/gpt-5.4",
+        "fallbacks": [
+          "openrouter/anthropic/claude-sonnet-4-6",
+          "openrouter/anthropic/claude-haiku-4-5"
+        ]
+      }
+    }
+  },
+  "auth": {
+    "cooldowns": {
+      "overloadedProfileRotations": 1,
+      "rateLimitedProfileRotations": 2,
+      "billingBackoffHours": 5,
+      "billingMaxHours": 24
+    }
+  }
+}
+```
+
+Verification: revoke or rotate the Codex OAuth profile token, send a Telegram message, observe Gregor responds via OpenRouter Sonnet within the cooldown window. `journalctl -u openclaw -f` should log the fallback transition.
+
+Tracked in beads `openclaw-bot-tm0` (failover chain) and `openclaw-bot-fo8` (cooldown audit). Source: [docs.openclaw.ai/concepts/model-failover](https://docs.openclaw.ai/concepts/model-failover).
+
 ### Memory Indexing Internals
 
 OpenClaw's memory system uses a three-tier architecture with SQLite as the indexing backend:
@@ -474,6 +529,7 @@ OpenClaw's memory system uses a three-tier architecture with SQLite as the index
 - [OpenClaw Docs: Context](https://docs.openclaw.ai/concepts/context)
 - [OpenClaw Docs: Memory](https://docs.openclaw.ai/concepts/memory)
 - [OpenClaw Docs: Compaction](https://docs.openclaw.ai/concepts/compaction)
+- [OpenClaw Docs: Model failover](https://docs.openclaw.ai/concepts/model-failover)
 - [Lost in the Middle (Liu et al. 2023)](https://arxiv.org/abs/2307.03172)
 - [OpenClaw GitHub Issue #19534: Cache Read Always 0](https://github.com/openclaw/openclaw/issues/19534)
 - [OpenClaw GitHub Issue #9157: Workspace Injection Waste](https://github.com/openclaw/openclaw/issues/9157)
