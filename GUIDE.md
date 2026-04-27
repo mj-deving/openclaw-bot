@@ -3809,7 +3809,7 @@ openclaw cron add \
 
 Pipeline scripts for send/read/status are included in `src/pipeline/`.
 
-> **Cross-agent pipeline:** For the PAI pipeline that enables the primary bot and the local agent to delegate tasks to each other (bidirectional, across Linux users), see [Appendix I](#appendix-i--pai-pipeline-cross-agent) and [Reference/PAI-PIPELINE.md](Reference/PAI-PIPELINE.md).
+> **Cross-agent pipeline (RETIRED 2026-04-27):** Appendix I documents a two-agent shared-filesystem pipeline that was previously used to delegate complex tasks from the primary bot to a local Opus agent. The deployment was retired with Isidore Cloud, and the dedicated reference (`Reference/PAI-PIPELINE.md`) was deleted at retirement. Appendix I is retained as as-built history; consult `git log -- Reference/PAI-PIPELINE.md` for the original full reference.
 
 ---
 
@@ -4476,11 +4476,11 @@ Daily reports are pruned after 90 days by the backup script (`src/scripts/backup
 
 ---
 
-## Appendix I — PAI Pipeline (Cross-Agent)
+## Appendix I — PAI Pipeline (Cross-Agent) — RETIRED 2026-04-27
 
-The PAI pipeline enables two AI agents running as separate Linux users on the same VPS to exchange work bidirectionally through a shared filesystem. This is different from the internal pipeline (Appendix B), which handles human → bot messaging via SSH.
+> **Status: archival.** This deployment was retired on 2026-04-27 with the Isidore Cloud agent. The dedicated companion document (`Reference/PAI-PIPELINE.md`, 280 lines, schemas + security model + troubleshooting) was deleted at retirement. This appendix is retained as as-built history. To recover the full reference, consult git history: `git log -- Reference/PAI-PIPELINE.md`. Do not follow this appendix as current setup guidance unless you are intentionally re-deploying a two-agent architecture.
 
-> **Full reference:** [Reference/PAI-PIPELINE.md](Reference/PAI-PIPELINE.md) — schemas, security model, troubleshooting, and all 6 layers.
+The PAI pipeline enabled two AI agents running as separate Linux users on the same VPS to exchange work bidirectionally through a shared filesystem. This is different from the internal pipeline (Appendix B), which handles human → bot messaging via SSH.
 
 ### What It Does
 

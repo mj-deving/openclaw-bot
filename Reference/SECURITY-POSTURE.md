@@ -177,7 +177,7 @@ This is a well-above-average security posture for a self-hosted AI agent deploym
 
 **Severity:** MEDIUM | **Likelihood:** LOW (requires initial agent compromise) | **Impact:** HIGH (cross-agent lateral movement)
 
-**SECURITY.md reference:** Section 14.1, PAI-PIPELINE.md
+**SECURITY.md reference:** Section 14.1. (Pipeline architecture detail previously in `Reference/PAI-PIPELINE.md`, deleted 2026-04-27 with Isidore Cloud retirement — consult git history for the as-built reference.)
 
 ### 4.5 LCM Plugin (lossless-claw v0.4.0) — Unvetted External Dependency
 

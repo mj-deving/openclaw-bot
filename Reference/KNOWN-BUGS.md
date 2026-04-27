@@ -2,7 +2,7 @@
 
 Documented bugs affecting OpenClaw deployments, with root cause analysis, upstream tracking, and available mitigations. Focus on issues that are systemic (not one-off configuration mistakes) and affect production stability.
 
-> **Last updated:** 2026-03-14 | **OpenClaw version:** v2026.3.12
+> **Last updated:** 2026-04-27 | **OpenClaw version:** v2026.4.22
 
 ---
 
@@ -354,6 +354,63 @@ The `Issues: memory directory missing` line is reported but not fatal — it's t
 ### References
 
 - [GUIDE.md §8.0 Workspace Path Discipline](../GUIDE.md)
+
+---
+
+## 8. Strict-Schema Auto-Restore Silently Reverts Config Edits
+
+**Severity:** High | **Status:** Configuration trap | **Affected:** Any config edit to `~/.openclaw/openclaw.json` since v2026.4.x (strict schema rollout)
+
+OpenClaw's config schema declares `additionalProperties: false` at every nested object. A single misnamed key — even a typo like `timeoutMs` instead of `timeoutSec` — invalidates the entire config block. On the next gateway restart the runtime triggers `reload-invalid-config`, which **silently restores the last-known-good snapshot** from a backup. *All* edits in that session are reverted, not just the bad key. The service starts cleanly, model registration succeeds, and `openclaw capability model run --model X` works (because the model is in `agents.defaults.models`) — but your fallback chain, exec tuning, or whatever else you changed is gone, and there is no error in the user-facing logs.
+
+This is how the bot regressed silently on 2026-04-27: a fallback-chain edit was paired with `tools.exec.timeoutMs: 90000` (correct key is `timeoutSec`). The schema rejected the whole config; auto-restore reverted to the prior fallback chain. Pong via direct `--model` override worked, masking the regression for ~90 minutes.
+
+### Symptom
+
+- You edit `~/.openclaw/openclaw.json` (e.g., add a fallback chain, tune `tools.exec.timeoutSec`, add a subagent)
+- `sudo systemctl restart openclaw` succeeds
+- Service status: `active (running)` — no error
+- `openclaw capability model run --model <provider>/<name>` returns a healthy pong
+- Behavior in production does NOT match what you configured
+
+### Root Cause
+
+1. Schema is strict: every nested object has `additionalProperties: false` (verified at `tools.exec`, `agents.defaults`, and many sibling nodes)
+2. ONE wrong key — anywhere in the file — fails whole-document validation
+3. Validation failure on startup triggers `reload-invalid-config` which restores from the last-known-good backup
+4. Restoration is silent in the user-facing journal; the only signal is that your edit isn't there anymore
+5. `--model X` invocation tests model **registration** (allowlist in `agents.defaults.models`), not the **fallback chain** (`agents.defaults.model.fallbacks`) — so a successful pong proves nothing about the chain
+
+### Smoking-Gun Diagnostic
+
+```bash
+# Always run BEFORE restart:
+openclaw config validate
+# Validates against the live schema. Cleaner than `config dump`.
+# If you see "additionalProperties" or "must NOT have additional properties" — STOP, fix, revalidate.
+
+# After restart, READ BACK the live JSON to confirm persistence:
+sudo -u openclaw cat ~/.openclaw/openclaw.json | jq '.agents.defaults.model.fallbacks'
+sudo -u openclaw cat ~/.openclaw/openclaw.json | jq '.tools.exec'
+# These MUST match what you edited. If they revert to a prior shape, auto-restore fired.
+```
+
+The pong-only test is **insufficient**. The runtime allowlist may permit a model via direct `--model` override even when the fallback chain config got auto-restored.
+
+### Fix / Discipline
+
+1. **Always run `openclaw config validate` BEFORE every restart.** Treat its output as a gate.
+2. **READ BACK from `~/.openclaw/openclaw.json` POST-RESTART.** Compare the actual live JSON to your intended edits. Only this proves persistence.
+3. **Discover correct keys via the schema, not memory:** `openclaw config schema | jq '.properties.tools.properties.exec'` (or wherever you're editing) shows the legal sibling keys.
+4. **Sibling correct keys for `tools.exec`:** `timeoutSec` (NOT `timeoutMs`), `security`, `allowlist`, `denylist`. (As of v2026.4.22.)
+5. **Don't trust pong as fallback-chain proof.** A `--model X` test confirms model registration only. To test failover, force the primary unavailable (e.g., revoke its API key briefly, or change the chain head to a deliberately-broken model name) and confirm the next chain entry fires.
+6. **Keep `~/.openclaw/openclaw.json.bak` aware.** If auto-restore fires, the prior good config is in the backup; check timestamps to detect silent reversion (`stat ~/.openclaw/openclaw.json*`).
+
+### References
+
+- bd memory `openclaw-config-edit-discipline-always-run-openclaw-config` (this session's lesson)
+- bd memory `gregor-regression-learnings-2026-04-27-my-verified` (pong false-positive)
+- Affected beads on 2026-04-27: `tm0`, `zhm`, `kou` (re-opened 15:50 after silent regression detected, fixed and re-closed with read-back evidence)
 
 ---
 
