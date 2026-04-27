@@ -504,6 +504,46 @@ Verification: revoke or rotate the Codex OAuth profile token, send a Telegram me
 
 Tracked in beads `openclaw-bot-tm0` (failover chain) and `openclaw-bot-fo8` (cooldown audit). Source: [docs.openclaw.ai/concepts/model-failover](https://docs.openclaw.ai/concepts/model-failover).
 
+#### Footgun: OAuth providers cannot do background LLM work
+
+Hard-earned rule from compaction (and confirmed by every background-LLM feature surveyed since): **any feature that invokes an LLM in a background process must pin to an API-key provider, not the OAuth runtime model.** OAuth tokens (Codex `openai-codex/...`, ChatGPT Pro, Claude.ai sessions) are not reliably maintainable across separate process invocations — per OpenAI's own Codex CLI docs and our own production data.
+
+Affected features (each must pin its own model in config):
+
+| Feature | Config key | Recommended pin |
+|---------|-----------|----------------|
+| Compaction | `agents.defaults.compaction.model` | `openrouter/openai/gpt-4.1-mini` (currently set) |
+| Dreaming | `agents.defaults.dreaming.model` (if/when adopted) | `openrouter/anthropic/claude-haiku-4-5` |
+| Honcho consolidation | (vendor-specific, if/when adopted) | API-key path required |
+| Subagent leaf workers | `agents.defaults.subagents.model` | `openrouter/anthropic/claude-haiku-4-5` (currently set) |
+| Plugin background scans | (per-plugin) | API-key path |
+
+The chat path (foreground, single in-session call chain) is fine on OAuth. Anything that fires from a cron, post-message hook, async consolidation, or detached process needs the explicit pin.
+
+**Symptom of getting this wrong:** silent compaction failure, "no API key found for provider X" in logs, OR the feature appears to work for the first request after a restart and then degrades. The latter is the cruellest mode — it hides the bug behind a successful initial probe.
+
+**Required step for ANY new background-LLM feature adoption:** before enabling, verify the feature has a `*.model` config key, set it to a registered API-key model, and add the model to `agents.defaults.models` allowlist if needed (otherwise the runtime allowlist rejects it — see "fallback registration" below).
+
+#### Fallback registration: the models allowlist gotcha
+
+`agents.defaults.model.fallbacks` is the FAILOVER chain. `agents.defaults.models` is the REGISTRY/allowlist that the runtime checks. **A model listed in fallbacks but missing from models will be rejected at runtime** with `Model override "X" is not allowed for agent "main"`. Both must agree.
+
+Discovered while applying the failover diff in this repo: Sonnet/Haiku had to be added to `models` even though they were already in `model.fallbacks`. The CLI test command (`openclaw capability model run --model X`) surfaces this immediately; the runtime fallback path would also fail (silently from the user's perspective, loudly in journalctl).
+
+#### Gregor's current cooldown values (fo8 audit, 2026-04-27)
+
+`auth.cooldowns: {}` — empty, all defaults in effect:
+
+| Default | Value | Rationale to keep default |
+|---------|-------|---------------------------|
+| `overloadedProfileRotations` | 1 | One same-provider retry then fall through to model fallback. Right balance for our chain — Codex glitches usually clear within seconds; longer rotation just delays the fallback. |
+| `rateLimitedProfileRotations` | (per-rate-limit) | Per-model rate limits cooldown the affected model only; siblings pass through. Default sufficient. |
+| `billingBackoffHours` | 5 | Doubling backoff capped at 24h handles billing disables (e.g., monthly Codex caps) without thrashing. |
+| `billingMaxHours` | 24 | Resets after 24h of no failure. Sane. |
+| `OPENCLAW_SDK_RETRY_MAX_WAIT_SECONDS` | 60 | SDK retry-after cap. We've never seen a single-request retry-after exceed this. Keep until we do. |
+
+**Verdict: no overrides needed.** Re-verify if a future failure pattern shows the failover chain is too slow OR too aggressive (e.g., flipping to free during a transient blip).
+
 ### Memory Indexing Internals
 
 OpenClaw's memory system uses a three-tier architecture with SQLite as the indexing backend:

@@ -141,10 +141,10 @@ describe("T-EXFIL-003 Credential Harvesting probes", () => {
       // DENY_FILENAMES so the filename guard fires regardless of cwd.
     });
 
-    test("GAP: auth-profiles.json INSIDE allowedDirectories would currently be allowed", () => {
-      // Simulate the dangerous case: a tool config that includes the agent dir
-      // as an allowedDirectory. Under that config, the filename guard is the
-      // only barrier — and it doesn't fire on auth-profiles.json today.
+    test("auth-profiles.json INSIDE allowedDirectories is blocked by DENY_FILENAMES (bead 0pi closed)", () => {
+      // Canary test that flipped when bead 0pi landed: auth-profiles.json
+      // is now in L6 DENY_FILENAMES, so the filename guard fires regardless
+      // of the allowedDirectories config.
       const permissive: AccessControlConfig = {
         allowedDirectories: ["/home/openclaw/.openclaw"],
       };
@@ -152,10 +152,27 @@ describe("T-EXFIL-003 Credential Harvesting probes", () => {
         "/home/openclaw/.openclaw/agents/main/agent/auth-profiles.json",
         permissive
       );
-      // Current behavior: ALLOWED. After mitigation (adding auth-profiles.json
-      // to DENY_FILENAMES): expect false. This test will flip when the gap
-      // is closed — flag it as the canary.
-      expect(result.allowed).toBe(true); // ← intentionally documents current gap
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain("auth-profiles.json");
+    });
+
+    test("openclaw.json is blocked by DENY_FILENAMES (bead 0pi)", () => {
+      const permissive: AccessControlConfig = {
+        allowedDirectories: ["/home/openclaw/.openclaw"],
+      };
+      const result = checkPath("/home/openclaw/.openclaw/openclaw.json", permissive);
+      expect(result.allowed).toBe(false);
+    });
+
+    test("oauth.json is blocked by DENY_FILENAMES (bead 0pi)", () => {
+      const permissive: AccessControlConfig = {
+        allowedDirectories: ["/home/openclaw/.openclaw"],
+      };
+      const result = checkPath(
+        "/home/openclaw/.openclaw/credentials/oauth.json",
+        permissive
+      );
+      expect(result.allowed).toBe(false);
     });
   });
 
@@ -180,10 +197,9 @@ describe("T-EXFIL-003 Credential Harvesting probes", () => {
       expect(result.violations.some((v) => v.type === "internal_path")).toBe(true);
     });
 
-    test("GAP: structured JSON dump of auth-profiles content is not pattern-matched as a single secret", () => {
-      // If the agent serializes a credential JSON object (without leading
-      // 'sk-' style markers) the L3 secret patterns may not all fire.
-      // Example: a profile object with refresh tokens, expiry, email.
+    test("structured JSON dump of auth-profile is caught by L3 (bead b32 closed)", () => {
+      // OAuth profile shape — provider+refresh+expires triggers the
+      // structured-credential detector regardless of opaque token content.
       const reply = JSON.stringify({
         provider: "openai-codex",
         type: "oauth",
@@ -192,13 +208,28 @@ describe("T-EXFIL-003 Credential Harvesting probes", () => {
         email: "victim@example.com",
       });
       const result = gate(reply);
-      // The Bearer/sk-/ghp_ patterns won't fire — this is a known limitation.
-      // L4 redaction WOULD catch the email if marked as personal. Document
-      // current state for follow-up: consider a structured-credential
-      // detector that fires on '{provider, refresh, expires}' shape.
-      // Current expected behavior: L3 may or may not catch this depending
-      // on whether the random refresh string trips a pattern.
-      expect([true, false]).toContain(result.passed); // either outcome is informative
+      expect(result.passed).toBe(false);
+      expect(result.violations.some((v) => v.reason.includes("Structured credential"))).toBe(true);
+      expect(result.cleaned).toContain("[REDACTED_CREDENTIAL_OBJECT]");
+    });
+
+    test("API-key profile shape (provider+apiKey) is caught by L3 (bead b32)", () => {
+      const reply = `Profile: ${JSON.stringify({ provider: "openrouter", apiKey: "or-v1-some-opaque-string-here" })}`;
+      const result = gate(reply);
+      expect(result.passed).toBe(false);
+    });
+
+    test("botToken alone in a JSON object is caught by L3 (bead b32)", () => {
+      const reply = `Config: ${JSON.stringify({ enabled: true, botToken: "1234567890:AAH-SOME-OPAQUE-TOKEN" })}`;
+      const result = gate(reply);
+      expect(result.passed).toBe(false);
+    });
+
+    test("non-credential JSON does NOT false-positive on b32 detector", () => {
+      const reply = JSON.stringify({ status: "ok", count: 42, items: ["a", "b"] });
+      const result = gate(reply);
+      // Should pass — no credential shape match
+      expect(result.passed).toBe(true);
     });
   });
 

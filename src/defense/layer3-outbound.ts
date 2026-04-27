@@ -66,6 +66,74 @@ const EXFIL_URL_PATTERNS: RegExp[] = [
   /!\[(?:[ ]?)\]\(https?:\/\/[^\s)]+\)/g,  // Zero-content images (tracking pixels)
 ];
 
+// ── Structured Credential Patterns (bead b32) ───────────────────────
+//
+// Catches serialized credential OBJECTS that don't trip the per-string
+// patterns above. Example: JSON.stringify(authProfile) where `refresh`
+// is an opaque random string with no recognizable prefix.
+//
+// Strategy: find JSON-shaped substrings, parse keys, fire if the key
+// set contains a known credential shape. Flat objects only — nested
+// JSON would need a balanced-brace matcher (out of scope; OAuth
+// profiles are flat in OpenClaw's schema).
+
+/** Matches a flat JSON object (no nested braces). */
+const STRUCTURED_JSON_REGEX = /\{[^{}]*\}/g;
+
+/** Key combinations whose presence in one object signals a credential. */
+const CREDENTIAL_SHAPES: ReadonlyArray<ReadonlyArray<string>> = [
+  // OAuth profile shapes
+  ["provider", "refresh", "expires"],
+  ["provider", "refresh_token", "expires"],
+  ["provider", "access_token", "expires"],
+  ["provider", "access", "expires"],
+  // API-key profile shape (matches OpenClaw schema field `apiKey`)
+  ["provider", "apiKey"],
+  ["provider", "api_key"],
+  // Generic OAuth client credentials
+  ["client_id", "client_secret"],
+];
+
+/** Bot tokens and API keys keyed alone (single-key shape). */
+const SINGLE_KEY_CREDENTIAL_KEYS: ReadonlySet<string> = new Set([
+  "botToken",
+  "bot_token",
+]);
+
+function extractJsonKeys(jsonLike: string): Set<string> {
+  const keys = new Set<string>();
+  const keyRegex = /["']([^"'\\]+)["']\s*:/g;
+  let m: RegExpExecArray | null;
+  while ((m = keyRegex.exec(jsonLike)) !== null) {
+    keys.add(m[1]);
+  }
+  return keys;
+}
+
+function matchesCredentialShape(keys: Set<string>): boolean {
+  if (Array.from(SINGLE_KEY_CREDENTIAL_KEYS).some((k) => keys.has(k))) {
+    return true;
+  }
+  return CREDENTIAL_SHAPES.some((shape) => shape.every((k) => keys.has(k)));
+}
+
+function checkStructuredCredentials(text: string): OutboundViolation[] {
+  const violations: OutboundViolation[] = [];
+  STRUCTURED_JSON_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = STRUCTURED_JSON_REGEX.exec(text)) !== null) {
+    const keys = extractJsonKeys(match[0]);
+    if (matchesCredentialShape(keys)) {
+      violations.push({
+        type: "leaked_secret",
+        match: match[0].slice(0, 60) + (match[0].length > 60 ? "..." : ""),
+        reason: "Structured credential object detected in output",
+      });
+    }
+  }
+  return violations;
+}
+
 // ── Financial Data Patterns ──────────────────────────────────────────
 
 const FINANCIAL_PATTERNS: Array<{ pattern: RegExp; name: string }> = [
@@ -176,6 +244,7 @@ export function gate(text: string): OutboundGateResult {
     ...checkPaths(text),
     ...checkInjectionArtifacts(text),
     ...checkExfilUrls(text),
+    ...checkStructuredCredentials(text),
     ...checkFinancialData(text),
   ];
 
@@ -197,6 +266,12 @@ export function gate(text: string): OutboundGateResult {
       pattern.lastIndex = 0;
       cleaned = cleaned.replace(pattern, "[REDACTED_URL]");
     }
+    // Structured credential redaction: replace JSON blocks whose keys
+    // match a credential shape with [REDACTED_CREDENTIAL_OBJECT]
+    STRUCTURED_JSON_REGEX.lastIndex = 0;
+    cleaned = cleaned.replace(STRUCTURED_JSON_REGEX, (m) =>
+      matchesCredentialShape(extractJsonKeys(m)) ? "[REDACTED_CREDENTIAL_OBJECT]" : m
+    );
     for (const { pattern } of FINANCIAL_PATTERNS) {
       pattern.lastIndex = 0;
       cleaned = cleaned.replace(pattern, "[REDACTED_FINANCIAL]");

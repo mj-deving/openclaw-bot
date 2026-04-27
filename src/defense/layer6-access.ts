@@ -55,6 +55,10 @@ const DENY_FILENAMES = new Set([
   "terraform.tfstate",
   "terraform.tfvars",
   "vault-token",
+  // OpenClaw-specific credential files (bead 0pi)
+  "auth-profiles.json",   // Per-agent OAuth tokens, API keys, refresh tokens
+  "oauth.json",           // Legacy OAuth import path (~/.openclaw/credentials/oauth.json)
+  "openclaw.json",        // Main config — contains channels.*.botToken among others
 ]);
 
 /** Sensitive file extensions */
