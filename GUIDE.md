@@ -3749,7 +3749,9 @@ Transparency about what's still being evaluated:
 
 ---
 
-## Appendix B — Async Pipeline (Local ↔ Bot)
+## Appendix B — Async Pipeline (Local ↔ Bot) — RETIRED 2026-04-28
+
+> **Status: archival.** This async-pipeline pattern was retired on 2026-04-28. The VPS-side directory (`~/.openclaw/pipeline/`) was never re-provisioned after the 2026-04-24 Gregor rebuild, and `src/pipeline/status.sh` was masking that absence with a silent fail. Rather than rebuild the pipeline + watcher service, the simpler **synchronous replacement** is `ssh vps 'openclaw agent --agent main --json --timeout 90 --message "<question>"'` — single SSH round-trip, gives back the bot's reply + execution trace + tool summary in one JSON blob, no inbox/outbox/ack files to manage. The local `src/pipeline/{send,read,status}.sh` scripts remain in the repo as archival reference; `status.sh` now fail-fasts on the missing directory. Do not follow this appendix as current setup guidance unless you intentionally want to revive the file-queue pattern (e.g., for a multi-bot or batch-overnight workflow that needs durable queuing).
 
 A file-based message queue for delegating tasks between your local machine and the bot. Why files over a real-time API? SSH is already there (no new auth, ports, or software), JSON files are inspectable with `ls`/`cat`/`jq`, processed messages move to `ack/` for a full audit trail, and the tasks it handles (summarize, scan, research) aren't time-critical — the bottleneck is human attention, not message latency.
 
