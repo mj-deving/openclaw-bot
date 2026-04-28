@@ -9,6 +9,11 @@ SSH_HOST="vps"
 
 echo "=== Pipeline Status ==="
 ssh "$SSH_HOST" "
+    if [ ! -d '${PIPELINE_DIR}' ]; then
+        echo '  ERROR: pipeline directory missing on VPS: ${PIPELINE_DIR}'
+        echo '  (the internal pipeline is not provisioned — use openclaw agent --agent main for synchronous probes)'
+        exit 2
+    fi
     INBOX=\$(ls -1 '${PIPELINE_DIR}/inbox/' 2>/dev/null | grep -c '.json\$' || true)
     INBOX=\${INBOX:-0}
     OUTBOX=\$(ls -1 '${PIPELINE_DIR}/outbox/' 2>/dev/null | grep -c '.json\$' || true)
