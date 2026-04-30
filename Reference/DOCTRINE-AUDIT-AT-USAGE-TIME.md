@@ -75,11 +75,21 @@ When a skill is loaded WITHOUT a current audit.json sidecar:
 
 ### Pre-deployment dependency
 
-**Bead `32h` (ClawKeeper FP tuning) MUST close before this doctrine becomes a hard gate.** The existing SC-CRED-008 / SC-TRUST-001 false-positive noise (matches node_modules READMEs and recursively-injected constitutions) would block legitimate forks on noise — defeating the doctrine. Sequence:
-1. Close `32h` (tune SC-CRED-008 + SC-TRUST-001 false-positive patterns)
-2. Add `SC-LIC-* / SC-DEP-* / SC-NET-* / SC-EXEC-* / SC-INJ-* / SC-FS-* / SC-HOOK-*` rules to ClawKeeper v2
-3. Implement `scan-skill` v2 to emit `audit.json` sidecar
-4. Then enforce the gate via `clawkeeper harden`
+**The `clawkeeper audit` (host audit) and `clawkeeper scan-skill` (skill-fork scan) are SEPARATE code paths with SEPARATE rule sets.** Verified 2026-04-30 by reading `~/.openclaw/extensions/clawkeeper/src/`:
+
+| Command | Engine file | Rule source | Prefix convention |
+|---------|-------------|-------------|-------------------|
+| `clawkeeper audit` | `audit-engine.js` + `audit-engine-extended.js` | Hardcoded JS rules | `SC-*` (e.g. SC-CRED-008, SC-TRUST-001) |
+| `clawkeeper scan-skill` | `skill-scanner.js` | `src/config/core-rules.json` | `shell.* / prompt.* / script.* / skill.*` |
+
+**Bead `32h` flagged two FPs (SC-CRED-008 + SC-TRUST-001) on the host-audit path, NOT on scan-skill.** Closed 2026-04-28 as won't-fix-at-this-layer; upstream FR filed as bead `3k4`. The 21/100 cosmetic host-audit score is unrelated to the audit-at-usage-time gate. **The doctrine is NOT blocked by 32h.**
+
+**Implementation sequence (revised 2026-04-30):**
+1. Audit gate uses `clawkeeper scan-skill` v1 today (`core-rules.json`'s 9 patterns: shell.remote-pipe, shell.force-delete, shell.secret-read, prompt.override-authority, prompt.secret-export, script.dynamic-launch, script.identity-tamper, script.env-exfil-hint, skill.boundary-rewrite). These cover ~3 of the 8-check audit checklist (#4 child_process/exec, #5 secrets, #6 prompt-injection).
+2. **`xg5`** designs scan-skill **v2** to extend `core-rules.json` with the 5 missing checks (#1 license, #2 dependencies, #3 network egress, #7 filesystem writes, #8 plugin hooks) AND emit signed `audit.json` sidecar. New rule IDs use the existing prefix convention: `license.* / dep.* / net.* / fs.* / hook.*` — NOT `SC-*` (which is the host-audit namespace).
+3. Enforce gate via `clawkeeper harden` once scan-skill v2 lands and audit.json is emitted reliably.
+
+**Bootstrap velocity option:** because scan-skill v1 already covers the most-critical 3 of 8 checks (exec / secrets / prompt-injection), a vertical bot can deploy on scan-skill v1 + manual audit checklist for the other 5, with scan-skill v2 retrofitting later. This unblocks Aldine immediately if velocity is preferred over full enforcement-day-one.
 
 ## Doctrine Fit
 
