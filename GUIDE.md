@@ -4751,3 +4751,38 @@ bun test --filter "L5"   # Cost governor
 Bot self-evaluation showed the defense system blocking 100% of encoded payload attempts and flagging 94% of social engineering attempts — compared to 71% with model-level defenses alone.
 
 > **Deep dive:** [Reference/DEFENSE-SYSTEM.md](Reference/DEFENSE-SYSTEM.md) covers the complete technical specification — threat model, hook mapping, layer internals, and test matrix. [Reference/CLAWKEEPER.md](Reference/CLAWKEEPER.md) covers ClawKeeper installation, audit domains, and operational commands.
+
+## Appendix L — Vertical Agent-Pack Bootstrap (overlay, 2026-04-30)
+
+**Goal:** From "I want vertical N agent" to "agent running" in <30 minutes, on the same VPS as Gregor, reusing the AtlasForge chassis.
+
+**This is an overlay on Phases 1–15 of this GUIDE, NOT a rewrite.** Each numbered step below maps to specific GUIDE phases — only the per-bot deltas are listed here.
+
+### Pack design (full spec elsewhere)
+
+See [Reference/VERTICAL-AGENTS.md](Reference/VERTICAL-AGENTS.md) for the 5-bot mapping (Gregor + Aldine + Vesalius + Hypatia + revived Dismas), per-bot skill packs, channel surface, model + fallback chain, and persona scaffolding. See [Reference/SKILL-LANDSCAPE.md](Reference/SKILL-LANDSCAPE.md) for the top-100 skill catalog × 15 verticals that feeds each pack. See [Reference/DOCTRINE-AUDIT-AT-USAGE-TIME.md](Reference/DOCTRINE-AUDIT-AT-USAGE-TIME.md) for the skill audit gate.
+
+### Bootstrap sequence (~30 min per new bot)
+
+| # | Step | GUIDE phase ref | Time | Per-bot delta |
+|---|------|----------------|------|---------------|
+| 1 | User + sudoers | Phase 1 + 2 | 3 min | `sudo openclaw-install-user <bot>` + per-bot scoped sudoers drop-in (copy `/etc/sudoers.d/openclaw-restricted-admin` template, substitute user) |
+| 2 | Workspace + AtlasForge chassis | Phase 8 | 5 min | Copy Gregor's workspace template; substitute persona / IDENTITY / AGENTS files from `Reference/AtlasForge-Bundle/`; **pin workspace under `/home/<bot>/.openclaw/workspace`** (NEVER /tmp — KNOWN-BUGS #7) |
+| 3 | Authentication | Phase 5 | 5 min | Codex OAuth done locally then `scp` to `/home/<bot>/.openclaw/agents/main/agent/auth-profiles.json` (mode 0600); add OpenRouter API key for compaction |
+| 4 | Config | Phase 6 | 5 min | Generate `openclaw.json` from per-bot template (port, workspace, channels, models per VERTICAL-AGENTS.md); `openclaw config validate` clean; **read-back from live JSON post-restart** (KNOWN-BUGS #8) |
+| 5 | Channels | Phase 11 | 5 min | Register Telegram bot token; opt-in Slack socket-mode + Discord DM-only per bot's spec |
+| 6 | Skill pack | Phase 9 | 5 min | Copy bundled skills (already on host); fork upstream skills into `~/<bot>/.openclaw/skills/`; run `openclaw clawkeeper scan-skill /path` per skill (audit-at-usage-time gate) |
+| 7 | Plugins + linger | Phase 7 + 13 | 2 min | Install ClawKeeper + defense-shield; `loginctl enable-linger <bot>` |
+| 8 | Smoke test | Phase 14 | varies | `ssh vps 'openclaw agent --agent main --json --message "ping"'`; verify identity, fallback chain, workspace path |
+
+### Bootstrap order (per VERTICAL-AGENTS.md)
+
+1. **Aldine** (flagship V3+V8+V12) — Marius's #1 stated interest; lowest blast-radius for chassis-overlay validation
+2. **Vesalius** (V1+V11+V7) — Slack socket-mode adapter validation; Codex shines on code
+3. **Hypatia** (V2+V10+V14) — V2 transfer from Gregor needs coordination
+4. **Dismas revival** (V5+V4+V13) — security-isolated; do last once bootstrap pattern is proven 3×
+
+### Tracking
+
+- Beads: `o38` (Aldine), `8bi` (Vesalius), `o6a` (Hypatia), `cgy` (Dismas revival)
+- Audit-doctrine prerequisite: `xg5` (ClawKeeper SC-* rules) → blocks all 4 bot-bootstrap beads → itself depends on `32h` (ClawKeeper FP tuning)
