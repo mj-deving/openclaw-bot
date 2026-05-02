@@ -30,7 +30,10 @@
 
 Each entry: `skill-id` `[trust-tag]` `(source)` — purpose. Trust tags: `[bundled]` already in OpenClaw 50; `[fork-with-audit]` top-100 from awesome-list; `[inspiration-only]` aggregator-only; `[dangerous-avoid]` typosquat / malicious-flagged. Default for top-100 awesome entries = `[fork-with-audit]`.
 
-### V1 — Dev / code-copilot (→ Vesalius)
+### V1 — Dev / code-copilot (→ Gregor de-facto since 2026-05-02; Vesalius transfer deferred indefinitely)
+
+> **Active 2026-05-02:** Gregor rebranded from "OmniWeb research overlay" to "OmniWeb general-purpose maintainer agent" — primary repo maintainer of `demos-agents`. V1 is now Gregor's de-facto vertical; the agent-pack deploy plan is parked (backlog).
+
 - `code-reviewer` `[fork-with-audit]` (awesome) — PR-style review with severity tiers
 - `debugger` `[fork-with-audit]` (awesome) — stack-trace + repro-loop driver
 - `test-generator` / `test-writer` `[fork-with-audit]` (awesome) — unit + integration scaffolding

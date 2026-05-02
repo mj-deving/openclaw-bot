@@ -414,4 +414,159 @@ The pong-only test is **insufficient**. The runtime allowlist may permit a model
 
 ---
 
+## 9. ACP `sessions_spawn` Ignores `agents.list[]` — `agentId` Must Be a Harness ID
+
+**Status:** Confirmed v2026.4.22 (2026-05-02). Source-verified.
+
+**Symptom:** Calling `sessions_spawn(runtime:"acp", agentId:"codex-eng", mode:"session", thread:true)` after declaring a custom ACP agent in `agents.list[]` fails with:
+
+```
+spawn_failed
+Failed to spawn agent command: codex-eng
+```
+
+If you instead pass the harness id `agentId:"codex"` while `acp.allowedAgents` only contains `["codex-eng","codex-research"]`, you get:
+
+```
+agent_forbidden
+ACP agent "codex" is not allowed by policy.
+```
+
+**Root cause:** The ACP spawn handler does **not** consult `agents.list[]`. The `agentId` argument is passed straight through:
+
+- `dist/acp-spawn-sxPJHfFf.js:428` — `resolveTargetAcpAgentId(params.agentId)` returns `params.agentId` unchanged (or `acp.defaultAgent` when absent). No `agents.list[]` lookup.
+- `dist/acp-spawn-sxPJHfFf.js:846` — `resolveAcpAgentPolicyError(cfg, targetAgentId)` checks `acp.allowedAgents` (so "codex-eng" passes user policy).
+- `dist/extensions/acpx/node_modules/acpx/dist/runtime.js:384` — `agentRegistry.resolve(targetAgentId)` calls
+- `dist/extensions/acpx/node_modules/acpx/dist/prompt-turn-CXMtXBl-.js:71` — `resolveAgentCommand("codex-eng", overrides)` → `registry["codex-eng"]` undefined → `AGENT_ALIASES["codex-eng"]` undefined → returns `"codex-eng"` literally
+- `dist/extensions/acpx/node_modules/acpx/dist/prompt-turn-CXMtXBl-.js:1356` — `spawn("codex-eng", …)` → ENOENT → `AgentSpawnError`
+
+The acpx hardcoded `AGENT_REGISTRY` (prompt-turn-CXMtXBl-.js:19) is the only valid namespace for `agentId`:
+
+```
+pi, openclaw, codex, claude, gemini, cursor, copilot, droid,
+iflow, kilocode, kimi, kiro, opencode, qoder, qwen, trae
+```
+
+**What `agents.list[].runtime.type:"acp"` actually does:** Per schema description ("ACP runtime defaults for this agent when runtime.type=acp. Binding-level ACP overrides still take precedence per conversation"), it provides per-OpenClaw-agent defaults (cwd, mode, harness id pointer) used when **incoming traffic** is routed through `bindings[]` of `type:"acp"`. It is **not** a registration of a programmatically-spawnable ACP agent. The runtime never reaches it during `sessions_spawn`.
+
+**Workaround for v2026.4.22:**
+
+For programmatic dispatch (the `sessions_spawn` path), pass a real harness id:
+
+```
+sessions_spawn(runtime:"acp", agentId:"codex", mode:"session", thread:true,
+               cwd:"/home/openclaw/workspaces/eng",
+               resumeSessionId: <persisted-id-from-prior-spawn>)
+```
+
+For two persistent peers, differentiate by **stable thread + cwd** (the ACP session is bound to the thread when `thread:true`+`mode:"session"`). The "named co-worker" identity is per-thread-per-cwd, not per-`agentId`.
+
+For channel-routed persistence, use `bindings[]` of `type:"acp"` to pin a specific Telegram thread/peer to an `agents.list[]` entry whose `runtime.acp.agent: "codex"` (the harness pointer) and `runtime.acp.cwd` is the working directory. The label is for diagnostics; the harness is still resolved through the hardcoded registry.
+
+**Bug or design?** Documented behavior says `agents.list[].runtime.type:"acp"` declares ACP runtime defaults; however the mental model of "address custom ACP agents by id from `sessions_spawn`" (which the docs and examples imply) is **not implemented** in v2026.4.22. Either:
+
+- runtime gap: `resolveTargetAcpAgentId` should detect `agents.list[].id` matches and resolve harness via `runtime.acp.agent`, OR
+- doc gap: docs.openclaw.ai/tools/acp-agents should clarify that `sessions_spawn(agentId)` is a harness id, not an agent.list id, and that custom ACP identities are channel-side via `bindings[]`.
+
+**Discipline:** when wiring ACP for the first time, validate end-to-end with the simplest call:
+
+```bash
+# 1. set acp.allowedAgents to the harness id, not custom names
+openclaw config set acp.allowedAgents '["codex"]'
+openclaw config set acp.defaultAgent codex
+
+# 2. probe via /acp doctor and openclaw acp status
+openclaw acp doctor
+
+# 3. only after the harness path works, layer on agents.list[] + bindings[] for identity
+```
+
+**See also:**
+- bd memory `acpx-agentid-is-harness-not-agentlist-2026-05-02`
+- Source: `~/.npm-global/lib/node_modules/openclaw/dist/{acp-spawn-sxPJHfFf.js, extensions/acpx/node_modules/acpx/dist/{runtime.js, prompt-turn-CXMtXBl-.js, perf-metrics-D0um6IR6.js}}`
+
+---
+
+## 10. acpx Skips `authenticate` for ChatGPT OAuth Without Env Marker — `Token data is not available`
+
+**Status:** Confirmed v2026.4.22 (2026-05-02). Source-verified, fix-verified end-to-end.
+
+**Symptom:** A `/acp spawn codex` (or any acpx-mediated codex peer launch) reports:
+
+```
+Falling back from WebSockets to HTTPS transport.
+Token data is not available.
+ACP error (ACP_TURN_FAILED): Internal error
+```
+
+…even when `~/.codex/auth.json` is healthy and contains valid `tokens.refresh_token`/`id_token`/`account_id` (verified by direct JSON-RPC handshake — see Repro below).
+
+**Root cause:** `acpx.AcpClient.selectAuthMethod` (`extensions/acpx/node_modules/acpx/dist/prompt-turn-CXMtXBl-.js:2405-2419`) iterates the `authMethods` array returned by codex-acp's `initialize` response and **requires a non-empty environment credential matching each method's id** before it will mark the method as selected:
+
+```js
+selectAuthMethod(methods) {
+    for (const method of methods) {
+        const envCredential = readEnvCredential(method.id);
+        if (envCredential) return { methodId: method.id, credential: envCredential, source: "env" };
+        const configCredential = resolveConfiguredAuthCredential(method.id, this.options.authCredentials);
+        if (typeof configCredential === "string" && configCredential.trim().length > 0) return { ... };
+    }
+}
+```
+
+`readEnvCredential("chatgpt")` checks env keys `chatgpt`, `CHATGPT`, `ACPX_AUTH_CHATGPT` (via `toEnvToken` at line 1433). With none of those set, the function returns `undefined` and `authenticateIfRequired` (line 2421) **silently skips the authenticate call** with the log message:
+
+```
+agent advertised auth methods [chatgpt, codex-api-key, openai-api-key] but no matching
+credentials found — skipping (agent may handle auth internally)
+```
+
+codex-acp then has no auth state loaded, falls back to OAuth refresh from a cold state, fails with the cascading errors above. The `~/.codex/auth.json` is never read because `authenticate({methodId:"chatgpt"})` was never sent.
+
+**Why this is a bug:** The `chatgpt` OAuth method does not need a string credential — codex-acp handles all auth internally from `$CODEX_HOME/auth.json` once it receives `authenticate(methodId:"chatgpt")`. acpx's check is overly defensive: it conflates env-var-based methods (`codex-api-key`, `openai-api-key` — which legitimately need a string credential) with OAuth methods that don't.
+
+**Workaround (verified):** Set `CHATGPT=1` (or any non-empty marker) in the gateway's systemd environment so `selectAuthMethod` finds the env match and triggers `authenticate(methodId:"chatgpt")`:
+
+```bash
+sudo tee /etc/systemd/system/openclaw.service.d/codex-acp-auth-chatgpt.conf <<'EOF'
+[Service]
+Environment=CHATGPT=1
+EOF
+sudo systemctl daemon-reload
+sudo openclaw-gateway-stop && sleep 4 && sudo openclaw-gateway-start
+```
+
+The credential value is unused — only its presence matters. `selectAuthMethod` returns `{methodId:"chatgpt", credential:"1", source:"env"}`, `authenticateIfRequired` calls `connection.authenticate({methodId:"chatgpt"})`, codex-acp loads `auth.json` tokens, session creation succeeds.
+
+**Repro / direct evidence the auth surface itself works:**
+
+```bash
+ssh vps 'sudo -u openclaw bash -lc "cd /tmp && \
+  CODEX_HOME=/home/openclaw/.openclaw/agents/main/agent/acp-auth/codex-source \
+  timeout 15 /home/openclaw/.npm/_npx/<hash>/node_modules/@zed-industries/codex-acp-linux-x64/bin/codex-acp" <<EOF
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}
+{"jsonrpc":"2.0","id":2,"method":"authenticate","params":{"methodId":"chatgpt"}}
+{"jsonrpc":"2.0","id":3,"method":"session/new","params":{"cwd":"/home/openclaw/workspaces/eng","mcpServers":[]}}
+EOF
+```
+
+When `auth.json` is valid: id=2 returns `{}` (success), id=3 returns a `sessionId` + model list. When acpx skips id=2: id=3 fails with the cascading transport errors.
+
+**End-to-end verification (2026-05-02 19:07 post-workaround):** `/acp spawn codex --mode persistent --thread auto --cwd /home/openclaw/workspaces/eng --label codex-eng` → sessionKey `agent:codex:acp:76d959af-...`, persistent, peer responded with model `Codex/GPT-5`, cwd `/home/openclaw/workspaces/eng`, acpx session id `019de9a8-...`. No fallback errors.
+
+**Hidden prerequisite — the auth.json itself must be valid Codex CLI shape.** Required keys: `tokens.{refresh_token, id_token, account_id}` (and optionally `OPENAI_API_KEY`). A 2337-byte malformed file with no `tokens` block will fail even with `CHATGPT=1` set. Procedure: `codex login` on a workstation with a browser, scp `~/.codex/auth.json` to both VPS locations:
+- `/home/openclaw/.codex/auth.json` (mode 0600 owner openclaw)
+- `/home/openclaw/.openclaw/agents/main/agent/acp-auth/codex-source/auth.json` (same)
+
+Also copy `~/.codex/installation_id` to the acp-auth path so the harness identity is consistent.
+
+**Upstream fix would look like:** in `selectAuthMethod`, treat OAuth methods (those without a `type: "env_var"` property) as auto-eligible without requiring an env credential. The `authMethods` response distinguishes them — `chatgpt` has no `type` field, `codex-api-key`/`openai-api-key` have `type: "env_var"`.
+
+**See also:**
+- bd memory `acpx-chatgpt-env-required-workaround-2026-05-02`
+- bd memory `acpx-agentid-is-harness-not-agentlist-2026-05-02`
+- KNOWN-BUGS §9 (the agentId namespace gotcha — different bug, same plugin)
+
+---
+
 *This document tracks bugs confirmed through deployment experience and upstream issue research. For security-specific patches and CVEs, see [SECURITY-PATCHES.md](SECURITY-PATCHES.md).*
