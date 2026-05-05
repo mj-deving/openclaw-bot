@@ -51,6 +51,8 @@ OpenClaw is an open-source AI agent gateway that bridges multiple messaging plat
 - [I — PAI Pipeline (Cross-Agent)](#appendix-i--pai-pipeline-cross-agent)
 - [J — Kubernetes Deployment (Alternative)](#appendix-j--kubernetes-deployment-alternative)
 - [K — Prompt Injection Defense System](#appendix-k--prompt-injection-defense-system)
+- [L — Vertical Agent-Pack Bootstrap](#appendix-l--vertical-agent-pack-bootstrap-overlay-2026-04-30)
+- [M — Mission Control Integration](#appendix-m--mission-control-integration-overlay-2026-05-05)
 
 ---
 
@@ -827,6 +829,8 @@ See [SECURITY.md §16.5](Reference/SECURITY.md) for the full post-onboard checkl
 - [ ] Telegram messages work through the service
 - [ ] Service restarts on failure (`systemctl show openclaw -p Restart` → on-failure)
 - [ ] Post-onboard security review passed (if onboard was run)
+
+> **Optional next step — Mission Control integration.** If this bot will be driven by the Mission Control dashboard at `https://missioncontrol.mjdeving.com`, switch `gateway.bind` from `loopback` to `lan` (per Appendix M's prerequisites and the doctrine line in `CLAUDE.md` "Gateway exposure (Mission Control)"), then follow [Appendix M — Mission Control Integration](#appendix-m--mission-control-integration-overlay-2026-05-05). It captures the device-pair flow, URL/auth shape, post-registration follow-ons, and 12 gotchas distilled from the live registration on 2026-05-05.
 
 ---
 
@@ -3821,6 +3825,8 @@ You can run multiple OpenClaw instances on the same VPS — each with its own co
 
 > **Battle-tested:** This appendix was validated by deploying a second bot on the same VPS (v2026.4.5, OpenAI Codex subscription auth). Every gotcha documented below was encountered and fixed in production.
 
+> **If the new bot will join Mission Control:** after the systemd service is up (~end of C.6), follow [Appendix M — Mission Control Integration](#appendix-m--mission-control-integration-overlay-2026-05-05). For multi-bot MC deployments, also reserve a unique gateway port per bot AND verify the Caddy/socat sidecar for the new bot in `compose.caddy.yml` doesn't collide with another's port (Gregor's chain uses `172.21.0.1:18790 → :18789`; future Dismas at `:18790` will collide on bootstrap day — renumber first per [Reference/MISSION-CONTROL.md](Reference/MISSION-CONTROL.md)).
+
 ### C.1 Create the User
 
 ```bash
@@ -4786,3 +4792,201 @@ See [Reference/VERTICAL-AGENTS.md](Reference/VERTICAL-AGENTS.md) for the 5-bot m
 
 - Beads: `o38` (Aldine), `8bi` (Vesalius), `o6a` (Hypatia), `cgy` (Dismas revival)
 - Audit-doctrine prerequisite: `xg5` (ClawKeeper SC-* rules) → blocks all 4 bot-bootstrap beads → itself depends on `32h` (ClawKeeper FP tuning)
+
+
+---
+
+## Appendix M — Mission Control Integration (overlay, 2026-05-05)
+
+**Goal:** Register a bot's gateway with [Mission Control](https://missioncontrol.mjdeving.com) — the self-hosted dashboard at `github.com/abhi1693/openclaw-mission-control` that drives boards, agents, and gateway records — in <15 minutes. Captured live during Gregor's `mc-cy7.2.2` registration on 2026-05-05.
+
+**Architecture, auth model, and threat-model for MC live in [Reference/MISSION-CONTROL.md](Reference/MISSION-CONTROL.md).** This appendix is the procedure; the reference doc is the why.
+
+### Prerequisites
+
+Before registering, confirm:
+
+1. **Bot's gateway is reachable from MC's backend container.** For our Caddy + socat deployment: `ssh vps 'ss -tnlp | grep 18789'` shows the gateway listening; `ssh vps 'ss -tnlp | grep 18790'` shows the socat sidecar listening on `172.21.0.1:18790`.
+2. **Gateway token carries all four hardcoded operator scopes.** MC's `gateway_rpc.py:36-41` requires `operator.read`, `operator.admin`, `operator.approvals`, `operator.pairing` — the token MUST mint with all four. Extra scopes (e.g., `operator.write`, `operator.talk.secrets`) are harmless; missing any of the four blocks the connect with `"missing scope: operator.<X>"`.
+3. **MC bearer token in hand.** For self-host `AUTH_MODE=local` deployments, the bearer is literally the value of `LOCAL_AUTH_TOKEN` in MC's `.env` — NOT a browser-session JWT. Read it on the VPS with discipline (do not paste into chat transcripts).
+
+### Smoke test (anonymous WS upgrade — expect 101)
+
+```bash
+curl --include --no-buffer \
+  -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Key: $(openssl rand -base64 16)" \
+  -H "Sec-WebSocket-Version: 13" \
+  https://missioncontrol.mjdeving.com/openclaw-gateway/
+# Expected: HTTP 101 Switching Protocols. Confirms route + listener.
+# Auth is in-protocol (JSON-RPC connect frame), NOT validated at the HTTP upgrade.
+# 502/504 = socat or gateway down. 404 = path-strip rule mis-fired.
+```
+
+**Common gotcha — do NOT expect 401/403/426.** OpenClaw's native gateway authenticates inside the WS payload, not via an HTTP upgrade-time bearer. Anonymous upgrades succeed at the upgrade layer. Auth is exercised by MC's create-gateway server-side pre-flight, not by `curl`.
+
+### Registration steps
+
+| # | Step | Where | Time |
+|---|------|-------|------|
+| 1 | Submit create-gateway form (UI) OR `POST /api/v1/gateways` (API) | MC dashboard or curl | 30s |
+| 2 | First attempt fails with `"pairing required: device is not approved yet"` (THIS IS NORMAL — first-time Ed25519 device-pair) | MC returns 502, no DB row | n/a |
+| 3 | Approve the new pending fingerprint on the bot's gateway | `ssh vps 'openclaw devices list'` then `openclaw devices approve <reqId>` | 30s |
+| 4 | Resubmit create-gateway | MC dashboard or curl | 30s |
+| 5 | Pre-flight succeeds → gateway record committed → `service.ensure_main_agent()` provisions an `mc-gateway-<uuid>` agent on the bot side | MC backend | ~3-5s |
+| 6 | Webhook-worker pairing fires later (NOT during create) — when MC processes its first `LIFECYCLE_RECONCILE_TASK_TYPE` job, its second container connects with a SEPARATE Ed25519 keypair. Approve within minutes of seeing it (pending requests TTL out) | `ssh vps 'openclaw devices list'` + approve | varies |
+
+### URL shape — explicit `:443` is mandatory
+
+For path-mode reverse-proxied deployments through Caddy:
+
+```
+wss://missioncontrol.mjdeving.com:443/openclaw-gateway
+```
+
+The `:443` is **mandatory** even though it's the WSS default. MC's frontend validator (`frontend/src/lib/gateway-form.ts:14-72`) rejects URLs whose `URL.port` is empty: `"Gateway URL must include an explicit port."` Mirror this in scripted curls to avoid downstream surprises.
+
+### Working curl (alternative to UI form)
+
+```bash
+curl -i -X POST 'https://missioncontrol.mjdeving.com/api/v1/gateways' \
+  -H 'Authorization: Bearer <LOCAL_AUTH_TOKEN>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "<BotName>",
+    "url": "wss://missioncontrol.mjdeving.com:443/openclaw-gateway",
+    "token": "<OPENCLAW_GATEWAY_TOKEN>",
+    "workspace_root": "/home/<bot>/.openclaw",
+    "allow_insecure_tls": false,
+    "disable_device_pairing": false
+  }'
+```
+
+| HTTP | Meaning | Action |
+|---|---|---|
+| 200 + `GatewayRead` JSON | record committed AND pre-flight succeeded | done |
+| 502 `"pairing required: device is not approved yet"` | first-time device-pair handshake — approve and retry | `openclaw devices approve <reqId>`, retry curl |
+| 502 `"missing scope: operator.<X>"` | gateway token doesn't carry that scope | mint new token with all 4 scopes, retry |
+| 502 `"Gateway compatibility check failed: <other>"` | TLS/network/transport issue | check socat + gateway service, smoke-test the route |
+| 422 | OpenClaw version mismatch | upgrade gateway or downgrade MC |
+| 401 | bad MC bearer | re-read `LOCAL_AUTH_TOKEN` from `.env` |
+| 403 | MC user not org-admin | grant org-admin |
+
+### Post-registration verification
+
+1. **MC dashboard** — gateway record shows `CONNECTION: Online`, `AGENTS: 1 total` (`mc-gateway-<uuid>`), token shown as `••••<last4>`.
+2. **Bot side** — `openclaw devices list` shows the new MC fingerprint under Paired (not Pending), original operator device unaffected.
+3. **Live RPC sequence on healthy MC↔bot pair** (from `journalctl -u openclaw -f` in the seconds after create):
+   ```
+   [gateway] device pairing approved device=<fingerprint> role=operator
+   [ws] ⇄ res ✓ device.pair.approve   83ms
+   [ws] ⇄ res ✓ sessions.list         50ms
+   [ws] ⇄ res ✓ agents.create       1217ms
+   [ws] ⇄ res ✓ config.get           689ms
+   [ws] ⇄ res ✓ config.patch        2690ms     # MC writes connection wiring; may queue deferred restart
+   [ws] ⇄ res ✓ agents.files.set       …
+   [ws] ⇄ res ✓ sessions.patch        61ms
+   ```
+4. **Doctor pass** — `openclaw doctor --non-interactive` typically surfaces three follow-on warnings on a freshly-registered bot. Address them per the next section.
+
+### Post-registration follow-ons (apply to every newly-registered bot)
+
+| Warning | Action | Notes |
+|---------|--------|-------|
+| `heartbeat.directPolicy unset` on `mc-gateway-<uuid>` | Set `agents.list[<i>].heartbeat.directPolicy: "block"` in `~/.openclaw/openclaw.json`. MC drives heartbeats via WS, NOT direct channels. | Per-agent key. Allowed values: `allow` \| `block`. **Use the strict-schema discipline below.** |
+| Gateway bound to `lan` (network-accessible) | Known and accepted per project doctrine when MC is in use (MC requires LAN reachability). Defense rests on `auth.mode=token` + `controlUi.allowedOrigins` + `trustedProxies`. | Defense-in-depth follow-up: bind to Tailscale-only + Cloudflare Tunnel — deferred. |
+| Orphan transcript files in `~/.openclaw/agents/main/sessions/` | Hygiene. `openclaw doctor` offers safe `*.deleted.<timestamp>` rename mode; alternative `openclaw sessions cleanup`. | `openclaw transcripts` plugin CLI may be blocked by `plugins.allow` (see "MC config.patch side-effect" below). |
+
+### Strict-schema config edit discipline (CRITICAL — re-applied for every config edit)
+
+Strict-schema auto-restore via `reload-invalid-config` will silently revert wrong keys to last-known-good. See [Reference/KNOWN-BUGS.md](Reference/KNOWN-BUGS.md) #8. Sequence:
+
+```bash
+# 1. Confirm exact key shape FIRST
+openclaw config schema | grep -A 5 -iE "<key-of-interest>"
+
+# 2. Edit via jq (or editor)
+jq '<edit>' ~/.openclaw/openclaw.json > /tmp/openclaw.json.new && mv /tmp/openclaw.json.new ~/.openclaw/openclaw.json
+
+# 3. Validate BEFORE restart
+openclaw config validate     # MUST come back clean
+
+# 4. Restart — see "Restart constraints" below
+
+# 5. READ-BACK from live JSON POST-RESTART (this is the proof step)
+jq '<path-to-edited-key>' ~/.openclaw/openclaw.json   # confirm value persisted
+
+# 6. Re-run doctor — confirm warning is gone
+openclaw doctor --non-interactive | grep -B1 -A2 -iE "<warning-pattern>"
+```
+
+**Restart-then-pong is INSUFFICIENT evidence.** Strict-schema auto-restore can revert the change while runtime overrides make behavior look correct. Always read back the live JSON.
+
+### Restart constraints — `NoNewPrivileges` sandbox
+
+The `openclaw.service` systemd unit ships with `NoNewPrivileges=true` in `/etc/systemd/system/openclaw.service.d/hardening.conf`. This intentionally blocks setuid escalation for ALL processes spawned by the unit — including `sudo` (and the scoped `openclaw-gateway-*` wrappers) called from inside the bot's agent session. The bot CANNOT restart its own gateway from inside its own runtime.
+
+**Restart paths:**
+- **From a fresh ssh session** (operator or maintainer) — outside the unit's process tree, normal `openclaw` user privileges apply. Use the scoped wrappers:
+  ```bash
+  ssh vps 'sudo openclaw-gateway-stop && sleep 3 && rm -f ~/.openclaw/openclaw.json.*.tmp && sudo openclaw-gateway-start'
+  # Then wait ~15-30s for full init, port 18789 to start listening, and memory probe to warm up.
+  ```
+- **From the bot's agent session** — blocked. Sudo returns `"sudo blocked by no new privileges"` regardless of `/etc/sudoers.d/` allow rules.
+
+This is intentional hardening (`NoNewPrivileges` should NOT be removed — it limits damage if the LLM-prompted bot were compromised). The operational consequence: any config-change requiring restart needs an external-session driver. Tracked maintainer-side: `openclaw-bot-5tj`. Long-term candidates: explore OpenClaw's deferred-reload mechanism (the same one that surfaces as `"config change requires gateway restart (channels.defaults) — deferring until 1 task run(s) complete"` after MC's `config.patch`), or add a privileged-sidecar/file-watcher pattern.
+
+### MC `config.patch` side-effect — `plugins.allow` watch
+
+During registration, MC's first `config.patch` (visible in journalctl as `Config overwrite: /home/<bot>/.openclaw/openclaw.json`) writes its own connection wiring into `channels.defaults` and may also touch `plugins.allow`. Per project doctrine, `plugins.allow` should **NOT** be set at all — its whitelist semantics in v2026.4.5+ block bundled plugins (e.g., `transcripts`, `channels`, etc.).
+
+After registration, check:
+
+```bash
+ssh vps 'jq ".plugins // empty" ~/.openclaw/openclaw.json'
+```
+
+If `plugins.allow` is non-empty and excludes plugins you need (e.g., `openclaw transcripts --help` returns `"plugins.allow excludes 'transcripts'"`), file a per-bot follow-on to remove the allowlist or add the missing entries — using the strict-schema discipline above.
+
+### Two-keypair device-pairing reality (upstream MC bug)
+
+MC's `compose.yml` runs **backend** (FastAPI) and **webhook-worker** (RQ) as separate containers. Both call `load_or_create_device_identity()` against `Path.home()` resolved INSIDE their own container. The compose file declares only `postgres_data` as a persistent volume — there is **NO shared volume mounted at the identity path on either container.** Result:
+
+- Each container generates its own Ed25519 keypair on every fresh start.
+- TWO device-pair approvals are required per registered bot.
+- Every `docker compose down && up` of MC regenerates both keypairs and produces 2 fresh pending pairings.
+
+Tracked maintainer-side: `openclaw-bot-2qp`. Until upstream takes a PR adding a shared volume mount at `~/.openclaw/identity/` on both services, the operational discipline is **pair-on-demand**:
+- Approve the backend fingerprint immediately on first registration.
+- Watch `openclaw devices list` after the first MC action that enqueues a `LIFECYCLE_RECONCILE_TASK_TYPE` (any board/agent/cron tick) — approve the webhook-worker fingerprint within minutes (pending requests TTL out).
+- After every MC redeploy, expect both pairings to recur.
+
+### Gotchas at a glance (capture for future bot setups)
+
+| # | Gotcha | Source |
+|---|--------|--------|
+| 1 | URL `:443` is mandatory even though it's the WSS default | `frontend/src/lib/gateway-form.ts:14-72` `hasExplicitPort` |
+| 2 | Anonymous WS upgrade returns **101**, not 401/403/426 | OpenClaw native gateway authenticates in-protocol |
+| 3 | First registration fails with `pairing required` — approve, then retry | Ed25519 device-pair flow |
+| 4 | TWO device pairings per bot — backend immediate, webhook-worker on first lifecycle reconcile | MC compose missing shared identity volume |
+| 5 | Gateway token must carry all 4 `operator.*` scopes | `gateway_rpc.py:36-41` hardcoded |
+| 6 | MC echoes the token in API responses today (until upstream redacts) — treat MC's gateway responses as secret | `docs/openclaw_gateway_ws.md` |
+| 7 | Self-host `AUTH_MODE=local`: bearer is `LOCAL_AUTH_TOKEN` from MC `.env`, NOT a browser JWT | `backend/app/core/auth.py:436-447` |
+| 8 | The `:18790` port in our Caddy is the socat shim into `:18789`, NOT MC's own port | `compose.caddy.yml:1-6` socat sidecar |
+| 9 | `heartbeat.directPolicy` must be set on every MC-provisioned agent (`block` for typical use) | post-registration doctor warning |
+| 10 | `NoNewPrivileges=true` on `openclaw.service` blocks in-session restarts; restart from external ssh | `/etc/systemd/system/openclaw.service.d/hardening.conf` |
+| 11 | MC's `config.patch` may add `plugins.allow` — verify with `jq '.plugins // empty'` after registration | `journalctl` evidence post-create |
+| 12 | Strict-schema auto-restore silently reverts wrong keys — read back live JSON post-restart, never trust restart-then-pong | [Reference/KNOWN-BUGS.md](Reference/KNOWN-BUGS.md) #8 |
+
+### Tracking
+
+- **Maintainer beads (this repo's bd):** `openclaw-bot-2qp` (compose volume — upstream), `openclaw-bot-5tj` (NoNewPrivileges sandbox — operational), `openclaw-bot-ab6` (orphan transcripts — hygiene).
+- **Per-bot beads:** each new MC-integrated bot should file its own VPS-bd entries for any post-registration follow-ons it discovers (e.g., `plugins.allow` cleanup, doctor false positives specific to its setup). Per-bot bd lives on the VPS; maintainer bd lives in this repo. The two stores **do not sync** — see `CLAUDE.md` "Topology — Two Universes, One Bridge".
+
+### Cross-references
+
+- **Architecture + auth + threat model:** [Reference/MISSION-CONTROL.md](Reference/MISSION-CONTROL.md)
+- **Strict-schema discipline:** [Reference/KNOWN-BUGS.md](Reference/KNOWN-BUGS.md) #8
+- **Token + scopes wire format details:** [Reference/THREAT-MODEL-CROSSREF.md](Reference/THREAT-MODEL-CROSSREF.md), [Reference/SECURITY.md](Reference/SECURITY.md)
+- **Per-bot context (Gregor, AtlasForge):** [Reference/VERTICAL-AGENTS.md](Reference/VERTICAL-AGENTS.md), [Reference/IDENTITY-AND-BEHAVIOR.md](Reference/IDENTITY-AND-BEHAVIOR.md)
+- **Inbox file-drop pipeline (delivering briefings to bots):** `~/.claude/projects/-home-mj-projects-openclaw-bot/memory/reference_gregor-inbox-pipeline.md`
