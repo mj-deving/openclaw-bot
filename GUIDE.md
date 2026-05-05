@@ -4922,19 +4922,69 @@ openclaw doctor --non-interactive | grep -B1 -A2 -iE "<warning-pattern>"
 
 **Restart-then-pong is INSUFFICIENT evidence.** Strict-schema auto-restore can revert the change while runtime overrides make behavior look correct. Always read back the live JSON.
 
-### Restart constraints — `NoNewPrivileges` sandbox
+### Restart pattern — Polkit-scoped self-restart
 
-The `openclaw.service` systemd unit ships with `NoNewPrivileges=true` in `/etc/systemd/system/openclaw.service.d/hardening.conf`. This intentionally blocks setuid escalation for ALL processes spawned by the unit — including `sudo` (and the scoped `openclaw-gateway-*` wrappers) called from inside the bot's agent session. The bot CANNOT restart its own gateway from inside its own runtime.
+The `openclaw.service` systemd unit ships with `NoNewPrivileges=true` in `/etc/systemd/system/openclaw.service.d/hardening.conf`. This intentionally blocks setuid escalation for ALL processes spawned by the unit — including `sudo` (and the scoped `openclaw-gateway-*` wrappers) called from inside the bot's agent session. **`NoNewPrivileges` is NOT to be removed** — it's load-bearing hardening that limits damage if the LLM-prompted bot is compromised.
 
-**Restart paths:**
-- **From a fresh ssh session** (operator or maintainer) — outside the unit's process tree, normal `openclaw` user privileges apply. Use the scoped wrappers:
-  ```bash
-  ssh vps 'sudo openclaw-gateway-stop && sleep 3 && rm -f ~/.openclaw/openclaw.json.*.tmp && sudo openclaw-gateway-start'
-  # Then wait ~15-30s for full init, port 18789 to start listening, and memory probe to warm up.
-  ```
-- **From the bot's agent session** — blocked. Sudo returns `"sudo blocked by no new privileges"` regardless of `/etc/sudoers.d/` allow rules.
+To let the bot restart its own service without weakening this hardening, the deployment ships a **scoped Polkit rule** at `/etc/polkit-1/rules.d/50-openclaw-self-restart.rules` (installed 2026-05-05 as the resolution to maintainer bead `openclaw-bot-5tj`):
 
-This is intentional hardening (`NoNewPrivileges` should NOT be removed — it limits damage if the LLM-prompted bot were compromised). The operational consequence: any config-change requiring restart needs an external-session driver. Tracked maintainer-side: `openclaw-bot-5tj`. Long-term candidates: explore OpenClaw's deferred-reload mechanism (the same one that surfaces as `"config change requires gateway restart (channels.defaults) — deferring until 1 task run(s) complete"` after MC's `config.patch`), or add a privileged-sidecar/file-watcher pattern.
+```javascript
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.systemd1.manage-units" ||
+         action.id == "org.freedesktop.systemd1.manage-unit-files") &&
+        action.lookup("unit") == "openclaw.service" &&
+        subject.user == "openclaw") {
+        return polkit.Result.YES;
+    }
+});
+```
+
+**Why this works under `NoNewPrivileges`:** sudo is blocked because it requires setuid execve (which the flag prohibits). Polkit + D-Bus is a different path — `systemctl` opens a D-Bus socket, systemd queries Polkit, Polkit consults the rule using the caller's UID (still `1001=openclaw`), systemd performs the action in its own already-privileged context. No setuid escalation in the calling process; the flag is irrelevant.
+
+**Verified empirically** (2026-05-05) under `systemd-run -p NoNewPrivileges=true --uid=$(id -u openclaw)`:
+- `systemctl reset-failed openclaw` → exit 0 (manage-units permitted, polkit consents silently)
+- `systemctl reset-failed sshd` → exit 1, `"Interactive authentication required"` (rule correctly scoped — only own unit)
+- `sudo -n true` → exit 1, `"the 'no new privileges' flag is set"` (control test — setuid path still blocked)
+
+**Restart paths after this rule is installed:**
+
+| From | How | Notes |
+|---|---|---|
+| The bot's own agent session | `systemctl restart openclaw` (NO sudo) | Polkit consents silently. Use `systemctl --no-block` if you want fire-and-forget. |
+| A fresh operator/maintainer ssh | `systemctl restart openclaw` (NO sudo) | Same path; the user has full sudo there too, but unprivileged Polkit-mediated restart is preferred for parity with the in-unit path. |
+| Legacy: scoped sudoers wrappers | `sudo openclaw-gateway-stop && sleep 3 && rm -f ~/.openclaw/openclaw.json.*.tmp && sudo openclaw-gateway-start` | Still works from outside the unit's tree, useful when the rapid-restart EBUSY trap is a concern. The `.tmp` cleanup avoids the `Reference/KNOWN-BUGS.md` EBUSY restart-loop. |
+
+**EBUSY trap during rapid restart:** if you restart twice in quick succession, the gateway can hit EBUSY on `openclaw.json` because of an atomic-rename race during shutdown. Mitigation:
+
+```bash
+systemctl stop openclaw
+sleep 3
+rm -f ~/.openclaw/openclaw.json.*.tmp
+systemctl start openclaw
+```
+
+After restart, wait ~15-30s for full init: port 18789 listening, memory probe warmed up, doctor passing.
+
+**Provisioning the Polkit rule on a new bot host:**
+
+```bash
+sudo tee /etc/polkit-1/rules.d/50-openclaw-self-restart.rules > /dev/null << 'EOF'
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.systemd1.manage-units" ||
+         action.id == "org.freedesktop.systemd1.manage-unit-files") &&
+        action.lookup("unit") == "openclaw.service" &&
+        subject.user == "openclaw") {
+        return polkit.Result.YES;
+    }
+});
+EOF
+sudo chown root:root /etc/polkit-1/rules.d/50-openclaw-self-restart.rules
+sudo chmod 0644 /etc/polkit-1/rules.d/50-openclaw-self-restart.rules
+# polkit auto-reloads from inotify on rules.d/ changes; no daemon-reload needed.
+# (`systemctl reload polkit` is rejected — polkit doesn't support reload.)
+```
+
+For multi-bot pack hosts, parameterize: substitute the unit name and user per bot (e.g., `aldine.service` + `subject.user == "aldine"`), one rules file per bot. Don't grant the rule for unit `*` or user `*` — that broadens consent beyond the principle of least privilege. Each rule should target ONE unit and ONE user.
 
 ### MC `config.patch` side-effect — `plugins.allow` watch
 
@@ -4974,7 +5024,7 @@ Tracked maintainer-side: `openclaw-bot-2qp`. Until upstream takes a PR adding a 
 | 7 | Self-host `AUTH_MODE=local`: bearer is `LOCAL_AUTH_TOKEN` from MC `.env`, NOT a browser JWT | `backend/app/core/auth.py:436-447` |
 | 8 | The `:18790` port in our Caddy is the socat shim into `:18789`, NOT MC's own port | `compose.caddy.yml:1-6` socat sidecar |
 | 9 | `heartbeat.directPolicy` must be set on every MC-provisioned agent (`block` for typical use) | post-registration doctor warning |
-| 10 | `NoNewPrivileges=true` on `openclaw.service` blocks in-session restarts; restart from external ssh | `/etc/systemd/system/openclaw.service.d/hardening.conf` |
+| 10 | `NoNewPrivileges=true` on `openclaw.service` blocks setuid (sudo) from inside the unit — but a scoped Polkit rule at `/etc/polkit-1/rules.d/50-openclaw-self-restart.rules` lets the bot run `systemctl restart openclaw` (no sudo) via D-Bus, which bypasses the flag. Hardening preserved, self-restart enabled. | `hardening.conf` + Polkit rule |
 | 11 | MC's `config.patch` may add `plugins.allow` — verify with `jq '.plugins // empty'` after registration | `journalctl` evidence post-create |
 | 12 | Strict-schema auto-restore silently reverts wrong keys — read back live JSON post-restart, never trust restart-then-pong | [Reference/KNOWN-BUGS.md](Reference/KNOWN-BUGS.md) #8 |
 
