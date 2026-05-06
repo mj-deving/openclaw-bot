@@ -186,6 +186,10 @@ ssh vps 'cd /home/openclaw/.openclaw/workspace/local/openclaw-mission-control &&
 # 3. WARNING: if migrations are non-backward-compatible, restore the DB from backup before rolling back the app
 ```
 
+> **Important: there are NO releases or tags on the upstream repo** (verified 2026-05-06: `gh release list` returns empty, `gh api .../tags` returns `[]`). `master` is the only ref. **Pin by SHA in production** — write the current commit SHA into your deploy notes, and use `git checkout <sha>` for upgrades and rollbacks. Don't rely on `latest`.
+
+> **Migration policy:** the project enforces **one migration per PR** at CI time (`scripts/ci/one_migration_per_pr.sh`) and **migration-integrity** (model changes without a corresponding `backend/migrations/versions/` file fail CI). `DB_AUTO_MIGRATE=true` is the default in deployments — migrations apply on container start. Rolling deploy expects backward-compatible migrations.
+
 ### Rate limits — knobs
 
 | Var | Default | Purpose |
@@ -212,6 +216,39 @@ Set any to blank to disable:
 > Per `docs/reference/security.md`: **gateway tokens are currently returned in API responses**. A future release will redact them. **Today, treat MC's gateway responses as secret material.** Don't paste raw `GET /api/v1/gateways/<uuid>` JSON into chat transcripts, screenshots, or external tickets.
 
 Token rotation: there is no in-place rotate today. To replace a token: mint a new gateway token on the bot side, edit the gateway record's `token` field via API, restart the bot's gateway. The old token can then be revoked via `openclaw devices revoke` on the bot.
+
+## Fast Convergence Policy (gateway-agent provisioning)
+
+From `docs/troubleshooting/gateway-agent-provisioning.md` (the highest-value upstream doc — easy to miss because it's nested):
+
+- **Heartbeat deadline:** the gateway-side agent must check in within **30 seconds** of being woken. Miss it and MC marks the agent `offline`.
+- **Wake attempts:** **3 tries max** before MC gives up and flags `lifecycle.reconcile.max_attempts_reached`.
+- **The lifecycle reconcile is what fires the 2nd device-pair request** for the webhook-worker container — see [MISSION-CONTROL.md § Two independent device identities](MISSION-CONTROL.md#critical-mc-has-two-independent-device-identities). If the worker can't reach the gateway in 30s, the pair request can also TTL out.
+
+**Log-string grep cheatsheet for triage:**
+
+```bash
+# On the bot's gateway side:
+sudo journalctl -u openclaw -f | grep -iE "lifecycle.queue.enqueued|lifecycle.reconcile.retriggered|lifecycle.reconcile.max_attempts_reached|device.pair"
+
+# On the MC side:
+ssh vps 'cd /home/openclaw/.openclaw/workspace/local/openclaw-mission-control && \
+  docker compose -f compose.yml --env-file .env logs --tail=200 backend webhook-worker | \
+  grep -iE "lifecycle|reconcile|provision|gateway"'
+```
+
+A successful provisioning sequence shows: `enqueued → retriggered → first wake → 30s window → check-in arrives → agent online`. A failed one stops at `max_attempts_reached`.
+
+## Token-drift recovery
+
+If the gateway record's stored token diverges from the bot's actual gateway token (e.g., the bot rotated the token but MC was never told), MC can re-sync via:
+
+```bash
+curl -i -X POST "https://missioncontrol.mjdeving.com/api/v1/gateways/<gateway-id>/templates/sync?rotate_tokens=true" \
+  -H "Authorization: Bearer $MC_BEARER"
+```
+
+This recovery path is documented only in `docs/troubleshooting/gateway-agent-provisioning.md` — not in the API reference. Worth knowing because the alternative is a delete-and-recreate (which loses the gateway-record UUID and any associated MC-side state).
 
 ## Common issues
 
@@ -284,6 +321,53 @@ Local checkout: `/home/openclaw/.openclaw/workspace/local/openclaw-mission-contr
 | Frontend gateway form | `frontend/src/components/gateways/GatewayForm.tsx` + `frontend/src/lib/gateway-form.ts` |
 | Migrations | `backend/migrations/versions/*.py` |
 | Tests | `backend/tests/` + `frontend/cypress/` |
+
+## Open issues to watch (upstream)
+
+Unfixed upstream issues that can affect any MC-attached gateway including ours. Recheck monthly via `gh issue view <N> -R abhi1693/openclaw-mission-control`.
+
+| Issue | Title | Why we care |
+|---|---|---|
+| **#266** | `auto_heartbeat_governor` sends `config.patch` every 300s on no-op → kills active tasks | Could pre-empt Gregor's ongoing work mid-conversation. Both MC-side and gateway-side fix needed. **Watch closely.** |
+| **#317** | Provisioning mutates `agents.list` → SIGUSR1 restart loop, duplicate `mc-gateway-*` agents | If our `agents.list` ever shows two `mc-gateway-f576d91e-…` entries, this is the cause |
+| **#334** | `tools.web.search` config-validation regression — `doctor --fix` no-op, agents stuck PROVISION | Affects bots that enable web search; not currently Gregor but Vesalius will care |
+| **#339** | Re-pairing required after MC container restart | **Same root cause as our maintainer bead `openclaw-bot-2qp`** (compose missing shared identity volume). Upstream confirmation of our finding. |
+
+## Comparable / alternative dashboards
+
+If we ever hit a wall with abhi1693's MC, these are the credible alternatives in the same space (researched 2026-05-06):
+
+- **[builderz-labs/mission-control](https://github.com/builderz-labs/mission-control)** — 4629 stars, biggest competitor. Spend-monitoring + governance focus. Worth a 30-min repo skim before committing more hardening effort to abhi1693's MC.
+- **[crshdn/mission-control](https://github.com/crshdn/mission-control)** — 2000 stars. "Autonomous Product Engine" angle (agents → PRs), 80+ API endpoints.
+- **[robsannaa/openclaw-mission-control](https://github.com/robsannaa/openclaw-mission-control)** — 609 stars. 100% local, no telemetry, no accounts angle.
+- **[mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)** — 432 stars. Zero-deps command center with cost charts.
+- **[stainlu/openclaw-managed-agents](https://github.com/stainlu/openclaw-managed-agents)** — 391 stars. Isolated-Docker-per-session pattern (different threat model).
+- **[clawdeckio/clawdeck](https://github.com/clawdeckio/clawdeck)** — 356 stars. Kanban-style.
+- **[BlueOrangeDigital/openclaw-helm](https://github.com/BlueOrangeDigital/openclaw-helm)** — Helm chart fork of abhi1693's MC; the only K8s deployment reference for our chosen project. Watch this if we ever move to K8s.
+- **Observability-only:** [ClawTrace](https://www.epsilla.com/blogs/clawtrace-launch-openclaw-agent-observability), [ClawControl](https://clawcontrol.dev/) — control plane / observability layers, not full dashboards.
+- **Mobile companion:** [dreamwing/clawbridge](https://github.com/dreamwing/clawbridge) — Tailscale/WireGuard auto-detect with Cloudflare Tunnel fallback.
+
+## External operator resources (for the abhi1693/MC we run)
+
+The most useful external writeups found 2026-05-06 (community is thin — project is ~2.5 months old):
+
+- **[How I Deployed OpenClaw Mission Control on AWS EC2 with Ollama](https://jeevabyte.medium.com/how-i-deployed-openclaw-mission-control-on-aws-ec2-with-ollama-ac0f33b3212f)** — Medium, Apr 12 2026. **Most concrete external operator writeup.** t3.xlarge sizing, full nginx snippet, Docker bridge IP gotcha (`172.17.0.1` must be in `controlui.allowedOrigins`), tool-calling model gotchas (phi3:mini fails, qwen2.5:3b ok), `proxy_read_timeout 3600` for local inference. Cross-check against our Caddy+socat setup.
+- **[OpenClaw Reverse Proxy with Caddy](https://www.copypastelearn.com/blog/openclaw-caddy-reverse-proxy)** — Luca Berton, Apr 6 2026. Closest to our Caddy setup; shows the `gateway.controlui.allowedOrigins` config command.
+- **[OpenClaw Reverse Proxy Setup: Caddy, Nginx & Trusted Proxies](https://clawtank.dev/blog/openclaw-reverse-proxy-trusted-proxies)** — ClawTank, Nov 15 2025. All three proxies side-by-side + `gateway.trustedProxies` config command.
+- **[OpenClaw MC: What It Actually Is (And What Nobody's Telling You)](https://dev.to/octomind_dev/openclaw-mission-control-what-it-actually-is-and-what-nobodys-telling-you-4cfb)** — dev.to, Mar 5 2026. Skeptical/critical take; cites the "$60 burn" Reddit anecdote.
+- **YouTube walkthroughs (unverified, watch at 2x):** [`R-neFn06cB4`](https://www.youtube.com/watch?v=R-neFn06cB4) (Mar 7), [`vfLQTrS-gRc`](https://www.youtube.com/watch?v=vfLQTrS-gRc) (Feb 20).
+- **Ecosystem index:** [awesome-openclaw](https://github.com/rohitg00/awesome-openclaw) — 489 stars, last push 2026-05-05. Star and watch for ecosystem updates.
+
+**Absences-as-signal:** zero direct hits on Reddit r/selfhosted / r/LocalLLaMA / r/AI_Agents threads naming abhi1693's MC. No HN front-page discussion. Repo has Discussions disabled and zero published releases. No public-facing instances besides ours surfaced. No Kubernetes manifests / Nomad jobs / Tailscale Funnel + MC writeups exist outside the BlueOrangeDigital Helm fork. **The community is thin and we are early adopters** — our doc work here is genuinely the most thorough operator's guide in the ecosystem.
+
+**Recommended notification setup:**
+```bash
+# Watch the abhi1693 MC repo for commit activity (no releases to subscribe to):
+gh api -X PUT user/subscriptions/abhi1693/openclaw-mission-control
+
+# Star awesome-openclaw for ecosystem signal:
+gh api -X PUT user/starred/rohitg00/awesome-openclaw
+```
 
 ## Cross-references
 
