@@ -486,4 +486,55 @@ This mirrors FadeMem's (Jan 2026) approach of importance-modulated retention —
 
 ---
 
+## 9. lossless-claw (LCM) — Re-evaluation 2026-05-06
+
+> Plugin: [`@martian-engineering/lossless-claw`](https://github.com/martian-engineering/lossless-claw) v0.9.4 (latest 2026-05-04). Voltropy's published [LCM paper](https://papers.voltropy.com/LCM) — Lossless Context Management.
+> Prior pass: deferred via MEMORY.md note ("Use `LCM_SUMMARY_MODEL=openai-codex/gpt-5.4` when installing. Known open issues #70, #71, #251. v2026.4.22 + LCM compat untested publicly. Revisit after baseline.")
+
+### Decision: **DEFER to a pilot on a non-Gregor bot when one exists**
+
+Marius's framing 2026-05-06: Gregor's threat model is benign (Marius's own operational notes + bot internals — no client PII, no health records, no financial credentials). Recommendation against adoption based on issues #70/#71 was over-applying maintainer-side security reflex. Gregor IS the experimental bot; mild risk is acceptable.
+
+But: per [GUIDE.md Appendix M](../GUIDE.md#appendix-m--mission-control-integration-overlay-2026-05-05), Gregor was just hardened end-to-end (Polkit self-restart, MC integration, compaction stabilization at Haiku 4.5 + 120s, heartbeat.directPolicy). Adoption now would re-destabilize that work — switching the contextEngine slot dormants `agents.defaults.compaction.model`, requires re-tuning summary model + provider, introduces SQLite DB growth without disk monitoring policy, and the slash-command surface (`/lcm`, `/lcm doctor`, etc.) needs Telegram-side validation. Not the right moment.
+
+Marius preferred path 2026-05-06: keep iterating on Mission Control first; defer LCM to a later pilot.
+
+### What's true about lossless-claw today (2026-05-06)
+
+| Dimension | State |
+|---|---|
+| **License** | MIT |
+| **Stars / forks** | 4,559 / 382 — ~50× more adopted than mem0's plugin at evaluation time |
+| **Latest release** | v0.9.4 (2026-05-04, day-of evaluation). Weekly releases over the past month. |
+| **OpenClaw compat** | peer-dep `>=2026.2.17 <2026.6.0` — covers Gregor's v2026.4.22 |
+| **Direct deps** | 1 (`@sinclair/typebox` — same low-risk one mem0 used) |
+| **npm lifecycle hooks** | **None** (`preinstall`/`postinstall`/`install` all absent) — clean install, audit-at-usage-time gate satisfied |
+| **Architecture** | Replaces sliding-window compaction with DAG-based summarization; persists every raw message in SQLite; exposes `lcm_grep` / `lcm_describe` / `lcm_expand` recall tools |
+| **Slot** | Fills the `plugins.slots.contextEngine` slot — clean architectural composition |
+| **Open security issues** | **#70 cross-session leak via `lcm_grep`/`lcm_describe`** + **#71 prompt injection persistence across compaction** — both still OPEN as of 2026-05-06 |
+| **Recently fixed** | #251 summaryApi override (closed 2026-04-28); #594 OpenClaw 2026.5.2 slash commands (closed 2026-05-04); #566 compaction afterTurn lane robustness; #560 v0.9.3 silent baseUrl redirect hotfix |
+| **Compaction model knob** | `summaryModel` / `summaryProvider` config keys + `LCM_SUMMARY_MODEL` / `LCM_SUMMARY_PROVIDER` env vars (env wins). Pin to Haiku 4.5 to keep cost/latency consistent with our current compaction choice. |
+| **Expansion subagent** | `lcm_expand_query` requires opt-in `subagent.allowModelOverride: true` + `allowedModels` allowlist (extra trust grant — phase 2) |
+| **Default mode** | `proactiveThresholdCompactionMode: "deferred"` — background `maintain()` work runs after each turn while Anthropic cache is hot, debt processed pre-assembly when cache cools. Conceptually elegant. |
+| **GC** | `transcriptGcEnabled` defaults OFF → raw messages live forever; disk-monitoring policy needed before adoption |
+
+### Pilot conditions when revisiting
+
+Pilot lossless-claw on a non-Gregor bot when one exists. Bootstrap order in `Reference/VERTICAL-AGENTS.md` already implies:
+- **Best pilot candidates:** Vesalius (V1+V11+V7 — code/SQL/PM, low PII surface), Aldine (V3+V8+V12 — content), Hypatia (V2+V10+V14 — research)
+- **Never pilot on:** Dismas (security-operator twin, blast-radius too high) or production-critical Gregor
+
+Pre-pilot checks:
+1. Status of #70 + #71 — closed? severity reduced? mitigations documented?
+2. v2026.4.22-or-later still in compat range (peer-dep `<2026.6.0` may close Gregor out of band)
+3. SQLite DB growth budget on the target bot
+4. Rollback recipe verified (`openclaw plugins remove @martian-engineering/lossless-claw` + restore openclaw.json)
+5. `LCM_SUMMARY_MODEL` choice (default Haiku 4.5 unless reason to differ)
+
+Watch maintainer-side via `gh issue view 70 71 -R martian-engineering/lossless-claw --json state,closedAt`. Re-evaluate when both close, OR when a non-Gregor bot is bootstrapped and provides a low-blast-radius pilot vehicle.
+
+---
+
+*Section 9 added 2026-05-06 by re-evaluation against revised threat model. See conversation context for full reasoning chain. The plugin's architecture-fit case is genuinely strong; the timing and pilot-bot question is what defers it.*
+
 *Research conducted 2026-02-20 using 3 parallel research agents (core platform, OpenClaw integration, security vetting). Findings cross-checked against official documentation, npm registry, GitHub repositories, and independent security analyses.*

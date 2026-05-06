@@ -276,6 +276,7 @@ Full convention: `~/.claude/projects/-home-mj-projects-openclaw-bot/memory/refer
 
 ## Cross-references
 
+- **Operator's guide — how to USE Mission Control day-to-day:** [MISSION-CONTROL-OPERATIONS.md](MISSION-CONTROL-OPERATIONS.md) (procedural companion to this architecture-focused doc — dashboard surfaces, common workflows, API quick reference, ops commands, troubleshooting)
 - **Inbox briefing (operational handoff to Gregor):** `~/.openclaw/workspace/inbox/2026-05-05-mc-gateway-registration.md` (also at `~/.claude/PAI/MEMORY/WORK/mc-gateway-registration/BRIEFING-FOR-GREGOR.md`).
 - **Project memory (operational learnings):** `~/.claude/projects/-home-mj-projects-openclaw-bot/memory/reference_mission-control-deployment.md`, `reference_gregor-inbox-pipeline.md`.
 - **CLAUDE.md `Gateway exposure (Mission Control)` line:** see CLAUDE.md "Key Architecture Decisions"; the `port 18790` claim is corrected here (it's the socat shim, not "MC's own port").
