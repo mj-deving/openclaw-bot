@@ -788,6 +788,70 @@ sudo systemctl start openclaw
 
 > **Going further:** This service file covers the essentials. [Reference/SECURITY.md §1](Reference/SECURITY.md) has an enhanced version with SystemCallFilter (seccomp allowlisting), RestrictAddressFamilies, ProtectProc, AppArmor integration, and a compatibility matrix showing which directives need testing with OpenClaw.
 
+> **Hardening drop-in pattern.** In production, Gregor's deployment splits security directives into a separate drop-in at `/etc/systemd/system/openclaw.service.d/hardening.conf` (alongside the auth drop-in `codex-acp-auth-chatgpt.conf` for OpenAI Codex). The drop-in pattern lets you iterate on hardening without touching the unit file proper, and `systemctl status openclaw` displays which drop-ins are loaded. The directives above can be moved to a drop-in file with `[Service]` header — same effect, cleaner editing surface.
+
+### 6.2 Polkit Rule — Self-Restart Under `NoNewPrivileges`
+
+`NoNewPrivileges=true` blocks setuid binaries (including `sudo`) for ALL processes spawned by the unit. This is load-bearing hardening that limits damage if the LLM-prompted bot is compromised — **don't remove it**. But it also means the bot can't `sudo` to restart its own service when applying config changes (e.g., compaction model swap).
+
+**Solution:** scoped Polkit rule that grants the bot's user manage-units consent for ONLY its own systemd unit. Polkit + D-Bus is a different IPC channel from sudo/setuid, so `NoNewPrivileges` doesn't apply to it.
+
+```bash
+sudo tee /etc/polkit-1/rules.d/50-openclaw-self-restart.rules > /dev/null << 'EOF'
+// Allow `openclaw` user to manage `openclaw.service` without password,
+// even from inside the unit's NoNewPrivileges sandbox.
+//
+// polkit + D-Bus bypasses NoNewPrivileges: no setuid escalation in caller.
+// Scope: ONLY openclaw.service, ONLY user openclaw.
+// Rollback: rm this file (polkit auto-reloads via inotify on rules.d/).
+
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.systemd1.manage-units" ||
+         action.id == "org.freedesktop.systemd1.manage-unit-files") &&
+        action.lookup("unit") == "openclaw.service" &&
+        subject.user == "openclaw") {
+        return polkit.Result.YES;
+    }
+});
+EOF
+sudo chown root:root /etc/polkit-1/rules.d/50-openclaw-self-restart.rules
+sudo chmod 0644 /etc/polkit-1/rules.d/50-openclaw-self-restart.rules
+# polkit auto-reloads from inotify on rules.d/ changes; no daemon-reload needed.
+# (`systemctl reload polkit` is rejected — polkit doesn't support reload.)
+```
+
+**Verify the rule (empirical, doesn't disrupt service):**
+
+```bash
+# 1) From inside the bot's runtime context (mimicking the unit's hardening):
+sudo systemd-run --uid=$(id -u openclaw) --gid=$(id -g openclaw) \
+  -p NoNewPrivileges=true --quiet --wait --pipe \
+  systemctl reset-failed openclaw
+# Expected: exit 0 (manage-units permitted, polkit consents silently).
+
+# 2) Confirm rule is correctly scoped — should be DENIED for other units:
+sudo systemd-run --uid=$(id -u openclaw) --gid=$(id -g openclaw) \
+  -p NoNewPrivileges=true --quiet --wait --pipe \
+  systemctl reset-failed sshd
+# Expected: exit 1, "Interactive authentication required".
+
+# 3) Control test — confirm sudo path still blocked (hardening preserved):
+sudo systemd-run --uid=$(id -u openclaw) --gid=$(id -g openclaw) \
+  -p NoNewPrivileges=true --quiet --wait --pipe \
+  sudo -n true
+# Expected: exit 1, "the 'no new privileges' flag is set".
+```
+
+**After this rule is installed, the standard restart from inside the bot's runtime is:**
+
+```bash
+systemctl restart openclaw    # NO sudo. Polkit consents silently.
+# Wait ~15-30s for full init.
+# Then: read-back live ~/.openclaw/openclaw.json to confirm config persisted.
+```
+
+**Multi-bot pack hosts:** parameterize per bot — substitute the unit name and user in a separate rules file (e.g., `/etc/polkit-1/rules.d/50-aldine-self-restart.rules` with `aldine.service` + `subject.user == "aldine"`). One rule per bot, never `unit == "*"` or `subject.user == "*"`. Cross-ref [Appendix M](#appendix-m--mission-control-integration-overlay-2026-05-05) § "Restart pattern — Polkit-scoped self-restart" for the architectural rationale.
+
 ### 6.3 Verify the Service
 
 ```bash
@@ -804,7 +868,7 @@ journalctl -u openclaw -f
 # Send a Telegram message to confirm it works
 ```
 
-### 6.3 Post-Onboard Security Review
+### 6.4 Post-Onboard Security Review
 
 **Run this after every `openclaw onboard` execution.** The onboard wizard rewrites `openclaw.json` and may reset security settings. It preserves most settings, but you should verify:
 
@@ -1878,21 +1942,36 @@ openclaw memory status --deep
 
 Compaction summarizes older transcript turns when the context window fills. It is a separate LLM call from your chat model and **must use API-key-based auth** — OAuth providers (e.g., `openai-codex`) are not reliable across separate process invocations and will fail silently for compaction.
 
-**The ONLY canonical form** for routing compaction to a remote LLM is a single `model` key with a triple-prefixed string:
+**The ONLY canonical form** for routing compaction to a remote LLM is a single `model` key with a triple-prefixed string. Below is Gregor's current verified-working compaction block (post-2026-05-05, after a `gpt-4.1-mini` timeout cascade was resolved by switching to Haiku 4.5 with a 120s budget):
 
 ```jsonc
 {
   "agents": {
     "defaults": {
       "compaction": {
-        "model": "openrouter/openai/gpt-4.1-mini"
-        // OR: "openrouter/anthropic/claude-haiku-4-5"
-        // OR: "ollama/llama3.1:8b"   (local, free)
+        "mode": "safeguard",
+        "model": "openrouter/anthropic/claude-haiku-4-5",
+        "timeoutSeconds": 120,
+        "keepRecentTokens": 20000,
+        "reserveTokens": 8000,
+        "memoryFlush": {
+          "enabled": true,
+          "softThresholdTokens": 40000,
+          "prompt": "Write any lasting notes to memory/YYYY-MM-DD.md (use today's date); reply with NO_REPLY if nothing to store."
+        },
+        "qualityGuard": { "enabled": true }
       }
     }
   }
 }
 ```
+
+**Alternative compaction models** (substitute the `model` value; same canonical-form rule):
+
+- `"openrouter/openai/gpt-4.1-mini"` — cheap, fast on small contexts, but in our deployment it timed out at ~68s on overflows >60k tokens. Increase `timeoutSeconds` to 120+ if you stick with it.
+- `"openrouter/anthropic/claude-haiku-4-5"` — current canonical. Cost ~$1/1M input · $5/1M output. Sustained 120s under load.
+- `"ollama/llama3.1:8b"` — local, free, no API dependency. Quality lower; only viable if your VPS has the RAM headroom (Ollama already runs for embeddings).
+- **OAuth providers (e.g. `openai-codex/...`) DO NOT WORK for compaction** — confirmed unreliable across separate process invocations. Compaction must use API-key auth even if your chat model is on OAuth.
 
 **Common misconfiguration to avoid (this caused a real outage):**
 
@@ -1921,6 +2000,19 @@ sudo journalctl -u openclaw -f | grep -iE "compaction-diag|compaction.*skipping"
 #   [agent/embedded] [compaction] skipping — no real conversation messages
 # (NOT a failure — protective skip when no real conversation since last compaction)
 ```
+
+**Live-runtime trap (verified 2026-05-05):** editing `agents.defaults.compaction.{model,timeoutSeconds}` in `openclaw.json` does **NOT** apply to the running gateway. The journal will log `config change detected; evaluating reload (agents.defaults.compaction.timeoutSeconds)` — but no `applied reload` follow-up. **Compaction settings require a real gateway restart to take effect.** With the Polkit rule from §6.2 installed, the bot can apply this itself:
+
+```bash
+# After editing compaction in openclaw.json:
+openclaw config validate                                # pre-restart sanity
+systemctl restart openclaw                              # bot can run this — no sudo
+# wait ~15-30s for full init
+jq '.agents.defaults.compaction' ~/.openclaw/openclaw.json   # READ-BACK confirms persistence
+sudo journalctl -u openclaw -n 80 | grep -i compaction       # next compaction shows new model+timeout
+```
+
+The "didn't apply live" symptom: next compaction still shows `provider=<old-model>` and times out at the old budget. This is harmless (chat still works) but means the fix isn't live yet. Restart, read back, observe.
 
 ### 9.7 Context Persistence (Memory Flush)
 
@@ -4768,18 +4860,19 @@ Bot self-evaluation showed the defense system blocking 100% of encoded payload a
 
 See [Reference/VERTICAL-AGENTS.md](Reference/VERTICAL-AGENTS.md) for the 5-bot mapping (Gregor + Aldine + Vesalius + Hypatia + revived Dismas), per-bot skill packs, channel surface, model + fallback chain, and persona scaffolding. See [Reference/SKILL-LANDSCAPE.md](Reference/SKILL-LANDSCAPE.md) for the top-100 skill catalog × 15 verticals that feeds each pack. See [Reference/DOCTRINE-AUDIT-AT-USAGE-TIME.md](Reference/DOCTRINE-AUDIT-AT-USAGE-TIME.md) for the skill audit gate.
 
-### Bootstrap sequence (~30 min per new bot)
+### Bootstrap sequence (~30 min per new bot, calibrated against Gregor's verified-live config 2026-05-05)
 
 | # | Step | GUIDE phase ref | Time | Per-bot delta |
 |---|------|----------------|------|---------------|
 | 1 | User + sudoers | Phase 1 + 2 | 3 min | `sudo openclaw-install-user <bot>` + per-bot scoped sudoers drop-in (copy `/etc/sudoers.d/openclaw-restricted-admin` template, substitute user) |
 | 2 | Workspace + AtlasForge chassis | Phase 8 | 5 min | Copy Gregor's workspace template; substitute persona / IDENTITY / AGENTS files from `Reference/AtlasForge-Bundle/`; **pin workspace under `/home/<bot>/.openclaw/workspace`** (NEVER /tmp — KNOWN-BUGS #7) |
-| 3 | Authentication | Phase 5 | 5 min | Codex OAuth done locally then `scp` to `/home/<bot>/.openclaw/agents/main/agent/auth-profiles.json` (mode 0600); add OpenRouter API key for compaction |
-| 4 | Config | Phase 6 | 5 min | Generate `openclaw.json` from per-bot template (port, workspace, channels, models per VERTICAL-AGENTS.md); `openclaw config validate` clean; **read-back from live JSON post-restart** (KNOWN-BUGS #8) |
+| 3 | Authentication | Phase 5 | 5 min | Codex OAuth done locally then `scp` to `/home/<bot>/.openclaw/agents/main/agent/auth-profiles.json` (mode 0600); add OpenRouter API key for compaction (OAuth ≠ compaction-capable, see §9.6) |
+| 4 | Config | Phase 6 | 5 min | Generate `openclaw.json` from per-bot template (port, workspace, channels, models per VERTICAL-AGENTS.md). **Canonical compaction defaults** (§9.6): `model: "openrouter/anthropic/claude-haiku-4-5"`, `timeoutSeconds: 120`, `keepRecentTokens: 20000`, `reserveTokens: 8000`, `memoryFlush.enabled: true`. `openclaw config validate` clean; **read-back from live JSON post-restart** (KNOWN-BUGS #8). |
 | 5 | Channels | Phase 11 | 5 min | Register Telegram bot token; opt-in Slack socket-mode + Discord DM-only per bot's spec |
 | 6 | Skill pack | Phase 9 | 5 min | Copy bundled skills (already on host); fork upstream skills into `~/<bot>/.openclaw/skills/`; run `openclaw clawkeeper scan-skill /path` per skill (audit-at-usage-time gate) |
-| 7 | Plugins + linger | Phase 7 + 13 | 2 min | Install ClawKeeper + defense-shield; `loginctl enable-linger <bot>` |
-| 8 | Smoke test | Phase 14 | varies | `ssh vps 'openclaw agent --agent main --json --message "ping"'`; verify identity, fallback chain, workspace path |
+| 7 | Plugins + Polkit + linger | Phase 6 + 7 + 13 | 3 min | Install ClawKeeper + defense-shield; **install per-bot Polkit rule** at `/etc/polkit-1/rules.d/50-<bot>-self-restart.rules` (parameterize unit + user from §6.2 template — one rule per bot, never wildcard); `loginctl enable-linger <bot>` |
+| 8 | Smoke test | Phase 14 | varies | `ssh <bot>@vps 'openclaw agent --agent main --json --message "ping"'`; verify identity, fallback chain, workspace path. **Restart parity:** verify the bot can `systemctl restart <bot>` from inside its sandbox via the Polkit rule (§6.2 verification recipe with `--uid=$(id -u <bot>)` and unit name swapped). |
+| 9 | (optional) Mission Control | Appendix M | 5 min | If this bot will be driven by `https://missioncontrol.mjdeving.com`, switch `gateway.bind` from `loopback` to `lan`, follow [Appendix M](#appendix-m--mission-control-integration-overlay-2026-05-05). Expect TWO device-pair approvals (backend immediate, webhook-worker on first lifecycle reconcile). After registration, set `heartbeat.directPolicy: "block"` on the MC-provisioned `mc-gateway-<uuid>` agent (per-agent key in `agents.list[<i>].heartbeat`). |
 
 ### Bootstrap order (per VERTICAL-AGENTS.md)
 
