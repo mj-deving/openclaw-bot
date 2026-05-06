@@ -569,4 +569,59 @@ Also copy `~/.codex/installation_id` to the acp-auth path so the harness identit
 
 ---
 
+## 11. Compaction Config Edits Need a Real Restart — Live Reload Logged But Not Applied
+
+**Status:** Confirmed v2026.4.22 (2026-05-05). Field-observed during Gregor's gpt-4.1-mini → Haiku 4.5 + 120s migration.
+
+**Symptom:** After editing `agents.defaults.compaction.{model,timeoutSeconds}` in `~/.openclaw/openclaw.json`, the gateway logs:
+
+```
+config change detected; evaluating reload (agents.defaults.compaction.timeoutSeconds)
+config change detected; evaluating reload (agents.defaults.compaction.model)
+```
+
+…but **no successful `applied reload` follow-up.** The next compaction attempt still uses the OLD provider/timeout, and any timeout cascade that motivated the edit continues firing. Editing the file changes disk state; live runtime continues with cached settings.
+
+**Root cause:** these specific compaction keys are not on the gateway's hot-reload allowlist. The "evaluating reload" log line is recorded but the evaluator chooses NOT to apply — and silently. Compaction keys are evaluated lazily at process boot, not at file-change time. Workspace files, channel definitions, and some agent metadata DO hot-reload; compaction config doesn't.
+
+**Why "restart and pong" is insufficient evidence the change took effect:** the gateway accepts new chat messages, runs them through the unmodified-cached compaction path, and returns successful responses for short conversations that don't trigger compaction. The only place the change manifests is the next compaction event — which may not fire for hours.
+
+**Fix:** apply with a real gateway restart, then read back from live JSON, then watch the next compaction event in the journal.
+
+```bash
+# 1. Edit (e.g., switch compaction.model + bump timeoutSeconds)
+jq '.agents.defaults.compaction = {
+  "mode": "safeguard",
+  "model": "openrouter/anthropic/claude-haiku-4-5",
+  "timeoutSeconds": 120,
+  "keepRecentTokens": 20000,
+  "reserveTokens": 8000,
+  "memoryFlush": { "enabled": true, "softThresholdTokens": 40000 },
+  "qualityGuard": { "enabled": true }
+}' ~/.openclaw/openclaw.json > /tmp/oc.new && mv /tmp/oc.new ~/.openclaw/openclaw.json
+
+# 2. Validate (KNOWN-BUGS #8 discipline — strict schema)
+openclaw config validate
+
+# 3. Restart (with KNOWN-BUGS #11 in mind — compaction needs this)
+systemctl restart openclaw    # NO sudo, via Polkit rule from GUIDE.md § 6.2
+
+# 4. READ BACK from live JSON post-restart (KNOWN-BUGS #8 again)
+jq '.agents.defaults.compaction' ~/.openclaw/openclaw.json
+
+# 5. PROVE the new compaction is live by watching the next compaction event
+sudo journalctl -u openclaw -f | grep -iE 'compaction|compaction-diag'
+# Expected: provider matches the new model, timeout matches new value
+```
+
+**Detection signal in the live log post-edit (before restart):** repeated `config change detected; evaluating reload (...)` lines for compaction keys, never followed by `applied`. If you see those, restart is required.
+
+**See also:**
+- KNOWN-BUGS #6 (compaction auth failure — different compaction issue, same area)
+- KNOWN-BUGS #8 (strict-schema auto-restore — independent discipline that bites the same workflow)
+- GUIDE.md § 9.6 (canonical compaction config)
+- GUIDE.md § 6.2 (Polkit self-restart pattern — what makes step 3 above work without external ssh)
+
+---
+
 *This document tracks bugs confirmed through deployment experience and upstream issue research. For security-specific patches and CVEs, see [SECURITY-PATCHES.md](SECURITY-PATCHES.md).*
