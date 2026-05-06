@@ -5046,6 +5046,7 @@ polkit.addRule(function(action, subject) {
 | The bot's own agent session | `systemctl restart openclaw` (NO sudo) | Polkit consents silently. Use `systemctl --no-block` if you want fire-and-forget. |
 | A fresh operator/maintainer ssh | `systemctl restart openclaw` (NO sudo) | Same path; the user has full sudo there too, but unprivileged Polkit-mediated restart is preferred for parity with the in-unit path. |
 | Legacy: scoped sudoers wrappers | `sudo openclaw-gateway-stop && sleep 3 && rm -f ~/.openclaw/openclaw.json.*.tmp && sudo openclaw-gateway-start` | Still works from outside the unit's tree, useful when the rapid-restart EBUSY trap is a concern. The `.tmp` cleanup avoids the `Reference/KNOWN-BUGS.md` EBUSY restart-loop. |
+| Recovery: stale manual gateway | `sudo openclaw-gateway-adopt-systemd` | Use when `openclaw.service` is inactive/disabled but a pre-existing `openclaw` / `openclaw-gateway` process is still listening on `:18789`. The wrapper stops only OpenClaw-owned gateway PIDs, cleans the known `.tmp` trap, enables/starts `openclaw.service`, and verifies the listener. |
 
 **EBUSY trap during rapid restart:** if you restart twice in quick succession, the gateway can hit EBUSY on `openclaw.json` because of an atomic-rename race during shutdown. Mitigation:
 

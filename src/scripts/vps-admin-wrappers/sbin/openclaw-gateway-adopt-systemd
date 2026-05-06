@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# openclaw-gateway-adopt-systemd — move Gregor from a manual gateway process
+#                                    back under openclaw.service management.
+#
+# Recovery wrapper for the case where openclaw.service is disabled/inactive but
+# a legacy OpenClaw gateway process is still listening. It accepts no arguments
+# and only targets the openclaw user's known gateway process names plus the
+# owner of port 18789.
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+  echo "usage: openclaw-gateway-adopt-systemd (no arguments)" >&2
+  exit 64
+fi
+
+OPENCLAW_USER="openclaw"
+OPENCLAW_HOME="/home/openclaw"
+GATEWAY_PORT="18789"
+UNIT_PATH="/etc/systemd/system/openclaw.service"
+
+if [[ ! -f "$UNIT_PATH" ]]; then
+  echo "error: missing $UNIT_PATH; stage and run openclaw-install-unit first" >&2
+  exit 66
+fi
+
+if systemctl is-active --quiet openclaw; then
+  echo "openclaw.service is already active; using normal restart path"
+  systemctl restart openclaw
+  sleep 10
+  systemctl status openclaw --no-pager --lines=8
+  exit 0
+fi
+
+mapfile -t name_pids < <(
+  ps -u "$OPENCLAW_USER" -o pid=,comm=,args= \
+    | awk '
+        $2 == "openclaw" { print $1; next }
+        $2 == "openclaw-gatewa" || $2 == "openclaw-gateway" { print $1; next }
+        $0 ~ /(^|[ /])openclaw-gateway([[:space:]]|$)/ { print $1; next }
+      ' \
+    | sort -n -u
+)
+
+mapfile -t port_pids < <(
+  ss -H -ltnp "sport = :$GATEWAY_PORT" 2>/dev/null \
+    | sed -nE 's/.*pid=([0-9]+).*/\1/p' \
+    | while read -r pid; do
+        [[ -n "$pid" ]] || continue
+        owner=$(stat -c '%U' "/proc/$pid" 2>/dev/null || true)
+        [[ "$owner" == "$OPENCLAW_USER" ]] && echo "$pid"
+      done \
+    | sort -n -u
+)
+
+mapfile -t pids < <(printf '%s\n' "${name_pids[@]}" "${port_pids[@]}" | sed '/^$/d' | sort -n -u)
+
+if ((${#pids[@]} > 0)); then
+  echo "stopping non-systemd OpenClaw gateway PIDs before adoption: ${pids[*]}"
+  kill -TERM "${pids[@]}" 2>/dev/null || true
+
+  for _ in {1..20}; do
+    alive=()
+    for pid in "${pids[@]}"; do
+      [[ -d "/proc/$pid" ]] && alive+=("$pid")
+    done
+    ((${#alive[@]} == 0)) && break
+    sleep 0.5
+  done
+
+  alive=()
+  for pid in "${pids[@]}"; do
+    [[ -d "/proc/$pid" ]] && alive+=("$pid")
+  done
+  if ((${#alive[@]} > 0)); then
+    echo "force-killing still-running OpenClaw gateway PIDs: ${alive[*]}" >&2
+    kill -KILL "${alive[@]}" 2>/dev/null || true
+  fi
+fi
+
+rm -f "$OPENCLAW_HOME"/.openclaw/openclaw.json.*.tmp
+
+systemctl daemon-reload
+systemctl enable openclaw
+systemctl start openclaw
+
+sleep 10
+
+if ! systemctl is-active --quiet openclaw; then
+  echo "error: openclaw.service did not become active" >&2
+  systemctl status openclaw --no-pager --lines=40 >&2 || true
+  exit 70
+fi
+
+if ! ss -H -ltnp "sport = :$GATEWAY_PORT" 2>/dev/null | grep -q "pid="; then
+  echo "error: openclaw.service is active but port $GATEWAY_PORT is not listening" >&2
+  systemctl status openclaw --no-pager --lines=40 >&2 || true
+  exit 70
+fi
+
+systemctl status openclaw --no-pager --lines=8
+ss -H -ltnp "sport = :$GATEWAY_PORT" 2>/dev/null
+echo "Gregor gateway is now systemd-managed by openclaw.service"

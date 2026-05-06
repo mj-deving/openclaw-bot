@@ -90,8 +90,42 @@ The installer:
 | `openclaw-gateway-start` | `systemctl start openclaw` |
 | `openclaw-gateway-stop` | `systemctl stop openclaw` |
 | `openclaw-gateway-restart` | `systemctl restart openclaw` |
+| `openclaw-gateway-adopt-systemd` | Stop a non-systemd gateway listener and adopt it into `openclaw.service` |
 | `openclaw-gateway-enable` | `systemctl enable openclaw` |
 | `openclaw-gateway-logs` | `journalctl -u openclaw -n 200` (filter is hardcoded) |
+
+### Adopt a manual gateway into systemd
+
+`openclaw-gateway-adopt-systemd` exists for a specific recovery case:
+`openclaw.service` is disabled or inactive, but a pre-existing manual gateway
+process is still listening on port `18789` (for example, PIDs named
+`openclaw` / `openclaw-gateway`). A normal systemd restart reports the unit as
+disabled and does not bounce the live process.
+
+Preferred order:
+
+```bash
+systemctl restart openclaw                  # preferred when the service is active; Polkit path
+sudo openclaw-gateway-restart               # legacy systemd wrapper from outside the unit
+sudo openclaw-gateway-adopt-systemd         # one-time recovery when service is inactive/disabled
+```
+
+The adoption wrapper is deliberately narrow:
+
+- accepts no arguments
+- uses normal `systemctl restart openclaw` when `openclaw.service` is already
+  active
+- targets only processes owned by `openclaw`
+- targets only process names `openclaw` / `openclaw-gateway` and the owner of
+  listening port `18789`
+- removes only `~/.openclaw/openclaw.json.*.tmp`
+- enables and starts only `openclaw.service`
+- verifies both service activity and port `18789`
+
+This is a recovery bridge back to the desired steady state. After it succeeds,
+Gregor should use `systemctl restart openclaw` for future self-restarts through
+the scoped Polkit rule, or `sudo openclaw-gateway-restart` from an external
+operator shell.
 
 ## Revoking install-phase wrappers
 

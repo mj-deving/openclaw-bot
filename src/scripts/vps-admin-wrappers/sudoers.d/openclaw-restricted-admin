@@ -37,5 +37,6 @@ openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-install-hardening
 openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-gateway-start
 openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-gateway-stop
 openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-gateway-restart
+openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-gateway-adopt-systemd
 openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-gateway-enable
 openclaw ALL=(root) NOPASSWD: /usr/local/sbin/openclaw-gateway-logs
