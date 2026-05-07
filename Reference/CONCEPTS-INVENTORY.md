@@ -38,7 +38,38 @@ Current Gregor baseline as of 2026-04-27:
 
 **Surprise worth filing:** Sub-agents do NOT inherit IDENTITY/SOUL/USER files — only AGENTS.md and TOOLS.md. This means orchestrator patterns lose persona-grounded behavior in workers, which is fine for technical fan-out but breaks user-facing voice consistency. Worth flagging for the agent-pack design phase.
 
+### 7. ACPx — Agent Client Protocol adapter (verified 2026-05-07)
+
+**Verdict: ADOPT inside any agent that needs to delegate coding work, NOT as multi-bot orchestration.** ACPx is the OpenClaw adapter for Zed Industries' Agent Client Protocol — JSON-RPC over stdio, IDE↔coding-agent spec. It lets one OpenClaw agent spawn external coding harnesses (Claude Code, Codex, Cursor, Copilot, Droid, Gemini CLI, OpenCode, Pi) as headless coder sub-processes scoped per repo with persistent multi-turn sessions, named workstreams (`-s backend`, `-s frontend`), and prompt queueing. Live config surface: `acp.dispatch.enabled`, `acp.allowedAgents`, `acp.runtime.ttlMinutes` (default 120), `acp.runtime.maxConcurrentSessions`, per-agent mapping via `agents.list[].runtime.acp.agent`. Gregor's current config has `allowedAgents: ["codex"]` — exactly the intended use case (let main delegate to Codex when it needs to write code).
+
+**It is NOT** a multi-persona orchestration substrate. The phrase "persistent coworker chat-facing personas" does not appear anywhere in `docs.openclaw.ai/tools/acp-agents`. Spec scope is IDE↔coding-agent, not agent↔agent. The native answer for chat-facing multi-agent on one host is `agents.list[]` (see entry 8).
+
+**Adoption path:** Vesalius (V1 Dev/code-copilot) is the natural ACPx user — let Vesalius spawn Codex sessions for coding tasks. Other bots leave the existing `acp.allowedAgents: ["codex"]` shape in place (it's harmless when unused). **Do NOT** broaden `allowedAgents` until a concrete need surfaces; ACP delegation has a known observability bug with `agents.list[]` (GitHub issue #32804: "ACP sessions invisible to sessions_list when agents.list is configured").
+
+**Sources:** `docs.openclaw.ai/tools/acp-agents`, `docs.openclaw.ai/tools/subagents` (frontmatter explicitly distinguishes `runtime: "subagent"` vs `"acp"` vs `"codex"`), `agentclientprotocol.com` (Zed spec), `github.com/openclaw/acpx`.
+
+### 8. `agents.list[]` — Native multi-agent on one gateway (verified 2026-05-07)
+
+**Verdict: DEFER (Option B is real but the 5-bot pack already chose Option A).** Per `docs.openclaw.ai/concepts/multi-agent`: *"The Gateway can host one agent (default) or many agents side-by-side ... each with its own workspace, state directory (agentDir), and session history — plus multiple channel accounts."* `bindings[].match` routes by `channel`, `accountId`, `peer`, `guildId`, roles. This IS the OpenClaw-native answer to "5 personas on one host" — a real Option B against the current 5-Linux-user pack design (Option A) and a Matrix-substrate alternative (Option C).
+
+**Why not adopt now:** the 5-bot pack design (`VERTICAL-AGENTS.md`) chose Option A for blast-radius isolation — Dismas's TG-only allowlist=[Marius] scoping exists precisely because root-tier ops blast radius is load-bearing. Putting Dismas + Vesalius (dev-paste exposure) + Aldine (publishing) on one gateway process collapses the isolation that scoped Dismas in the first place. Plus the Telegram channel plugin's intra-account dispatch story (one bot token routing to N personas via `@aldine ...`) is undocumented; the LumaDock multi-agent tutorial routes via separate `accountId` per agent — i.e. one bot token per persona, which is what Option A already does the slow way.
+
+**Revisit trigger:** if/when (a) Dismas's blast-radius scoping is loosened or moved to a dedicated separate VPS anyway, AND (b) Telegram intra-account dispatch is documented as supported, AND (c) ops cost of 5 systemd units becomes a real maintenance burden. None of those conditions hold today.
+
+**Sources:** `docs.openclaw.ai/concepts/multi-agent`, lumadock.com multi-agent setup tutorial, GitHub issue #32804 (visibility bug to track if Option B is ever adopted).
+
+### 9. Matrix as orchestration chat substrate (verified 2026-05-07)
+
+**Verdict: DEFER (Option C — adds capability Option A can't deliver, but only if the operator wants it).** Matrix (self-hosted Synapse on the same VPS, federation disabled) is a real Option C against A/B for the multi-bot question. It uniquely delivers: (a) persistent thread-bound subagent sessions (Telegram extension lacks the hook in v2026.5.6 — KNOWN-BUGS #13), (b) bot-to-bot fleet chatter via `allowBots: true` + Application Service API, (c) E2EE for the conversation history (Megolm/Olm), (d) per-room `systemPrompt` / `skills` / `tools` config that gives natural per-bot working surfaces. The OpenClaw Matrix extension ships `subagent-hooks-api.js` + `thread-binding-api.js` + `thread-bindings-runtime.js` — Telegram doesn't.
+
+**Why defer:** adding Synapse adds operational surface (another self-hosted service, federation considerations, mobile client UX swap from Telegram to Element). The current pack runs fine on Telegram for the chat surface; the Matrix capabilities are nice-to-haves until concrete need arises.
+
+**Revisit trigger:** the first time one of (a) you actually want a persistent thread-bound child subagent session (e.g. "let me keep talking to this research worker"), (b) Dismas-related conversation content needs E2EE-on-the-wire that Telegram can't provide, OR (c) bot-to-bot routing across the pack becomes a thing you keep needing to do manually. Until then, Telegram + bundled `:18789/` Control UI for single-bot views + `builderz-labs/mission-control` (when fleet boots) covers the surface.
+
+**Sources:** `docs.openclaw.ai/channels/matrix`, OpenClaw Matrix extension files (`subagent-hooks-api.js` etc., not present in Telegram extension), `agentclientprotocol.com` (rule out — different protocol), `github.com/zscole/matrix-agents` (early PoC).
+
 ## Surprises Worth Filing
 
 - **QMD does NOT cross agent boundaries.** The bead description hinted at QMD enabling "cross-agent transcript search"; the docs flatly say sessions index per-agent and each agent has its own QMD home. This invalidates one of the strongest motivations for adopting QMD in a multi-bot future. Worth a follow-up bead to research whether a shared QMD home is configurable, or whether cross-agent search requires a different architecture entirely (e.g., Honcho's parent/child model, or a custom shared SQLite with both agents reading).
 - **Dreaming + Codex OAuth = same compaction footgun.** Any background-LLM feature that uses `agents.defaults.model` will inherit the OAuth-cross-process unreliability we just fixed for compaction. This generalizes: every future "background AI" feature in OpenClaw needs an explicit API-key model override before it'll work on Gregor. Worth a single durable note (CLAUDE.md or KNOWN-BUGS.md) so we don't re-learn it per feature.
+- **ACPx ≠ orchestration.** Easy to misread the plugin name as "agent control protocol" → "fleet orchestration." It's not. ACPx is an external coding-harness adapter (Zed IDE↔coder spec). The OpenClaw-native multi-agent answer is `agents.list[]`, not ACPx. Documenting this here so future-us doesn't re-litigate it.

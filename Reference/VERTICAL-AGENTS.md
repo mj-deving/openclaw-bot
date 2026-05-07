@@ -19,6 +19,29 @@
 
 **V6 Finance/analytics is DEFERRED** — see "Deferred verticals" below.
 
+## Architecture Choice — Locked on Option A (recorded 2026-05-07)
+
+For the question *"how do 5 specialized agents live on one host?"* there are three real answers. We chose A. This section records the framing so future-us doesn't re-litigate it.
+
+| | A: 5-user pack (CHOSEN) | B: `agents.list[]` consolidation | C: Matrix substrate |
+|---|---|---|---|
+| Topology | 5 Linux users + 5 systemd + 5 ports + 5 bot tokens | 1 gateway + 1 systemd + 1 port + 1 token routing 5 personas | Synapse on VPS + agents speak via Matrix rooms |
+| Isolation | Maximum (process + user + network) | Per-agent dir/workspace/tools only | Per-agent + E2EE wire |
+| Ops surface | 5x of everything | 1x gateway, N personas | Adds Synapse to the stack |
+| OpenClaw-native | Yes (multiple bots) | Yes (multi-agent: `agents.list[]`) | Yes (matrix channel) |
+| Inter-agent routing | Manual (cross-bot Telegram) | Built-in `bindings[].match` | Built-in via `allowBots` + rooms |
+| Blast radius if Dismas misbehaves | Best (separate user) | Worst (same gateway) | Middle (separate room/account) |
+
+**Why A wins for this pack:** Dismas's TG-only allowlist=[Marius] scoping exists because root-tier ops blast radius is load-bearing. Putting Dismas + Vesalius (dev-paste exposure) + Aldine (publishing) on one gateway process collapses that isolation. Plus Telegram intra-account dispatch (one bot token routing to N personas via `@aldine ...`) is undocumented in OpenClaw — the LumaDock multi-agent tutorial uses separate `accountId` per agent, which is what A does explicitly.
+
+**Common misframe — ACPx ≠ orchestration.** ACPx is the OpenClaw adapter for Zed Industries' Agent Client Protocol (IDE↔coding-agent JSON-RPC). It lets one agent delegate to external coding harnesses (Codex, Claude Code, Gemini CLI etc.), keyed per repo. It is NOT a multi-persona substrate. See `CONCEPTS-INVENTORY.md` entry 7. Vesalius (V1 Dev/code) is the natural ACPx user inside this pack; other bots leave the existing `acp.allowedAgents: ["codex"]` shape in place.
+
+**Revisit triggers for B or C:**
+- **Adopt B** only if (a) Dismas blast-radius scoping is loosened or moved to a dedicated separate VPS, AND (b) Telegram intra-account dispatch becomes documented, AND (c) ops cost of 5 systemd units becomes a real maintenance burden.
+- **Add C on top of A** if (a) you want persistent thread-bound child subagent sessions (Telegram extension lacks the hook in v2026.5.6 — KNOWN-BUGS #13), OR (b) you want bot-to-bot fleet chatter, OR (c) E2EE-on-the-wire becomes load-bearing for Dismas-class content.
+
+The `:18789/` bundled Control UI plus `builderz-labs/mission-control` (when fleet boots) cover the dashboard surface; A delivers the chat surface. That's sufficient for now.
+
 ## Coverage Map (V1–V15 → Bot)
 
 | Vertical | Owner | Notes |
