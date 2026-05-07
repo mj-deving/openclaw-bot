@@ -75,4 +75,45 @@ openclaw security audit --deep >> "$LOG" 2>&1 || {
     log "WARNING: Security audit failed or returned non-zero"
 }
 
+# Config invariants — bug-class first-class concern. Catches the failure modes that
+# bit us on the v2026.4.x → v2026.5.x upgrade (KNOWN-BUGS #12, #13).
+log "Asserting config invariants..."
+INVARIANTS_REPORT=$(jq -e '
+{
+    I1: (
+        (((.agents.defaults.embeddedHarness // {}) | has("fallback")) | not)
+        and (([.agents.list[]?.embeddedHarness // {} | has("fallback")] | any) | not)
+    ),
+    I2: (
+        ((.agents.defaults.subagents.model | type) == "object")
+        and ((.agents.defaults.subagents.model.primary // "" | startswith("openai-codex/")))
+        and (((.agents.defaults.subagents.model.fallbacks // ["nonempty"]) | length) == 0)
+    ),
+    I3: (
+        [.agents.list[]?
+          | select((.agentRuntime.id // "") == "codex" or (.embeddedHarness.runtime // "") == "codex")
+          | (.model // "") | startswith("openai-codex/")
+        ] | all
+    ),
+    I4: (
+        ((.channels.telegram.threadBindings // null) == null)
+        or (
+            ((.channels.telegram.threadBindings | has("spawnSubagentSessions")) | not)
+            and ((.channels.telegram.threadBindings | has("spawnAcpSessions")) | not)
+        )
+    )
+}
+' "$HOME/.openclaw/openclaw.json" 2>/dev/null) || {
+    log "CRITICAL: Config invariant evaluation failed (jq error or missing config). Investigate ~/.openclaw/openclaw.json"
+}
+
+if [ -n "${INVARIANTS_REPORT:-}" ]; then
+    log "Invariants: $INVARIANTS_REPORT"
+    if echo "$INVARIANTS_REPORT" | jq -e '[.[]] | all' >/dev/null 2>&1; then
+        log "All four config invariants hold."
+    else
+        log "CRITICAL: Config invariant violation detected. See Reference/KNOWN-BUGS.md #12, #13. Service is up, but next subagent run may route to a key-based model. Operator action required."
+    fi
+fi
+
 log "=== Auto-update complete ==="

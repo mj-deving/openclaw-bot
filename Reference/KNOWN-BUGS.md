@@ -2,7 +2,7 @@
 
 Documented bugs affecting OpenClaw deployments, with root cause analysis, upstream tracking, and available mitigations. Focus on issues that are systemic (not one-off configuration mistakes) and affect production stability.
 
-> **Last updated:** 2026-04-27 | **OpenClaw version:** v2026.4.22
+> **Last updated:** 2026-05-07 | **OpenClaw version:** v2026.5.6
 
 ---
 
@@ -621,6 +621,148 @@ sudo journalctl -u openclaw -f | grep -iE 'compaction|compaction-diag'
 - KNOWN-BUGS #8 (strict-schema auto-restore — independent discipline that bites the same workflow)
 - GUIDE.md § 9.6 (canonical compaction config)
 - GUIDE.md § 6.2 (Polkit self-restart pattern — what makes step 3 above work without external ssh)
+
+---
+
+## 12. v2026.4.x → v2026.5.x Migration: `embeddedHarness.fallback` Restart Loop
+
+**Severity:** High | **Status:** Confirmed on Gregor 2026-05-06/07 | **Affected:** Any host upgraded from a v2026.4.x baseline that had `embeddedHarness.{runtime,fallback}` blocks
+
+### Symptom
+
+After `npm install -g openclaw@2026.5.x` and a gateway restart, the gateway enters a permanent systemd restart loop. Every attempt logs:
+
+```
+Gateway failed to start: Error: Invalid config at ~/.openclaw/openclaw.json.
+agents.defaults.embeddedHarness: Unrecognized key: "fallback"
+agents.list.<id>.embeddedHarness: Unrecognized key: "fallback"
+Run "openclaw doctor --fix" to repair, then retry.
+```
+
+On Gregor the loop hit ~2000 restart attempts between 2026-05-06 21:56 and 2026-05-07 07:00 before manual intervention.
+
+### Root Cause
+
+In v2026.5.x the `embeddedHarness` schema was narrowed to `{runtime: string}` only — the old `fallback` field was deleted. New canonical home is `agents.defaults.agentRuntime.id` and `agents.list[].agentRuntime.id`. The schema is `additionalProperties: false`, so any `fallback` survivor invalidates the whole config and the gateway refuses to boot.
+
+`openclaw doctor --fix` is supposed to migrate this automatically but **does not reliably remove the `fallback` keys** in our reproduction. Doctor's auto-fix is partial / contradictory in this version. Manual removal is required.
+
+### Manual Fix (verified on Gregor)
+
+```bash
+# 1. Backup
+cp ~/.openclaw/openclaw.json ~/.openclaw/openclaw.json.pre-fix-$(date +%Y-%m-%d)
+
+# 2. Strip the legacy embeddedHarness blocks and migrate to agentRuntime
+jq '
+  del(.agents.defaults.embeddedHarness)
+  | del(.agents.list[] | select(.id=="codex") | .embeddedHarness)
+  | .agents.defaults.agentRuntime = {id: "auto"}
+  | (.agents.list[] | select(.id=="codex") | .agentRuntime) = {id: "codex"}
+  | (.agents.list[] | select(.id=="codex") | .model) = "openai-codex/gpt-5.4"
+' ~/.openclaw/openclaw.json > /tmp/oc.json
+cat /tmp/oc.json > ~/.openclaw/openclaw.json && rm /tmp/oc.json
+
+# 3. Validate and restart
+openclaw config validate         # must say "Config valid"
+systemctl restart openclaw       # via Polkit rule, no sudo
+ss -tlnp | grep :18789           # must show LISTEN
+```
+
+The `model: "openai-codex/gpt-5.4"` rewrite on the codex agent is paired discipline — pre-v5 deployments often had `openai/gpt-5.4` on the codex sub-agent which silently routes through key-based OpenAI even when an OAuth profile is configured.
+
+### Prevention
+
+- Treat `openclaw doctor --fix` as advisory in major-version upgrades; **always read-back** with `jq '.agents | {defaults: .defaults | {embeddedHarness, agentRuntime}, list: [.list[] | {id, embeddedHarness, agentRuntime}]}' ~/.openclaw/openclaw.json` after running it.
+- Run `src/scripts/config-invariants.sh` (added 2026-05-07) — fails loud on the four invariants that this incident exposed.
+
+**See also:**
+- KNOWN-BUGS #8 (strict-schema auto-restore — same discipline)
+- KNOWN-BUGS #13 (subagent routing fail-closed invariant — load-bearing config)
+- UPGRADE-NOTES.md v2026.5.6 entry
+- `src/scripts/config-invariants.sh`
+
+---
+
+## 13. Subagent Routing Silently Pinned to Key-Based Model via `agents.defaults.subagents.model`
+
+**Severity:** Critical | **Status:** Confirmed and fixed on Gregor 2026-05-07 | **Affected:** Any deployment that ever set `agents.defaults.subagents.model` as a string
+
+### Symptom
+
+Main agent runs on Codex OAuth as configured. Subagents spawned via `sessions_spawn` (mode=run or mode=session) route through OpenRouter Haiku or `openrouter/free` regardless of main's model and regardless of `agents.defaults.model.fallbacks`. Visible in `~/.openclaw/agents/<id>/sessions/<uuid>.jsonl` as `"provider":"openrouter","model":"anthropic/claude-haiku-4-5"` etc.
+
+When the OpenRouter monthly key limit is hit, subagents return 403s on the child task while the parent subagent task often shows `succeeded` (see KNOWN-BUGS #14 on the parent/child reporting bug).
+
+### Root Cause
+
+`agents.defaults.subagents.model` accepts either a string (single model pin) or an object `{primary, fallbacks, timeoutMs}`. When set to a string like `"openrouter/anthropic/claude-haiku-4-5"`, ALL subagents are forced onto that exact model — **the main agent's model and fallback chain are not inherited**. This is independent from `agents.defaults.model` which only governs the main agent. The two configs do not cross-reference.
+
+This bites any installer or hand-edit that left `subagents.model` as a string, or any v2026.4.x baseline where the default was a string.
+
+### The Invariant (operator-required, fail-closed)
+
+Subagents must NEVER use a key-based model. Set it explicitly to the OAuth provider with empty fallbacks:
+
+```jsonc
+"agents": {
+  "defaults": {
+    "subagents": {
+      "model": {
+        "primary": "openai-codex/gpt-5.4",
+        "fallbacks": []
+      }
+    }
+  }
+}
+```
+
+Empty `fallbacks: []` means: if Codex OAuth is unavailable for the subagent run, **fail the run**. Do not silently degrade to OpenRouter.
+
+### Verification (verified on Gregor 2026-05-07)
+
+End-to-end probe via `openclaw agent --agent main` asking main to spawn a subagent. Inspect the subagent session jsonl:
+
+```bash
+ls -lt ~/.openclaw/agents/worker/sessions/*.jsonl | head -1
+# Then read the model_change and final assistant message — must show:
+#   "provider":"openai-codex","modelId":"gpt-5.4"
+# If you see "openrouter" or "anthropic" or "free" in there, the invariant is broken.
+```
+
+### Prevention
+
+- `src/scripts/config-invariants.sh` enforces this as Invariant #2.
+- Treat `agents.defaults.subagents.model` as a load-bearing object (never string) in installers, GUIDE.md, and any future config-edit playbook.
+
+**See also:**
+- KNOWN-BUGS #12 (the v5.x migration that surfaced this)
+- KNOWN-BUGS #14 (subagent parent/child task-state inconsistency — upstream)
+- Bead `openclaw-bot-bvy`
+
+---
+
+## 14. Subagent Run: Child CLI Task `failed` AND Parent Subagent Task `succeeded` Simultaneously
+
+**Severity:** Medium | **Status:** Reported upstream — bead `openclaw-bot-brj` | **Affected:** Subagent runs where the first model attempt fails and a recovery path produces a visible answer
+
+### Symptom
+
+In `~/.openclaw/tasks/runs.sqlite` for the same subagent run:
+
+- Child CLI task: `status=failed`, `error="403 Key limit exceeded ..."` (or any provider error)
+- Parent subagent task: `status=succeeded`, `delivery_status=delivered`, with the same error string still attached
+- `sessions_list` shows a normal completed answer
+
+The parent reports "succeeded/delivered" because a hidden retry produced a final visible answer, but the child task that recorded the original failure is never reconciled. Maintainer cost: must inspect 3 layers (child task, parent task, session transcript) to understand one run.
+
+### Mitigation Status
+
+Less critical now that subagents are pinned to Codex OAuth with empty fallbacks (KNOWN-BUGS #13) — fewer hidden recovery paths can fire silently. But the state model is still wrong and should be reported upstream.
+
+**See also:**
+- Bead `openclaw-bot-brj` (upstream filing tracker)
+- Original Gregor inbox report 2026-05-06 21:55 at `/home/openclaw/.openclaw/workspace/inbox/2026-05-06-subagent-model-routing-bug.md`
 
 ---
 
