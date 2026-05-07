@@ -4162,9 +4162,26 @@ For a full incident response runbook, see [SECURITY.md §17](Reference/SECURITY.
 
 ---
 
-## Appendix E — Configuration Reference
+## Appendix E — Configuration Reference (Canonical)
 
-Complete `openclaw.json` with all recommended settings:
+> **Status:** Single source of truth for `~/.openclaw/openclaw.json`. Verified against v2026.5.6 schema 2026-05-07.
+>
+> **OpenClaw will not tell you when its own config is wrong.** Schemas are strict (`additionalProperties: false`); legacy fields silently survive `doctor --fix`; subagent routing has its own block independent of the main agent's. This appendix exists because the product itself is unopinionated — the operator must hold the doctrine.
+>
+> Every other doc in this repo (CLAUDE.md, KNOWN-BUGS.md, UPGRADE-NOTES.md) cross-references this appendix instead of restating config. **If you change a load-bearing field, update it here first.**
+
+### E.1 Load-Bearing Invariants (must always hold)
+
+These are enforced by `src/scripts/config-invariants.sh` (maintainer-side, single SSH) and `src/scripts/auto-update.sh` (VPS-side post-restart). Violating any of them either breaks the gateway or silently degrades behavior.
+
+| ID | Invariant | Failure mode if violated |
+|----|-----------|-------------------------|
+| **I1** | Neither `agents.defaults.embeddedHarness` nor any `agents.list[].embeddedHarness` may contain a `fallback` field. The `embeddedHarness` block itself is legacy — prefer omitting it entirely, use `agentRuntime.id` instead. | v2026.5.x rejects it with `additionalProperties: false`; gateway enters infinite restart loop. KNOWN-BUGS #12. |
+| **I2** | `agents.defaults.subagents.model` MUST be the **object** form `{primary: "openai-codex/gpt-5.4", fallbacks: []}`. Never a string. Fallbacks must be empty for fail-closed behavior. | Subagents silently route through whatever string is set (typically OpenRouter Haiku) regardless of the main agent's OAuth. Operator-required: subagents must NEVER drift to a key-based model. KNOWN-BUGS #13. |
+| **I3** | Every agent in `agents.list[]` whose `agentRuntime.id` (or legacy `embeddedHarness.runtime`) is `"codex"` MUST have `model` prefixed `openai-codex/`, never `openai/`. | OAuth never engages; provider lookup falls to key-based OpenAI and either fails or burns key cost. |
+| **I4** | `channels.telegram.threadBindings` MUST NOT carry the legacy `spawnSubagentSessions` / `spawnAcpSessions` keys. Use the unified `spawnSessions` boolean. | Migration warning every startup; future schema tightening may reject. |
+
+### E.2 Canonical `openclaw.json` (v2026.5.6)
 
 ```jsonc
 {
@@ -4178,32 +4195,97 @@ Complete `openclaw.json` with all recommended settings:
 
   "agents": {
     "defaults": {
-      // Anthropic: use "models" map. OpenAI Codex: use singular "model" key.
-      // Example (Anthropic): "models": { "anthropic/claude-sonnet-4": {} }
-      // Example (OpenAI):    "model": "openai-codex/gpt-5.4"
-      // The "models" map resolves provider incorrectly for openai-codex — it
-      // strips the codex prefix and fails auth. Singular "model" preserves it.
-      "models": { "anthropic/claude-sonnet-4": {} },
+      // ── Main-agent model (singular `model`, never plural `models` map for Codex OAuth).
+      // Object form is required if you want a fallback chain. String form is allowed
+      // for a single hard-pin. (Plural `models` strips the `openai-codex/` prefix and
+      // breaks OAuth — do not use it.)
+      "model": {
+        "primary": "openai-codex/gpt-5.4",
+        "fallbacks": [
+          "openrouter/anthropic/claude-haiku-4-5",
+          "openrouter/openrouter/free"
+        ]
+      },
+
+      // ── Runtime selection (v5.x form). Replaces legacy `embeddedHarness.{runtime,fallback}`.
+      // `id: "auto"` means "let plugin harnesses bid; fall back to built-in Pi if none claim".
+      // For a hard pin, use a specific id like "codex" or "claude-cli".
+      "agentRuntime": { "id": "auto" },
+
+      // ── Subagent routing (Invariant I2). Independent of the main `model` above.
+      // Object form with empty fallbacks → if Codex OAuth is unavailable, the subagent
+      // run FAILS instead of leaking to a key-based provider.
+      "subagents": {
+        "model": {
+          "primary": "openai-codex/gpt-5.4",
+          "fallbacks": []
+        },
+        "maxConcurrent": 8,
+        "maxSpawnDepth": 1,
+        "maxChildrenPerAgent": 5,
+        "runTimeoutSeconds": 900,
+        "archiveAfterMinutes": 60,
+        "allowAgents": ["worker", "codex"]
+      },
+
+      // ── Compaction (KNOWN-BUGS #6). Single triple-prefixed string. Do NOT also set
+      // `compaction.provider` — that key is for custom plugin IDs and forces safeguard mode.
+      // OAuth providers cannot do compaction; must use API-key auth.
+      "compaction": {
+        "mode": "safeguard",
+        "model": "openrouter/anthropic/claude-haiku-4-5",
+        "softThresholdTokens": 40000,
+        "keepRecentTokens": 20000,
+        "reserveTokens": 8000,
+        "memoryFlush": { "enabled": true }
+      },
+
+      // ── Memory (Ollama embeddings; Codex OAuth cannot access embeddings, must use local).
       "memorySearch": {
         "sources": ["memory"],
         "provider": "local",
         "store": { "vector": { "enabled": true } },
         "query": {
           "maxResults": 6,
-          "minScore": 0.35,
+          "minScore": 0.55,
           "hybrid": {
             "vectorWeight": 0.7,
             "textWeight": 0.3,
             "candidateMultiplier": 4,
             "mmr": { "enabled": true, "lambda": 0.7 },
-            "temporalDecay": { "enabled": true, "halfLifeDays": 30 }
+            "temporalDecay": { "enabled": true, "halfLifeDays": 45 }
           }
         }
       },
-      "compaction": { "mode": "safeguard" },
-      "streaming": "off",               // Anti-duplicate (v2026.4.5+ format)
-      "maxConcurrent": 4,
-      "subagents": { "maxConcurrent": 8 }
+
+      // ── Workspace (KNOWN-BUGS #7). MUST be a stable persistent path. Never /tmp.
+      "workspace": "/home/openclaw/.openclaw/workspace",
+
+      "streaming": "partial",            // v2026.4.22+ default — single preview bubble
+      "maxConcurrent": 4
+    },
+
+    // Per-agent overrides. The `codex` agent uses Codex OAuth runtime — model MUST
+    // start with `openai-codex/` (Invariant I3), not `openai/`.
+    "list": [
+      {
+        "id": "codex",
+        "name": "codex",
+        "workspace": "/home/openclaw/.openclaw/workspace-codex",
+        "agentDir": "/home/openclaw/.openclaw/agents/codex/agent",
+        "agentRuntime": { "id": "codex" },
+        "model": "openai-codex/gpt-5.4"
+      }
+    ]
+  },
+
+  // ── Session-level thread routing defaults (channel-level can override).
+  "session": {
+    "dmScope": "per-channel-peer",
+    "threadBindings": {
+      "enabled": true,
+      "spawnSessions": true,             // Modern unified flag — do NOT use legacy
+      "defaultSpawnContext": "fork"      // spawnSubagentSessions / spawnAcpSessions
     }
   },
 
@@ -4216,12 +4298,12 @@ Complete `openclaw.json` with all recommended settings:
       "fetch": { "enabled": true }
     },
     "elevated": { "enabled": false },
-    "exec": { "security": "full", "ask": "off" }
+    "exec": { "security": "full", "ask": "off", "timeoutSec": 300 }
+    // Note: key is `timeoutSec` (NOT timeoutMs). Wrong key invalidates whole config.
   },
 
   "messages": { "ackReactionScope": "group-mentions" },
   "commands": { "native": "auto", "nativeSkills": "auto", "config": false },
-  "session": { "dmScope": "per-channel-peer" },
 
   "channels": {
     "telegram": {
@@ -4229,9 +4311,17 @@ Complete `openclaw.json` with all recommended settings:
       "dmPolicy": "pairing",
       "groupPolicy": "allowlist",
       "groups": {},
-      "streaming": "off"                // Anti-duplicate (v2026.4.5+ format)
-      // NOTE: Legacy keys "streamMode" and "blockStreaming" are no longer
-      // recognized in v2026.4.5+. Use "streaming": "off" (string) instead.
+      "streaming": "partial",
+      // Invariant I4 — modern unified form. Do NOT add spawnSubagentSessions or
+      // spawnAcpSessions: those are deprecated in v5.x (collapsed into spawnSessions).
+      // NOTE: Telegram extension in v2026.5.6 lacks subagent-hooks-api implementation.
+      // Persistent thread-bound subagent sessions are STRUCTURALLY UNAVAILABLE on Telegram.
+      // Use sessions_spawn mode=run (one-shot) only. KNOWN-BUGS #13 cross-ref.
+      "threadBindings": {
+        "enabled": true,
+        "spawnSessions": true,
+        "defaultSpawnContext": "fork"
+      }
     }
   },
 
@@ -4240,8 +4330,13 @@ Complete `openclaw.json` with all recommended settings:
   "gateway": {
     "port": 18789,
     "mode": "local",
-    "bind": "loopback",
-    "controlUi": { "dangerouslyDisableDeviceAuth": false },
+    // bind=lan only when Mission Control sidecar requires it (Appendix M);
+    // bind=loopback otherwise.
+    "bind": "lan",
+    "controlUi": {
+      "dangerouslyDisableDeviceAuth": false,
+      "allowedOrigins": ["https://missioncontrol.mjdeving.com"]
+    },
     "auth": {
       "mode": "token",
       "token": "GENERATED_DURING_ONBOARD",
@@ -4255,24 +4350,57 @@ Complete `openclaw.json` with all recommended settings:
     "tailscale": { "mode": "off" }
   },
 
+  "acp": {
+    "enabled": true,
+    "backend": "acpx",
+    "defaultAgent": "codex",
+    "allowedAgents": ["codex"],
+    "dispatch": { "enabled": true },
+    "maxConcurrentSessions": 4,
+    "runtime": { "ttlMinutes": 120 }
+  },
+
   "plugins": {
     "enabled": true,
-    // Do NOT set "allow" — it silently blocks unlisted plugins (see §7.7).
+    // Do NOT set `plugins.allow` — it acts as a whitelist and silently blocks
+    // unlisted bundled plugins (Telegram, browser, etc.). See KNOWN-BUGS / Phase 7.7.
     "slots": { "memory": "memory-core" },
     "entries": {
       "telegram": { "enabled": true },
-      "device-pair": { "enabled": true },    // Required for Telegram pairing
+      "device-pair": { "enabled": true },     // Required for Telegram pairing
       "memory-core": { "enabled": true },
       "memory-lancedb": { "enabled": false }
-      // lossless-claw: add only if installed (not in fresh v2026.4.5)
     }
   }
 }
 ```
 
-> **Note:** LCM plugin config (summaryModel, freshTailCount, etc.) is set via systemd environment variables in `/etc/systemd/system/openclaw.service.d/lcm.conf`, not in `openclaw.json` — see [Phase 7.7](#77-plugins--selective-enable).
+### E.3 What's deliberately NOT in this config
 
-> **Note:** The `botToken` in the config is how Telegram channel authentication works in OpenClaw — it's read directly from `openclaw.json`. This bot-specific config should never be committed to git.
+- `agents.defaults.embeddedHarness` — legacy in v5.x; use `agentRuntime` instead. Any leftover `fallback` field will brick the gateway (Invariant I1).
+- `compaction.provider` — only for custom plugin IDs, forces safeguard mode, breaks routing for normal models.
+- `agents.defaults.models` (plural) — strips the `openai-codex/` prefix and fails OAuth. Use singular `model`.
+- `streamMode` / `blockStreaming` — legacy v4.x keys; v4.5+ uses `streaming` (string).
+- `tools.allow` set to anything but `["cron"]` — `tools.allow` acts as whitelist; broader use breaks file tools. Use `tools.alsoAllow` for additive grants.
+- `plugins.allow` — whitelist; blocks bundled plugins. Don't set.
+- `session.threadBindings.spawnSubagentSessions` / `spawnAcpSessions` — deprecated; collapsed into `spawnSessions` in v5.x.
+- `channels.telegram.threadBindings.spawnSubagentSessions` — schema accepts it, but Telegram extension in v5.6 has no code that reads it. Cosmetic at best, deprecated at worst.
+
+### E.4 Asserting the invariants
+
+```bash
+# From your local maintainer machine — single SSH read-only:
+src/scripts/config-invariants.sh         # text mode, exit 1 on violation
+src/scripts/config-invariants.sh --json  # machine-readable
+
+# Built into auto-update.sh — runs post-restart, logs CRITICAL on violation.
+```
+
+### E.5 Notes
+
+- **Telegram bot token** lives at `channels.telegram.botToken` and is read directly from `openclaw.json`. Never commit this to git.
+- **LCM plugin config** (summaryModel, freshTailCount, etc.) is set via systemd environment variables in `/etc/systemd/system/openclaw.service.d/lcm.conf`, not in `openclaw.json` — see [Phase 7.7](#77-plugins--selective-enable).
+- **Major-version upgrades** require manual config migration; `openclaw doctor --fix` is advisory, not authoritative. Recovery procedure for the v4 → v5 transition lives in KNOWN-BUGS #12. After every upgrade: validate, restart, run `config-invariants.sh`.
 
 ---
 

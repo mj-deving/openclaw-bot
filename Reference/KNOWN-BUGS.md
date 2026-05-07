@@ -667,14 +667,12 @@ cat /tmp/oc.json > ~/.openclaw/openclaw.json && rm /tmp/oc.json
 openclaw config validate         # must say "Config valid"
 systemctl restart openclaw       # via Polkit rule, no sudo
 ss -tlnp | grep :18789           # must show LISTEN
+
+# 4. Confirm the four load-bearing invariants
+src/scripts/config-invariants.sh
 ```
 
-The `model: "openai-codex/gpt-5.4"` rewrite on the codex agent is paired discipline — pre-v5 deployments often had `openai/gpt-5.4` on the codex sub-agent which silently routes through key-based OpenAI even when an OAuth profile is configured.
-
-### Prevention
-
-- Treat `openclaw doctor --fix` as advisory in major-version upgrades; **always read-back** with `jq '.agents | {defaults: .defaults | {embeddedHarness, agentRuntime}, list: [.list[] | {id, embeddedHarness, agentRuntime}]}' ~/.openclaw/openclaw.json` after running it.
-- Run `src/scripts/config-invariants.sh` (added 2026-05-07) — fails loud on the four invariants that this incident exposed.
+The full target shape (for reference and for fresh installs) lives in [GUIDE.md Appendix E.2](../GUIDE.md#appendix-e--configuration-reference-canonical). Treat `openclaw doctor --fix` as advisory in major-version upgrades; always read-back the JSON after running it.
 
 **See also:**
 - KNOWN-BUGS #8 (strict-schema auto-restore — same discipline)
@@ -702,22 +700,7 @@ This bites any installer or hand-edit that left `subagents.model` as a string, o
 
 ### The Invariant (operator-required, fail-closed)
 
-Subagents must NEVER use a key-based model. Set it explicitly to the OAuth provider with empty fallbacks:
-
-```jsonc
-"agents": {
-  "defaults": {
-    "subagents": {
-      "model": {
-        "primary": "openai-codex/gpt-5.4",
-        "fallbacks": []
-      }
-    }
-  }
-}
-```
-
-Empty `fallbacks: []` means: if Codex OAuth is unavailable for the subagent run, **fail the run**. Do not silently degrade to OpenRouter.
+Subagents must NEVER use a key-based model. The canonical shape lives in [GUIDE.md Appendix E.2](../GUIDE.md#appendix-e--configuration-reference-canonical) under `agents.defaults.subagents.model` (object form with empty `fallbacks: []`). Empty fallbacks means: if Codex OAuth is unavailable for the subagent run, **fail the run** rather than silently degrade to OpenRouter.
 
 ### Verification (verified on Gregor 2026-05-07)
 

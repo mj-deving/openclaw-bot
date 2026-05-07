@@ -112,7 +112,7 @@ if [ -n "${INVARIANTS_REPORT:-}" ]; then
     if echo "$INVARIANTS_REPORT" | jq -e '[.[]] | all' >/dev/null 2>&1; then
         log "All four config invariants hold."
     else
-        log "CRITICAL: Config invariant violation detected. See Reference/KNOWN-BUGS.md #12, #13. Service is up, but next subagent run may route to a key-based model. Operator action required."
+        log "CRITICAL: Config invariant violation detected. See GUIDE.md Appendix E (canonical config) and Reference/KNOWN-BUGS.md #12/#13. Service is up, but next subagent run may route to a key-based model. Operator action required."
     fi
 fi
 

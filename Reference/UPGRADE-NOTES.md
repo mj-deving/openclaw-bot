@@ -1416,52 +1416,13 @@ Skipped — included transitively in v2026.4.1 upgrade. v2026.3.31 contains the 
 
 ## v2026.5.6
 
-**Upgraded Gregor 2026-05-06 21:56 → recovered 2026-05-07 07:03** from v2026.4.22.
+Upgraded Gregor 2026-05-06 → 2026-05-07 from v2026.4.22. Major-version transition with two breaking schema changes that caused a 2000-attempt restart loop. Recovery procedure, root causes, and the four load-bearing invariants now codified.
 
-> **Scope:** Major version transition. Multiple breaking schema changes. **Do not perform on a running production bot without the migration playbook below.**
-
-### Breaking Changes — Caused Outage
-
-1. **`embeddedHarness.fallback` removed from schema** — `agents.defaults.embeddedHarness` and `agents.list[].embeddedHarness` accept only `{runtime: string}`. The `fallback` field is gone, and `additionalProperties: false` rejects it. New canonical home is `agents.defaults.agentRuntime.id` and per-agent `agents.list[].agentRuntime.id`.
-   - **Impact:** Gregor entered a 2000-attempt systemd restart loop. `openclaw doctor --fix` did NOT reliably remove the `fallback` keys. Manual jq fix required.
-   - **Full incident report:** KNOWN-BUGS #12. **APPLIED**
-   - **Guide:** Update Appendix E (Config Reference) and add Appendix M (Major Version Upgrade Playbook). **GUIDE**
-
-2. **`session.threadBindings` and `channels.<id>.threadBindings` schema collapse** — Per-channel `spawnSubagentSessions` and `spawnAcpSessions` boolean fields are deprecated. The migrator collapses them into a single `spawnSessions` boolean. Schema still accepts the legacy fields but emits warnings and rewrites them.
-   - **Impact:** Use the modern collapsed form going forward:
-     ```jsonc
-     "session.threadBindings": {"enabled": true, "spawnSessions": true, "defaultSpawnContext": "fork"},
-     "channels.telegram.threadBindings": {"enabled": true, "spawnSessions": true, "defaultSpawnContext": "fork"}
-     ```
-   - **APPLIED** on Gregor 2026-05-07.
-
-3. **`agents.defaults.subagents.model` typing** — Now accepts `string | {primary, fallbacks, timeoutMs}`. **Operator-required invariant:** must be the object form with explicit `fallbacks: []` to fail-closed instead of leaking subagent traffic to whatever OpenRouter model the string previously pointed at.
-   - **Impact:** This is the actual root cause of the long-standing "subagents go OpenRouter even when main is Codex OAuth" bug.
-   - **Full report:** KNOWN-BUGS #13. **APPLIED**
-
-### Channel Plugin Surface
-
-4. **Telegram extension is missing `subagent-hooks-api.js`, `thread-binding-api.js`, `thread-bindings-runtime.js`** — these files ship in the Matrix extension but not the Telegram extension. The schema still accepts `channels.telegram.threadBindings.spawnSubagentSessions: true`, but no code reads it. Calling `sessions_spawn` with `mode=session, thread=true` from a Telegram message returns: `thread=true is unavailable because no channel plugin registered subagent_spawning hooks.`
-   - **Impact:** Persistent thread-bound subagent sessions on Telegram are structurally unavailable in v2026.5.6. Workaround: use `mode=run` (one-shot) for any subagent spawn from Telegram.
-   - **Upstream:** bead `openclaw-bot-vyt` tracks the upstream filing. **NOTED**
-
-### Fixed: KNOWN-BUGS #4 (Config Key Rejection — Undocumented Behavior)
-
-5. **`openclaw config validate` now lists rejected keys explicitly** — invalid config now produces a precise error message naming every offending path (e.g. `agents.defaults.embeddedHarness: Unrecognized key: "fallback"`). Previously this silently auto-restored to last-known-good (#8). Both behaviors now coexist: validate names the keys, but on gateway start the auto-restore still happens.
-   - **Impact:** Diagnosis is now possible; auto-restore is still a footgun. Still verify with read-back. **BENEFITS**
-
-### Operational Notes
-
-- **Pre-upgrade checklist (added to GUIDE.md Appendix M):**
-  1. `cp ~/.openclaw/openclaw.json ~/.openclaw/openclaw.json.pre-upgrade-$(date +%Y-%m-%d)`
-  2. `npm install -g openclaw@<target>`
-  3. `openclaw config validate` — note the rejected keys
-  4. Apply manual jq migration (see KNOWN-BUGS #12)
-  5. `openclaw config validate` again — must say "Config valid"
-  6. `systemctl restart openclaw` and watch journal for `http server listening`
-  7. Run `src/scripts/config-invariants.sh` to confirm the four load-bearing invariants
-- **Doctor's auto-fix is not a substitute for read-back.** Treat doctor output as advisory; always read-back.
-- Beads filed: `openclaw-bot-x9y` (migration trap), `openclaw-bot-bvy` (subagent invariant), `openclaw-bot-vyt` (Telegram hook gap), `openclaw-bot-brj` (parent/child reporting).
+- **Recovery and config doctrine:** [GUIDE.md Appendix E](../GUIDE.md#appendix-e--configuration-reference-canonical) — single canonical config source.
+- **Migration trap (`embeddedHarness.fallback`):** [KNOWN-BUGS #12](KNOWN-BUGS.md).
+- **Subagent fail-closed invariant:** [KNOWN-BUGS #13](KNOWN-BUGS.md).
+- **Telegram subagent-hook gap (mode=session unavailable on Telegram):** [KNOWN-BUGS #13](KNOWN-BUGS.md) cross-ref + Appendix E.4.
+- **Tooling:** `src/scripts/config-invariants.sh` (single-SSH read-only) + `src/scripts/auto-update.sh` (VPS-side post-restart gate).
 
 ---
 
