@@ -65,18 +65,22 @@ CONFIG_JSON=$(ssh "${SSH_OPTS[@]}" "${SSH_HOST}" \
     exit 1
 }
 
-# I5: Crabbox doctor gate. Only runs if the plugin is installed AND a Crabbox
-# provider is configured anywhere reachable. Plugin presence comes from the
-# OpenClaw plugins config; provider comes from the openclaw user's workspace
-# .crabbox.yaml or repo-local .crabbox.yaml. The check itself is a single
-# SSH round-trip running `crabbox doctor --provider <p>`. Exit 2 from doctor
-# means a Crabbox-routed task would fail; surface that as an invariant
-# violation rather than letting Gregor try and fail at runtime.
+# I5: Crabbox lane gate. Probes whether a Crabbox-routed task would fail at
+# runtime. Plugin presence comes from the OpenClaw plugins config; provider
+# comes from the openclaw user's workspace .crabbox.yaml or repo-local
+# .crabbox.yaml. Then the check splits by provider kind:
+#   - brokered  (hetzner, aws, azure, gcp, proxmox, ssh) → `crabbox doctor`
+#   - delegated (e2b, modal, daytona, islo, tensorlake)  → doctor does NOT
+#     support these at v0.13.0 (silently falls back to hetzner). Instead,
+#     verify the expected env-var secret is present in the openclaw service
+#     environment (presence only, never value).
+# Verified 2026-05-14 against `crabbox doctor --help`: -provider enum is
+# hetzner|aws|azure|gcp|proxmox|ssh only.
 CRABBOX_PROBE=$(ssh "${SSH_OPTS[@]}" "${SSH_HOST}" '
     set +e
-    PATH=/home/openclaw/.local/bin:/home/openclaw/.npm-global/bin:$PATH
-    if ! sudo -u openclaw openclaw plugins list 2>/dev/null | grep -qiE "(^|[│|])\s*crabbox\b"; then
-        echo "{\"applicable\":false,\"reason\":\"plugin not installed\"}"
+    # sudo strips PATH, so reach OpenClaw + Crabbox via absolute paths.
+    if ! sudo -u openclaw /home/openclaw/.npm-global/bin/openclaw plugins inspect crabbox 2>/dev/null | grep -q "^Status: loaded"; then
+        echo "{\"applicable\":false,\"reason\":\"plugin not installed or not loaded\"}"
         exit 0
     fi
     PROVIDER=""
@@ -92,10 +96,29 @@ CRABBOX_PROBE=$(ssh "${SSH_OPTS[@]}" "${SSH_HOST}" '
         echo "{\"applicable\":false,\"reason\":\"no provider configured\"}"
         exit 0
     fi
-    sudo -u openclaw /home/openclaw/.local/bin/crabbox doctor --provider "$PROVIDER" >/tmp/crabbox-doctor.out 2>&1
-    CODE=$?
-    TAIL=$(sudo -u openclaw tail -5 /tmp/crabbox-doctor.out | tr -d "\r" | head -c 600 | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
-    echo "{\"applicable\":true,\"provider\":\"$PROVIDER\",\"exit\":$CODE,\"tail\":$TAIL}"
+    case "$PROVIDER" in
+        hetzner|aws|azure|gcp|proxmox|ssh)
+            sudo -u openclaw /home/openclaw/.local/bin/crabbox doctor --provider "$PROVIDER" >/tmp/crabbox-doctor.out 2>&1
+            CODE=$?
+            TAIL=$(sudo -u openclaw tail -5 /tmp/crabbox-doctor.out | tr -d "\r" | head -c 600 | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+            echo "{\"applicable\":true,\"kind\":\"brokered\",\"provider\":\"$PROVIDER\",\"check\":\"doctor\",\"exit\":$CODE,\"tail\":$TAIL}"
+            ;;
+        e2b)       SECRET_VAR="E2B_API_KEY" ;;&
+        modal)     SECRET_VAR="MODAL_TOKEN_ID" ;;&
+        daytona)   SECRET_VAR="DAYTONA_API_KEY" ;;&
+        islo)      SECRET_VAR="ISLO_API_KEY" ;;&
+        tensorlake)SECRET_VAR="TENSORLAKE_API_KEY" ;;&
+        e2b|modal|daytona|islo|tensorlake)
+            if sudo systemctl show openclaw -p Environment 2>/dev/null | grep -q "$SECRET_VAR="; then
+                echo "{\"applicable\":true,\"kind\":\"delegated\",\"provider\":\"$PROVIDER\",\"check\":\"secret_present\",\"secret_var\":\"$SECRET_VAR\",\"exit\":0}"
+            else
+                echo "{\"applicable\":true,\"kind\":\"delegated\",\"provider\":\"$PROVIDER\",\"check\":\"secret_present\",\"secret_var\":\"$SECRET_VAR\",\"exit\":2,\"reason\":\"$SECRET_VAR not in openclaw service Environment\"}"
+            fi
+            ;;
+        *)
+            echo "{\"applicable\":true,\"kind\":\"unknown\",\"provider\":\"$PROVIDER\",\"exit\":2,\"reason\":\"unknown provider for I5 routing\"}"
+            ;;
+    esac
 ' 2>/dev/null) || CRABBOX_PROBE='{"applicable":false,"reason":"probe ssh failed"}'
 
 # Run all checks via one jq invocation so the report stays atomic.

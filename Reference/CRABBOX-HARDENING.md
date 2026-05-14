@@ -248,6 +248,36 @@ failure as real. Do not loop resyncs. (Already in the runbook.)
 
 ---
 
+## 6b. `crabbox doctor` Is Brokered-Provider-Only (v0.13.0 finding)
+
+Verified 2026-05-14 against live Gregor: `crabbox doctor --help` declares
+the `-provider` flag's enum as **`hetzner | aws | azure | gcp | proxmox |
+ssh`** only. Delegated providers (`e2b`, `modal`, `daytona`, `islo`,
+`tensorlake`) are NOT in the enum and are NOT handled — passing `--provider
+e2b` silently falls back to the default (`hetzner`) check, which produces a
+phantom `missing hcloud token` failure unrelated to the actual provider.
+
+**Hardening consequence:**
+
+- Doctor rule #11 (Section 10) applies to brokered providers only.
+- For delegated providers, treat the **first successful `crabbox run
+  --provider <p> --no-sync -- echo ok`** as the equivalent gate. That
+  command does what doctor would prove: API auth works, sandbox lease
+  provisions, command executes, lease releases cleanly.
+- The local I5 invariant (`src/scripts/config-invariants.sh`) routes by
+  provider kind:
+  - brokered → `crabbox doctor --provider <p>`, exit 0
+  - delegated → verify the expected secret env var is present in the
+    openclaw service `Environment=` (presence only, never value)
+  - unknown → fail (forces an explicit mapping update)
+
+**Lock-in checkpoint** when this changes upstream: a doctor build that adds
+`-provider e2b|modal|daytona|islo|tensorlake` retires the secret-presence
+fallback. Watch via bead `l42`'s sibling — check `crabbox doctor --help` on
+each new release.
+
+---
+
 ## 7. Output Handling — The Truncation Gotcha
 
 The plugin captures stdout and stderr separately, trims each to
