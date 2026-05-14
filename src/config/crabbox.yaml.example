@@ -1,0 +1,70 @@
+# Crabbox config template for Gregor.
+#
+# Live target: /home/openclaw/.openclaw/workspace/.crabbox.yaml
+# (workspace-default — every repo Gregor runs inside inherits this unless the
+# repo has its own .crabbox.yaml)
+#
+# Edit discipline:
+#   1. scp this template to /tmp/ on the VPS
+#   2. sudo -u openclaw cp /tmp/crabbox.yaml.example ~/.openclaw/workspace/.crabbox.yaml
+#   3. chmod 0600 ~/.openclaw/workspace/.crabbox.yaml
+#   4. Run `sudo -u openclaw /home/openclaw/.local/bin/crabbox doctor --provider e2b`
+#      and confirm exit 0 before any real Crabbox-routed task.
+#
+# E2B auth lives in the SYSTEMD SERVICE ENVIRONMENT, never in this file:
+#   sudo systemctl edit openclaw  →  add `Environment=E2B_API_KEY=...` block
+#   Then `sudo systemctl restart openclaw` and verify via
+#   `sudo systemctl show openclaw -p Environment | grep E2B`.
+#
+# Reference/CRABBOX-HARDENING.md §3 (provider verdict), §8 (secrets discipline).
+
+# === Provider ===
+# E2B chosen first per CRABBOX-HARDENING.md §3:
+#   - in the OpenClaw plugin's provider allowlist (typed crabbox_run works)
+#   - delegated provider, no Cloudflare Worker broker needed
+#   - 1hr sandbox cap forces healthy task decomposition
+#   - single E2B_API_KEY env var, clean credential surface
+provider: e2b
+target: linux
+
+# === Lease lifecycle defaults ===
+# CRABBOX-HARDENING.md rule #2: no implicit lifetimes.
+# Override per-warmup via the `ttl` and `idleTimeout` params on `crabbox_warmup`.
+lease:
+  ttl: 60m
+  idleTimeout: 15m
+
+# === E2B-specific ===
+# Use the base template until a custom Crabbox-ready template is built per repo.
+e2b:
+  template: base
+
+# === Sync ===
+# Repo-local .crabboxignore handles project-specific exclusions; this section
+# only sets warn/fail thresholds and the env allowlist. Secrets are NEVER
+# forwarded — they live in the systemd service environment and are passed by
+# name only.
+sync:
+  # Defaults are conservative; raise per-repo if a legitimate large sync is
+  # expected. See `crabbox sync-plan` before any first sync.
+  warnFiles: 50000
+  warnBytes: 5368709120        # 5 GiB
+  failFiles: 150000
+  failBytes: 21474836480       # 20 GiB
+  allowLarge: false
+
+# === Env forwarding allowlist ===
+# Default-deny. Add names (NOT values) here as build/test needs surface.
+# E2B_API_KEY is consumed by the CLI itself — never forwarded to the sandbox.
+env:
+  allow:
+    - NODE_ENV
+    - CI
+    # - GITHUB_TOKEN     # uncomment when a build genuinely needs it
+    # - NPM_TOKEN        # uncomment for private npm registry access
+
+# === Egress ===
+# CRABBOX-HARDENING.md rule #9: egress profiles default closed.
+# Leave unset until a specific QA scenario needs the operator-machine IP.
+# egress:
+#   enabled: false

@@ -84,6 +84,63 @@ If Gregor's systemd service does not include `~/.local/bin` on `PATH`, either
 call `/home/openclaw/.local/bin/crabbox` explicitly in runbooks or add the path
 through the service environment.
 
+### Plugin install (the safety-gate gotcha)
+
+CLI alone gives Gregor shell access to Crabbox. To get the **typed agent
+tools** (`crabbox_run`, `crabbox_warmup`, etc.), the OpenClaw plugin must
+also be installed.
+
+`@openclaw/crabbox-plugin` is **not on npm** at v0.13.0 (registry returns
+404). Install from a local clone of the source repo:
+
+```sh
+ssh vps 'rm -rf /tmp/crabbox-plugin-src && git clone --depth=1 --branch=v0.13.0 https://github.com/openclaw/crabbox.git /tmp/crabbox-plugin-src'
+ssh vps 'export PATH=$HOME/.npm-global/bin:$PATH && openclaw plugins install /tmp/crabbox-plugin-src'
+```
+
+**Expected gotcha** — OpenClaw's install-time pattern matcher will block the
+plugin with:
+
+```text
+WARNING: Plugin "crabbox" contains dangerous code patterns:
+  Shell command execution detected (child_process) (.../index.js:127); ...
+Plugin "crabbox" installation blocked: dangerous code patterns detected ...
+```
+
+This is a **false positive on documented mechanism**. The plugin's entire
+purpose is to shell out to the CLI binary via `child_process.spawn`. The
+official `openclaw.plugin.json` ships with this pattern; it is the agent-
+facing contract for run/warmup/etc.
+
+The plugin is `@openclaw/` first-party scope, which the repo doctrine
+(audit-at-usage-time, `Reference/DOCTRINE-AUDIT-AT-USAGE-TIME.md`) exempts
+from the third-party audit gate, same as `@openclaw/discord` (bead `lcf`).
+
+**Bypass with explicit authorization:**
+
+```sh
+ssh vps 'export PATH=$HOME/.npm-global/bin:$PATH && openclaw plugins install /tmp/crabbox-plugin-src --dangerously-force-unsafe-install'
+```
+
+Then configure the plugin to point at the absolute binary path (because
+`~/.local/bin` is NOT on the systemd service `Environment=PATH`):
+
+```sh
+ssh vps 'sudo -u openclaw openclaw plugins config crabbox binary=/home/openclaw/.local/bin/crabbox'
+ssh vps 'sudo -u openclaw openclaw config validate'
+ssh vps 'sudo systemctl restart openclaw && sleep 8 && sudo -u openclaw openclaw plugins list | grep -i crabbox'
+```
+
+Acceptance:
+
+- `openclaw plugins list` shows `crabbox` as **enabled**;
+- `openclaw config validate` passes;
+- gateway is up on `:18789` after restart;
+- `src/scripts/config-invariants.sh` I1-I4 still PASS;
+- I5 either PASSES with `applicable=true,exit=0` (provider configured) or
+  PASSES with `applicable=false,reason="no provider configured"` (provider
+  pending — see `src/config/crabbox.yaml.example`).
+
 ## First Project Kickoff
 
 Use this only after Gregor has a disposable Crabbox provider configured.

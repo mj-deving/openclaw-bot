@@ -57,14 +57,29 @@ Crabbox is two artifacts that ship from one repo:
 **Two installs on Gregor:**
 
 1. CLI binary (Go) — for the openclaw user, in `~/.local/bin/crabbox`. See
-   runbook.
-2. Plugin (npm) — `openclaw plugins install @openclaw/crabbox-plugin`. Adds
-   the typed agent tools to Gregor's tool surface.
+   runbook §Install On Gregor.
+2. Plugin — **NOT on npm at v0.13.0** (verified 2026-05-14 against the
+   live registry — `@openclaw/crabbox-plugin` returns 404). Install from a
+   local clone of the source repo via `openclaw plugins install /tmp/
+   crabbox-plugin-src --dangerously-force-unsafe-install`. The force flag
+   is required because OpenClaw's install-time pattern matcher flags the
+   plugin's documented `child_process.spawn` call as "dangerous." The
+   plugin is `@openclaw/` first-party scope, which the audit-at-usage-time
+   doctrine exempts (same as `@openclaw/discord` per bead `lcf`). Plugin
+   compat requires `pluginApi: ">=2026.4.25"` — Gregor on v2026.5.6 is
+   fine.
 
 Without the plugin, Gregor can still drive Crabbox via shell, but he loses
 schema validation and the explicit allowlists (`allowRun`, `allowWarmup`,
-`allowStop`). Plugin compat requires `pluginApi: ">=2026.4.25"` — Gregor on
-v2026.5.6 is fine.
+`allowStop`).
+
+**Service PATH gotcha:** the systemd `Environment=PATH` for the openclaw
+service does **NOT** include `/home/openclaw/.local/bin`. Verified
+2026-05-14 against live Gregor: `Environment=PATH=/home/openclaw/.npm-
+global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`.
+So even after installing the CLI to `~/.local/bin/crabbox`, the plugin
+(which spawns `crabbox` by name) cannot find it. Fix: set the plugin's
+`binary` config to the absolute path `/home/openclaw/.local/bin/crabbox`.
 
 ---
 

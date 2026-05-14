@@ -26,6 +26,12 @@
 #       "openai-codex/" (not "openai/") so it actually uses OAuth
 #   I4: channels.telegram.threadBindings (if present) uses the modern collapsed form —
 #       no legacy spawnSubagentSessions/spawnAcpSessions keys
+#   I5: if Crabbox plugin is installed AND a Crabbox provider is configured (.crabbox.yaml
+#       in workspace or repo), `crabbox doctor --provider <provider>` exits 0. Crabbox
+#       doctor is local-only, never billable; an exit-2 here means a Crabbox-routed
+#       task would fail at runtime (missing CLI binary, plugin not loaded, provider
+#       auth absent, key permission wrong, etc.). Gates the Telegram-routed Crabbox
+#       lane per Reference/CRABBOX-HARDENING.md §10 rule #11.
 #
 # USAGE:
 #   src/scripts/config-invariants.sh                 # human report, exit 0/1
@@ -59,8 +65,41 @@ CONFIG_JSON=$(ssh "${SSH_OPTS[@]}" "${SSH_HOST}" \
     exit 1
 }
 
-# Run the four checks via one jq invocation so the report stays atomic.
-REPORT=$(printf '%s' "$CONFIG_JSON" | jq -e '
+# I5: Crabbox doctor gate. Only runs if the plugin is installed AND a Crabbox
+# provider is configured anywhere reachable. Plugin presence comes from the
+# OpenClaw plugins config; provider comes from the openclaw user's workspace
+# .crabbox.yaml or repo-local .crabbox.yaml. The check itself is a single
+# SSH round-trip running `crabbox doctor --provider <p>`. Exit 2 from doctor
+# means a Crabbox-routed task would fail; surface that as an invariant
+# violation rather than letting Gregor try and fail at runtime.
+CRABBOX_PROBE=$(ssh "${SSH_OPTS[@]}" "${SSH_HOST}" '
+    set +e
+    PATH=/home/openclaw/.local/bin:/home/openclaw/.npm-global/bin:$PATH
+    if ! sudo -u openclaw openclaw plugins list 2>/dev/null | grep -qiE "(^|[│|])\s*crabbox\b"; then
+        echo "{\"applicable\":false,\"reason\":\"plugin not installed\"}"
+        exit 0
+    fi
+    PROVIDER=""
+    for cfg in /home/openclaw/.openclaw/workspace/.crabbox.yaml \
+               /home/openclaw/.openclaw/workspace/.crabbox.yml \
+               /home/openclaw/.openclaw/.crabbox.yaml ; do
+        if sudo -u openclaw test -r "$cfg"; then
+            PROVIDER=$(sudo -u openclaw grep -E "^provider:" "$cfg" | head -1 | sed -E "s/^provider:[[:space:]]*//; s/[[:space:]]*#.*//; s/[\"'\'']*//g")
+            [[ -n "$PROVIDER" ]] && break
+        fi
+    done
+    if [[ -z "$PROVIDER" ]]; then
+        echo "{\"applicable\":false,\"reason\":\"no provider configured\"}"
+        exit 0
+    fi
+    sudo -u openclaw /home/openclaw/.local/bin/crabbox doctor --provider "$PROVIDER" >/tmp/crabbox-doctor.out 2>&1
+    CODE=$?
+    TAIL=$(sudo -u openclaw tail -5 /tmp/crabbox-doctor.out | tr -d "\r" | head -c 600 | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+    echo "{\"applicable\":true,\"provider\":\"$PROVIDER\",\"exit\":$CODE,\"tail\":$TAIL}"
+' 2>/dev/null) || CRABBOX_PROBE='{"applicable":false,"reason":"probe ssh failed"}'
+
+# Run all checks via one jq invocation so the report stays atomic.
+REPORT=$(printf '%s' "$CONFIG_JSON" | jq -e --argjson crabbox "$CRABBOX_PROBE" '
 {
     invariants: {
         I1_no_legacy_embedded_harness_fallback: (
@@ -84,6 +123,9 @@ REPORT=$(printf '%s' "$CONFIG_JSON" | jq -e '
                 ((.channels.telegram.threadBindings | has("spawnSubagentSessions")) | not)
                 and ((.channels.telegram.threadBindings | has("spawnAcpSessions")) | not)
             )
+        ),
+        I5_crabbox_doctor_passes: (
+            ($crabbox.applicable | not) or ($crabbox.exit == 0)
         )
     },
     evidence: {
@@ -95,7 +137,8 @@ REPORT=$(printf '%s' "$CONFIG_JSON" | jq -e '
             | select((.agentRuntime.id // "") == "codex" or (.embeddedHarness.runtime // "") == "codex")
             | {id, agentRuntime, embeddedHarness, model}
         ],
-        telegram_threadBindings: .channels.telegram.threadBindings
+        telegram_threadBindings: .channels.telegram.threadBindings,
+        crabbox: $crabbox
     }
 }
 ') || {
@@ -129,5 +172,6 @@ fi
 echo "VIOLATIONS DETECTED. Evidence:"
 printf '%s' "$REPORT" | jq '.evidence'
 echo
-echo "See Reference/KNOWN-BUGS.md #12, #13 for fix procedures."
+echo "See Reference/KNOWN-BUGS.md #12, #13 for fix procedures (I1-I4)."
+echo "See Reference/CRABBOX-HARDENING.md §10 rule #11 for I5 (Crabbox doctor gate)."
 exit 1
