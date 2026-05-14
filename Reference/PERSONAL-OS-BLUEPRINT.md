@@ -352,8 +352,25 @@ after Aldine bootstrap (`o38`).
 > children kept their `o3n.<n>` IDs and now live under `k0a`. Cross-
 > deps were added where the two chains genuinely touch.
 >
+> **Agent-pack deferral (2026-05-14):** Aldine / Vesalius / Hypatia /
+> Dismas bootstraps (`o38` / `8bi` / `o6a` / `cgy`) are **deferred
+> indefinitely**. Verticals (V1–V15) and personas are retained as
+> conceptual decomposition. ~1 automation bot may land near-term but
+> scope is undefined and not committed. The scaffold work below
+> (`k0a.2`) is reframed to **doctrine + workspace template only — no
+> installer** until a concrete second bot is defined. `o3n.7` (V12
+> content-pipeline placeholder, was blocked-by `o38`) is deferred
+> with the same reason.
+>
 > Inspect with `bd children openclaw-bot-k0a` or
 > `bd show openclaw-bot-<id>`.
+
+### Doctrine work (post-deferral additions)
+
+| Bead | P | Title | Depends-on |
+|---|---|---|---|
+| `k0a.1` | P2 | Security tiers doctrine — relax default posture; tier 0/1/2 by bot risk surface | — |
+| `k0a.2` | P2 | GUIDE Phase 16 + workspace template — bake Moritz doctrine into operational standards (NO installer yet) | blocks: `k0a.1`, `o3n.1`, `3b7` |
 
 ### Peter-Yang-derived children (this blueprint)
 
@@ -365,7 +382,7 @@ after Aldine bootstrap (`o38`).
 | `o3n.4` | P3 | CLI > MCP > API doctrine — append to CLAUDE.md Operational Rules | §4.4 | — |
 | `o3n.5` | P3 | Grocery skill on Gregor (REWE/Edeka browser automation, V8 first artifact) | §4.6 #1 | blocks: `o3n.1`, `gwj` |
 | `o3n.6` | P3 | Sub-agent gate re-evaluation — re-scope or close bead `kcy` | §6 | related: `kcy` |
-| `o3n.7` | P4 | V12 content-pipeline beads (deferred placeholder — file post-Aldine) | §5 | blocks: `o38` |
+| ❄ `o3n.7` | P4 | V12 content-pipeline beads (was blocked-by `o38` — Aldine deferred) | §5 | **deferred 2026-05-14** |
 
 ### Greg-Eisenberg-derived siblings (`Reference/MORITZ-BLUEPRINT.md`)
 
@@ -377,40 +394,61 @@ after Aldine bootstrap (`o38`).
 | `o4b` | P3 | Design Telegram group + topic structure with per-topic system prompts | Channel UX, distinct |
 | `2o6` | P3 | Design agent-account separation (Google / X / Calendar / Mailbox per bot) | Identity surface (related to `o3n.2`) |
 
-### Recommended execution sequence
+> **Note on `gwj` / `2o6` framing:** both beads' original titles
+> reference "before agent-pack rollout." With the pack deferred, they
+> remain valid **for Gregor's own evolution and the potential single
+> automation bot** — `gwj` still blocks `o3n.5` (grocery skill needs
+> browser); `2o6` informs whether Gregor itself should own a separate
+> Google/X identity. Urgency drops; relevance stays.
+
+### Recommended execution sequence (post-deferral)
 
 1. **First wave — independent quick wins, parallelizable:**
    `o3n.4` (CLI>MCP>API doctrine, ~15 min), `0vh` (sessionMemory +
    HEARTBEAT.md, ~45 min), `o3n.3` (memory-dreaming cron, ~30 min),
-   `o3n.6` (sub-agent gate re-eval, ~30 min). No blockers, immediate
-   doctrine + capability gain. `o3n.3` lands after `0vh` to share
-   memory-loop framing.
-2. **Second wave — Layer-1 / Layer-2 hygiene unlocks downstream:**
+   `o3n.6` (sub-agent gate re-eval, ~30 min), `k0a.1` (security
+   tiers doctrine, ~1hr). No blockers, immediate doctrine +
+   capability gain. `o3n.3` lands after `0vh` to share memory-loop
+   framing.
+2. **Second wave — Layer-1 / Layer-2 hygiene:**
    `3b7` (audit 4 workspace files) → `o3n.1` (TOOLS.md scaffold).
    Once both shipped, the workspace has the canonical 5-file shape
    (AGENTS + SOUL + IDENTITY + USER + TOOLS).
-3. **Third wave — decisions that unblock the agent pack:**
-   `gwj` (browser mode) and `2o6` (agent-account separation) — both
-   block downstream work. `gwj` also blocks `o3n.5` (grocery).
-   `o4b` (Telegram topics) parallelizable here.
-4. **Fourth wave — installs + skills:**
+3. **Third wave — bake doctrine into GUIDE + template:**
+   `k0a.2` (GUIDE Phase 16 + workspace template) — needs `k0a.1`,
+   `o3n.1`, `3b7`. Produces canonical operational standards + the
+   reusable template so when the automation bot is defined, scaffold
+   is a one-day task not a redesign.
+4. **Fourth wave — installs + skills + decisions:**
    `o3n.2` (GWS CLI install — needs `o3n.1` TOOLS.md and informed by
    `2o6` agent-account design). `o3n.5` (grocery skill — needs
-   `o3n.1` and `gwj`). Marius picks Berlin grocery vendor
+   `o3n.1` and `gwj`). `gwj` browser mode and `2o6` agent accounts
+   can land here without pack-rollout urgency. `o4b` (Telegram
+   topics) parallelizable. Marius picks Berlin grocery vendor
    (REWE / Edeka / Lieferando) before `o3n.5` starts.
 5. **Deferred:**
-   `o3n.7` waits on `o38` (Aldine bootstrap). Do not file its 6
-   sub-beads until Aldine ships.
+   `o3n.7` waits on a future decision to bring V12 content pipeline
+   back to Gregor or to a future automation bot.
 
 ## 10 · What we should NOT take from Moritz
+
+> **Security-posture refinement (2026-05-14):** Earlier framing of "our
+> 6-layer Berman defense + audit-at-usage-time is the opposite stance"
+> was correct in spirit but too uniform. Per `k0a.1` (security tiers
+> doctrine), we're moving to **tier 0 / 1 / 2** defaults — relaxing
+> permission UX on low-risk personal-OS work (Tier 0 — grocery,
+> calendar, research) while keeping full strictness for money /
+> adversary surfaces (Tier 2 — future Midas, revived Dismas). This
+> closes the friction Moritz felt without adopting his blanket
+> bypass-mode solution.
 
 Some Moritz patterns shouldn't port — flagging them explicitly so they
 don't slip into a bead chain:
 
 1. **"Bypass permission mode always active" (`[10:47]`–`[10:54]`).** He
-   even acknowledges "becomes a bit less secure." Our 6-layer Berman
-   defense + audit-at-usage-time skill doctrine is precisely the
-   opposite stance. Do not adopt.
+   even acknowledges "becomes a bit less secure." Our answer is
+   **tier-appropriate defaults** (Tier 0 auto-allows within per-bot
+   allowlist; Tier 2 keeps the gate). Not blanket bypass.
 2. **Migrating off OpenClaw.** Moritz migrated FOR reliability +
    model access. We've already engineered around both: invariants
    I1–I4, Codex OAuth primary, OpenRouter fallback, post-restart

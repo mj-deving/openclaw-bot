@@ -1,9 +1,9 @@
 # Vertical Agent-Pack Design
 
 **Date:** 2026-04-30
-**Status:** Design (no deployments yet — bootstrap follows this spec)
+**Status:** Design retained, **execution deferred indefinitely (2026-05-14)** — Marius decision: no near-term intent to bootstrap additional bots. Verticals (V1–V15) and personas kept as conceptual decomposition. ~1 automation bot may land near-term but scope undefined and not committed. Bootstrap beads `o38` / `8bi` / `o6a` / `cgy` are state=deferred in bd. Re-open when concrete use case emerges. Doctrine extracted from this design (4-layer model, 5-file workspace, security tiers) flows into GUIDE Phase 16 via bead `k0a.2`.
 **Driving plan:** `Plans/next-session-agent-packs.md`
-**Companion docs:** `SKILL-LANDSCAPE.md` (skill catalog), `DOCTRINE-AUDIT-AT-USAGE-TIME.md` (skill policy), `ATLASFORGE-PATTERNS.md` (chassis identity), `KNOWN-BUGS.md` (mandatory config gotchas)
+**Companion docs:** `SKILL-LANDSCAPE.md` (skill catalog), `DOCTRINE-AUDIT-AT-USAGE-TIME.md` (skill policy), `ATLASFORGE-PATTERNS.md` (chassis identity), `KNOWN-BUGS.md` (mandatory config gotchas), `PERSONAL-OS-BLUEPRINT.md` (Moritz Kremb adoption + tiered security framing)
 
 ## Pack Overview
 
