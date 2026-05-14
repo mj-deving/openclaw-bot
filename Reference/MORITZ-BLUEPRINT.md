@@ -191,14 +191,21 @@ Telegram chat → "who do I follow up with today?" → agent reads a Google Shee
 
 ## Net Strategic Recommendations
 
+> **Consolidation note (2026-05-14):** Beads listed below were merged
+> with the Peter-Yang-derived chain under one epic. See **epic
+> `openclaw-bot-k0a`** and the consolidated table in
+> [`Reference/PERSONAL-OS-BLUEPRINT.md` §9](PERSONAL-OS-BLUEPRINT.md#9--bead-chain--consolidated-under-epic-k0a)
+> for the full 12-child chain across both Moritz episodes and the
+> cross-deps that landed on consolidation.
+
 Ordered by leverage × low cost:
 
-1. **Bead `0vh`** — Verify `memorySearch.experimental.sessionMemory` + author `HEARTBEAT.md` with Moritz's 3 modules. One config read + one file write. *Single highest-ROI move from this masterclass.*
-2. **Bead `3b7`** — Audit workspace personality files; canonicalize the four-file shape before Aldine. Closes part of `je6`.
-3. **Bead `gwj`** — Decide browser ownership (Hypatia vs Aldine). Documented decision before agent-pack rollout (blocks `o38`).
+1. **Bead `0vh`** — Verify `memorySearch.experimental.sessionMemory` + author `HEARTBEAT.md` with Moritz's 3 modules. One config read + one file write. *Single highest-ROI move from this masterclass.* (Related: `o3n.3` memory-dreaming nightly cron — Peter-Yang side.)
+2. **Bead `3b7`** — Audit workspace personality files; canonicalize the four-file shape before Aldine. Closes part of `je6`. (Related: `o3n.1` TOOLS.md scaffold — completes the 5-file workspace shape.)
+3. **Bead `gwj`** — Decide browser ownership (Hypatia vs Aldine). Documented decision before agent-pack rollout (blocks `o38`, also blocks `o3n.5` grocery skill).
 4. **Bead `o4b`** — Design Telegram topic structure (3–5 topics with per-topic system prompts). Loosely TELOS-aligned.
-5. **Bead `2o6`** — Design agent-account separation pattern before scaling to 5 bots.
-6. *Optional:* clone the no-slop content pipeline shape for `blog-creator-page` — only after substrate items above ship (substrate-first doctrine holds; Moritz's pipeline is distribution, doesn't unlock substrate).
+5. **Bead `2o6`** — Design agent-account separation pattern before scaling to 5 bots. (Related: `o3n.2` GWS CLI install — Pro vs standard tier decision feeds the agent-account design.)
+6. *Optional:* clone the no-slop content pipeline shape for `blog-creator-page` — only after substrate items above ship (substrate-first doctrine holds; Moritz's pipeline is distribution, doesn't unlock substrate). The Peter-Yang transcript covers a more complete 8-step pipeline; tracked as deferred bead `o3n.7` blocked-by Aldine bootstrap.
 7. **Bead `2r9`** — Publish-back prompt-injection-defender — Moritz's Step 9 is a one-paragraph hand-wave; the 6-layer defense is the differentiated public artifact.
 
 ## What Moritz Doesn't Cover (Marius is ahead on)
@@ -217,6 +224,7 @@ These are publish-back-eligible. The maintainer-side `Reference/` tree, `src/scr
 ## Cross-References
 
 - Raw transcript: `~/.claude/PAI/MEMORY/RAW/2026-05/2026-05-14T133800Z-manual-startup-ideas-pod-moritz-openclaw-blueprint/`
-- Bead set: `3b7` `0vh` `gwj` `o4b` `2o6` (filed 2026-05-14, commit `27a2f23`)
-- Related docs: `Reference/DEFENSE-SYSTEM.md`, `Reference/DOCTRINE-AUDIT-AT-USAGE-TIME.md`, `Reference/VERTICAL-AGENTS.md`, `Reference/AGENT-TOPOLOGY.md`, `Reference/SKILL-LANDSCAPE.md`, `Reference/KNOWN-BUGS.md`
+- **Consolidated epic:** `openclaw-bot-k0a` (12 children — `0vh` `3b7` `gwj` `o4b` `2o6` + `o3n.1` through `o3n.7`). Inspect via `bd children openclaw-bot-k0a`. Companion blueprint: `Reference/PERSONAL-OS-BLUEPRINT.md` (Peter Yang episode, 4-layer Claudia framing).
+- Original Greg-Eisenberg-side bead set: `3b7` `0vh` `gwj` `o4b` `2o6` (filed 2026-05-14, commit `27a2f23`); wrapped under k0a in commit `db3e98b`; Peter-Yang-side beads consolidated in (this commit).
+- Related docs: `Reference/PERSONAL-OS-BLUEPRINT.md`, `Reference/DEFENSE-SYSTEM.md`, `Reference/DOCTRINE-AUDIT-AT-USAGE-TIME.md`, `Reference/VERTICAL-AGENTS.md`, `Reference/AGENT-TOPOLOGY.md`, `Reference/SKILL-LANDSCAPE.md`, `Reference/KNOWN-BUGS.md`
 - TELOS anchors: G1 (PAI), G3 (Festanstellung), G5 (lateral peer to G1), G6 (commercial PAI)

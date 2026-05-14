@@ -342,40 +342,65 @@ GWS CLI (§4.5) and TOOLS.md (§4.3) before adding anything else. Don't
 open all 9 content-pipeline steps as parallel beads; sequence them
 after Aldine bootstrap (`o38`).
 
-## 9 · Bead chain — epic `o3n`
+## 9 · Bead chain — consolidated under epic `k0a`
 
-Filed under epic **`openclaw-bot-o3n`** "Adopt Moritz Kremb's personal-
-OS blueprint on Gregor + 5-bot pack". Inspect with `bd children
-openclaw-bot-o3n` or `bd show openclaw-bot-o3n.<n>`. Order in the table
-matches the recommended execution sequence; dependencies enforce
-hard ordering.
+> **Consolidation note (2026-05-14):** The 7 beads originally filed
+> under epic `o3n` (this blueprint) and the 5 beads filed under epic
+> `k0a` (the companion `Reference/MORITZ-BLUEPRINT.md` from the Greg
+> Eisenberg pod) were **merged under a single epic `k0a`** to keep
+> Moritz-Kremb-derived work on one chain. Epic `o3n` is closed; its
+> children kept their `o3n.<n>` IDs and now live under `k0a`. Cross-
+> deps were added where the two chains genuinely touch.
+>
+> Inspect with `bd children openclaw-bot-k0a` or
+> `bd show openclaw-bot-<id>`.
+
+### Peter-Yang-derived children (this blueprint)
 
 | Bead | P | Title | §-ref | Depends-on |
 |---|---|---|---|---|
-| `o3n.1` | P2 | TOOLS.md scaffold for Gregor (single-source-of-truth tools registry) | §4.3 | — |
-| `o3n.2` | P2 | GWS CLI install on Gregor (Google Workspace tool) | §4.5 | `o3n.1` |
-| `o3n.3` | P2 | Memory-dreaming nightly cron (daily-to-long-term compression) | §4.2 | — |
+| `o3n.1` | P2 | TOOLS.md scaffold for Gregor (single-source-of-truth tools registry) | §4.3 | related: `3b7` |
+| `o3n.2` | P2 | GWS CLI install on Gregor (Google Workspace tool) | §4.5 | blocks: `o3n.1` · related: `2o6` |
+| `o3n.3` | P2 | Memory-dreaming nightly cron (daily-to-long-term compression) | §4.2 | related: `0vh` |
 | `o3n.4` | P3 | CLI > MCP > API doctrine — append to CLAUDE.md Operational Rules | §4.4 | — |
-| `o3n.5` | P3 | Grocery skill on Gregor (REWE/Edeka browser automation, V8 first artifact) | §4.6 #1 | `o3n.1` |
+| `o3n.5` | P3 | Grocery skill on Gregor (REWE/Edeka browser automation, V8 first artifact) | §4.6 #1 | blocks: `o3n.1`, `gwj` |
 | `o3n.6` | P3 | Sub-agent gate re-evaluation — re-scope or close bead `kcy` | §6 | related: `kcy` |
-| `o3n.7` | P4 | V12 content-pipeline beads (deferred placeholder — file post-Aldine) | §5 | `o38` (Aldine bootstrap) |
+| `o3n.7` | P4 | V12 content-pipeline beads (deferred placeholder — file post-Aldine) | §5 | blocks: `o38` |
 
-**Execution sequence under Moritz's "one step at a time" tip (§8):**
+### Greg-Eisenberg-derived siblings (`Reference/MORITZ-BLUEPRINT.md`)
 
-1. **First wave (independent quick wins, parallelizable):**
-   `o3n.4` (CLI>MCP>API doctrine, ~15 min) and `o3n.3` (memory-dreaming
-   cron, ~30 min). No blockers, immediate doctrine + capability gain.
-2. **Second wave (Layer-2 hygiene unlocks downstream):**
-   `o3n.1` (TOOLS.md scaffold) — unlocks `o3n.2` (GWS) and `o3n.5`
-   (grocery). Do this before opening any other install/skill bead.
-3. **Third wave (after TOOLS.md ships):**
-   `o3n.2` (GWS CLI) then `o3n.5` (grocery skill). Marius picks Berlin
-   grocery vendor (REWE / Edeka / Lieferando) before `o3n.5` starts.
-4. **Doctrine cleanup:**
-   `o3n.6` (sub-agent gate) any time — independent of installs.
+| Bead | P | Title | Touches |
+|---|---|---|---|
+| `0vh` | P2 | Verify `memorySearch.experimental.sessionMemory` + author `HEARTBEAT.md` with Moritz's 3 modules | Layer 1 memory (related to `o3n.3`) |
+| `3b7` | P2 | Audit + canonicalize 4 workspace identity files (AGENTS / SOUL / IDENTITY / USER) | Layer 1 folder (related to `o3n.1`) |
+| `gwj` | P3 | Decide browser deploy mode + ownership (WebFetch / managed browser / Chrome Relay) | Browser tool — **blocks `o3n.5` grocery** |
+| `o4b` | P3 | Design Telegram group + topic structure with per-topic system prompts | Channel UX, distinct |
+| `2o6` | P3 | Design agent-account separation (Google / X / Calendar / Mailbox per bot) | Identity surface (related to `o3n.2`) |
+
+### Recommended execution sequence
+
+1. **First wave — independent quick wins, parallelizable:**
+   `o3n.4` (CLI>MCP>API doctrine, ~15 min), `0vh` (sessionMemory +
+   HEARTBEAT.md, ~45 min), `o3n.3` (memory-dreaming cron, ~30 min),
+   `o3n.6` (sub-agent gate re-eval, ~30 min). No blockers, immediate
+   doctrine + capability gain. `o3n.3` lands after `0vh` to share
+   memory-loop framing.
+2. **Second wave — Layer-1 / Layer-2 hygiene unlocks downstream:**
+   `3b7` (audit 4 workspace files) → `o3n.1` (TOOLS.md scaffold).
+   Once both shipped, the workspace has the canonical 5-file shape
+   (AGENTS + SOUL + IDENTITY + USER + TOOLS).
+3. **Third wave — decisions that unblock the agent pack:**
+   `gwj` (browser mode) and `2o6` (agent-account separation) — both
+   block downstream work. `gwj` also blocks `o3n.5` (grocery).
+   `o4b` (Telegram topics) parallelizable here.
+4. **Fourth wave — installs + skills:**
+   `o3n.2` (GWS CLI install — needs `o3n.1` TOOLS.md and informed by
+   `2o6` agent-account design). `o3n.5` (grocery skill — needs
+   `o3n.1` and `gwj`). Marius picks Berlin grocery vendor
+   (REWE / Edeka / Lieferando) before `o3n.5` starts.
 5. **Deferred:**
-   `o3n.7` waits on `o38`. Do not file its 6 sub-beads until Aldine
-   ships.
+   `o3n.7` waits on `o38` (Aldine bootstrap). Do not file its 6
+   sub-beads until Aldine ships.
 
 ## 10 · What we should NOT take from Moritz
 
