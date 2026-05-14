@@ -1,5 +1,9 @@
 # Gregor Crabbox Runbook
 
+Operational runbook. For architecture, plugin-vs-shell fork, provider verdict,
+lifecycle controls, and the 15 hardening rules, read
+[`CRABBOX-HARDENING.md`](CRABBOX-HARDENING.md) first.
+
 Read when:
 
 - Gregor is asked over Telegram to do project-based coding work;
