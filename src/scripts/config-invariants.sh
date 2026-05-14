@@ -32,6 +32,15 @@
 #       task would fail at runtime (missing CLI binary, plugin not loaded, provider
 #       auth absent, key permission wrong, etc.). Gates the Telegram-routed Crabbox
 #       lane per Reference/CRABBOX-HARDENING.md §10 rule #11.
+#   I6: agents.defaults.model.fallbacks is EMPTY. Hard fail-closed on the main agent
+#       lane. Previous chains (Codex → Sonnet → Haiku → free) caused SILENT
+#       DEGRADATION — Marius experienced multi-turn conversations on free-tier models
+#       without noticing, with badly degraded responses (tool-use forgotten,
+#       filesystem-fishing instead of typed tool calls, e.g. the 2026-05-14 Crabbox
+#       smoke). Doctrine: same logic as the I2 subagent fail-closed invariant.
+#       Visibility > availability. Bot recovery path when Codex fails: /model slash
+#       command in Telegram opens a channel-side keyboard UI (handled by the Telegram
+#       plugin pre-LLM, no LLM call required) — operator picks a different model.
 #
 # USAGE:
 #   src/scripts/config-invariants.sh                 # human report, exit 0/1
@@ -149,12 +158,16 @@ REPORT=$(printf '%s' "$CONFIG_JSON" | jq -e --argjson crabbox "$CRABBOX_PROBE" '
         ),
         I5_crabbox_doctor_passes: (
             ($crabbox.applicable | not) or ($crabbox.exit == 0)
+        ),
+        I6_main_agent_fallbacks_empty: (
+            ((.agents.defaults.model.fallbacks // ["nonempty"]) | length) == 0
         )
     },
     evidence: {
         defaults_embeddedHarness: .agents.defaults.embeddedHarness,
         defaults_agentRuntime: .agents.defaults.agentRuntime,
         defaults_subagents_model: .agents.defaults.subagents.model,
+        defaults_main_model: .agents.defaults.model,
         codex_agents: [
             .agents.list[]?
             | select((.agentRuntime.id // "") == "codex" or (.embeddedHarness.runtime // "") == "codex")
@@ -197,4 +210,5 @@ printf '%s' "$REPORT" | jq '.evidence'
 echo
 echo "See Reference/KNOWN-BUGS.md #12, #13 for fix procedures (I1-I4)."
 echo "See Reference/CRABBOX-HARDENING.md §10 rule #11 for I5 (Crabbox doctor gate)."
+echo "See Reference/FAIL-CLOSED-DOCTRINE.md for I6 (main agent fail-closed)."
 exit 1
