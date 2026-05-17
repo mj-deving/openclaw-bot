@@ -41,8 +41,9 @@ adopt-worthy gaps, ranked by leverage × low cost:
 
 Lower-leverage / situational (real, but not "the few"): Telegram topic
 structure (`o4b`), browser access mode (`gwj`), agent-owned accounts
-(`2o6`), grocery skill (`o3n.5`). All live under epic `k0a` — see
-[§Bead chain](#bead-chain).
+(`2o6`), grocery skill (`o3n.5`), sub-agent gate re-eval (`o3n.6`), V12
+content pipeline (`o3n.7`). These are **standalone beads** — de-parented
+from the build epic, deferred indefinitely. See [§Bead chain](#bead-chain).
 
 **Adopt nothing else.** See [§What NOT to adopt](#what-not-to-adopt).
 
@@ -233,19 +234,33 @@ theater. This is the re-evaluation criterion for bead `kcy` / `o3n.6`.
 
 ## Bead chain
 
-All Moritz-derived work is consolidated under **one epic, `openclaw-bot-k0a`**
-(12 children — `0vh 3b7 gwj o4b 2o6` from the Greg episode + `o3n.1`–`o3n.7`
-+ `k0a.1 k0a.2` doctrine). Epic `o3n` was closed into `k0a`.
+The 5 good parts are the **build epic `openclaw-bot-k0a`** — "Moritz
+blueprint — adopt-list build chain". 8 children: the 5 adopt-list parts
+(6 beads) + 2 doctrine beads they feed into (`k0a.1` security tiers,
+`k0a.2` GUIDE-bake capstone — both ID-locked to the epic).
 
 ```
-bd children openclaw-bot-k0a     # full chain + status
+bd children openclaw-bot-k0a     # the build chain
 bd show openclaw-bot-0vh         # start here — highest ROI
 ```
 
-Execution order: first wave (`o3n.4`, `0vh`, `o3n.3`, `o3n.6`, `k0a.1` —
-parallelizable) → Layer-1/2 hygiene (`3b7` → `o3n.1`) → bake into GUIDE
-(`k0a.2`) → installs + skills (`o3n.2`, `o3n.5`, `gwj`, `2o6`, `o4b`).
-Agent-pack bootstraps (`o38`/`8bi`/`o6a`/`cgy`) deferred indefinitely.
+**Dependency waves** (the chain — start anything in wave 1 now):
+
+| Wave | Beads | Blocked on |
+|------|-------|------------|
+| 1 — ready now, parallel | `o3n.4` (CLI>MCP>API, ~15m) · `0vh` (memory loop, ~45m) · `3b7` (SOUL audit, ~30m) · `k0a.1` (security tiers, ~1h) | — |
+| 2 | `o3n.3` (memory-dreaming cron) · `o3n.1` (TOOLS.md) | `0vh` / `3b7` |
+| 3 | `o3n.2` (GWS CLI install) | `o3n.1` |
+| 4 — capstone | `k0a.2` (GUIDE Phase 16 + workspace template) | `3b7` + `o3n.1` + `k0a.1` |
+
+Chains: `o3n.4` standalone · `0vh → o3n.3` · `3b7 → o3n.1 → o3n.2` ·
+`{3b7, o3n.1, k0a.1} → k0a.2`.
+
+**Not in the build epic** — de-parented to standalone beads, deferred
+indefinitely (the old agent-pack sprawl): `gwj` browser mode, `o4b`
+Telegram topics, `2o6` agent accounts, `o3n.5` grocery skill, `o3n.6`
+sub-agent gate, `o3n.7` V12 pipeline. Agent-pack bootstraps
+(`o38`/`8bi`/`o6a`/`cgy`) also deferred indefinitely.
 
 ## Cross-references
 
