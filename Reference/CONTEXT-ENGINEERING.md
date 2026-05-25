@@ -470,7 +470,7 @@ OpenClaw resolves a per-call provider/model in two stages: **auth-profile rotati
 
 **What does NOT trigger fallback:** explicit aborts (non-timeout), context-overflow errors, final unknown errors with no candidates left.
 
-**OAuth profiles:** Named `provider:<email>` (e.g. `openai-codex:mj-deving@users.noreply.github.com`). Stored in `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`. Round-robin: OAuth profiles tried *before* API keys, ordered by `usageStats.lastUsed`. Codex OAuth is documented as unreliable across separate process invocations — failover chain to API-keyed providers is the production-correct mitigation, not a workaround.
+**OAuth profiles:** Named `provider:<email>` (e.g. `openai-codex:<your-email>`). Stored in `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`. Round-robin: OAuth profiles tried *before* API keys, ordered by `usageStats.lastUsed`. Codex OAuth is documented as unreliable across separate process invocations — failover chain to API-keyed providers is the production-correct mitigation, not a workaround.
 
 **Per-session override:** `/model …@<profileId>` pins the current session to a specific profile. Cleared on `/new`, `/reset`, or `sessions.reset`. System-driven changes (fallback rotation, compaction) do NOT mark live-switch.
 

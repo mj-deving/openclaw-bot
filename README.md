@@ -80,6 +80,9 @@ A 6-layer defense system runs as a native OpenClaw plugin, hooking into 5 gatewa
 | **L5: Governor** | `llm_input` | Spend/volume tracking, duplicate detection, circuit breaker per caller. |
 | **L6: Access Control** | `before_tool_call` | Path guards (30+ denied filenames), URL safety with DNS pinning, private IP blocking. |
 
+![6-layer injection defense](docs/diagrams/defense-layers.png)
+*L1 input sanitizer → L2 LLM scanner → L3 outbound gate → L4 redaction → L5 governor → L6 access control*
+
 **162 tests** covering real attack payloads from [L1B3RT4S](https://github.com/elder-plinius/L1B3RT4S), [P4RS3LT0NGV3](https://github.com/elder-plinius/P4RS3LT0NGV3), and TOKEN80M8 repos.
 
 ## What You Get

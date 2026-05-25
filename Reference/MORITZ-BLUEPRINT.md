@@ -174,7 +174,7 @@ Moritz: treat the agent like a new employee — give it its *own* Google
 account, X account, mailbox, calendar. Don't merge into yours.
 
 Gregor has his own Telegram bot account ✅ but auth profiles use
-`mj-deving@users.noreply.github.com` — Marius's identity. Any future Workspace
+`<your-email>` — Marius's identity. Any future Workspace
 integration routes through Marius's personal identity → blast radius.
 
 **Action:** `2o6` — design the separation pattern (per-bot? per-domain?)
