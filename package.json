@@ -3,6 +3,10 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "mcctl": "bun run src/mission-control-local/mcctl.ts",
+    "typecheck": "bun x tsc --noEmit"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
