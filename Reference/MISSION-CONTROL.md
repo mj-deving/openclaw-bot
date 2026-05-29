@@ -2,7 +2,9 @@
 
 _Last verified live: 2026-05-05 during Gregor gateway registration._
 
-Authoritative reference for Mission Control (MC) — the web dashboard at `https://missioncontrol.mjdeving.com` that drives boards, agents, and gateways. Cross-references inbox briefings (operational handoffs to live bots) and project memory (`reference_mission-control-deployment.md`).
+Historical reference for the abhi1693 Mission Control (MC) stack that drove boards, agents, and gateways. Cross-references inbox briefings (operational handoffs to live bots) and project memory (`reference_mission-control-deployment.md`).
+
+**Strategic status, 2026-05-25:** this abhi1693 deployment is no longer the active control-plane direction. [MISSION-CONTROL-VNEXT.md](MISSION-CONTROL-VNEXT.md) owns the replacement design. Keep this stack only for rollback/comparison until decommission is explicitly approved.
 
 ## What it is
 

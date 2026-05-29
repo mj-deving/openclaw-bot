@@ -4,6 +4,8 @@ _Last verified live: 2026-05-06 against `https://missioncontrol.mjdeving.com` (v
 
 This doc is "how to use Mission Control" — what each surface in the dashboard does, what the API endpoints behind it do, common workflows, and where to look when something breaks. It synthesizes the upstream docs (`docs/getting-started/`, `docs/operations/`, `docs/reference/api.md`, `docs/reference/authentication.md`, `docs/reference/configuration.md`, `docs/reference/security.md`) with the live UI shape we observed via Interceptor on 2026-05-05.
 
+**Strategic status, 2026-05-25:** use this as an operations guide for the retained abhi MC stack only. The active direction is now [MISSION-CONTROL-VNEXT.md](MISSION-CONTROL-VNEXT.md): ClawX-style web cockpit, Gregor-first, private-gateway registry, no Electron dependency. Keep concrete route and rollback details in private operator notes.
+
 ## What Mission Control is
 
 A web dashboard + JSON HTTP API that operates one or more OpenClaw gateways. Self-hosted, FastAPI backend + Next.js frontend + Postgres + Redis + (optional) RQ webhook worker, all glued through a Caddy reverse proxy.
@@ -337,6 +339,7 @@ Unfixed upstream issues that can affect any MC-attached gateway including ours. 
 
 If we ever hit a wall with abhi1693's MC, these are the credible alternatives in the same space (researched 2026-05-06):
 
+- **[MISSION-CONTROL-VNEXT.md](MISSION-CONTROL-VNEXT.md)** — current project direction. Use ClawX as an architecture template and build a VPS/web cockpit around private OpenClaw gateways. This supersedes adopting another third-party MC as the default path.
 - **[builderz-labs/mission-control](https://github.com/builderz-labs/mission-control)** — 4629 stars, biggest competitor. Spend-monitoring + governance focus. Worth a 30-min repo skim before committing more hardening effort to abhi1693's MC.
 - **[crshdn/mission-control](https://github.com/crshdn/mission-control)** — 2000 stars. "Autonomous Product Engine" angle (agents → PRs), 80+ API endpoints.
 - **[robsannaa/openclaw-mission-control](https://github.com/robsannaa/openclaw-mission-control)** — 609 stars. 100% local, no telemetry, no accounts angle.

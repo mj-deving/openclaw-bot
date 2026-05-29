@@ -40,7 +40,7 @@ For the question *"how do 5 specialized agents live on one host?"* there are thr
 - **Adopt B** only if (a) Dismas blast-radius scoping is loosened or moved to a dedicated separate VPS, AND (b) Telegram intra-account dispatch becomes documented, AND (c) ops cost of 5 systemd units becomes a real maintenance burden.
 - **Add C on top of A** if (a) you want persistent thread-bound child subagent sessions (Telegram extension lacks the hook in v2026.5.6 — KNOWN-BUGS #13), OR (b) you want bot-to-bot fleet chatter, OR (c) E2EE-on-the-wire becomes load-bearing for Dismas-class content.
 
-The `:18789/` bundled Control UI plus `builderz-labs/mission-control` (when fleet boots) cover the dashboard surface; A delivers the chat surface. That's sufficient for now.
+The bundled Control UI plus the ClawX-style Mission Control vNext plan cover the dashboard surface; A delivers the chat surface. That's sufficient for now. See `Reference/MISSION-CONTROL-VNEXT.md`.
 
 ## Coverage Map (V1–V15 → Bot)
 

@@ -2,13 +2,15 @@
 
 _Researched 2026-05-06 across 3 parallel agents (comparative maturity matrix, OpenClaw-official endorsement check, builderz-labs deep-read). This doc supersedes the earlier framing where we treated abhi1693's third-party "Mission Control" as the canonical option — it isn't, and the official docs explicitly recommend something else._
 
+**2026-05-25 strategy update:** the active control-plane direction is [MISSION-CONTROL-VNEXT.md](MISSION-CONTROL-VNEXT.md): a Gregor-first, VPS/web cockpit using `ValueCell-ai/ClawX` as the primary architecture reference. The bundled Control UI remains the trusted baseline/fallback. The previous abhi MC deployment is historical/frozen; keep rollback details in private operator notes.
+
 ## TL;DR — what's actually canonical
 
 | Need | Canonical answer | Status |
 |---|---|---|
 | **Single-bot dashboard** (chat, config, sessions, devices, debug, cron, presence) | **Bundled Control UI on `:18789/`** — Vite+Lit SPA served by the OpenClaw gateway itself; launched with `openclaw dashboard`; documented at `docs.openclaw.ai/web/control-ui` and `docs.openclaw.ai/web/dashboard`. Official, free, evolves with OpenClaw releases. | **Should be our default** for Gregor today. |
-| **Multi-bot fleet console** (boards, RBAC, cost roll-up, approvals across N bots) | **No official endorsement.** The credible third-party is **`builderz-labs/mission-control`** (30 contributors, 6 tagged releases, 577 tests, multi-tenant `/api/super/*` API, hardened compose, MIT). | **Defer adoption** until Aldine bootstrap (`o38`) — the multi-tenant API becomes load-bearing then. |
-| **What we currently run** | `abhi1693/openclaw-mission-control` at `https://missioncontrol.mjdeving.com` | **Already deployed, not hurting us, but not worth further investment.** Strategy below. |
+| **Multi-bot fleet console** (boards, RBAC, cost roll-up, approvals across N bots) | **No official endorsement.** Earlier research favored `builderz-labs/mission-control`; the vNext direction now favors a ClawX-style web control plane built around private gateway registry + cockpit + orchestration. | **Build vNext Gregor-first; keep fleet abstractions from day one.** |
+| **Current operator route** | Mission Control vNext | **Gregor cockpit; token-gated; previous abhi stack retained only as a private rollback/comparison surface.** |
 
 ## The terminology trap
 
@@ -113,10 +115,10 @@ Are you doing single-bot operations on Gregor?
 ├─ YES → Use the bundled Control UI on :18789. It's canonical, free,
 │        and what OpenClaw itself recommends. Stop investing in abhi1693.
 └─ NO → Are you operating ≥2 bots and need a fleet view?
-        ├─ YES, AND that's coming within ~weeks → Migrate to builderz-labs/MC.
-        │        Time the migration to Aldine bootstrap (`o38`).
-        └─ NOT YET (still single-bot) → Use the bundled Control UI today.
-                 Migrate later when bot #2 lands.
+        ├─ YES, AND that's coming within ~weeks → Build against the vNext
+        │        private registry and cockpit model, not another abhi fork.
+        └─ NOT YET (still single-bot) → Use the bundled Control UI today
+                 and prototype the vNext Gregor cockpit.
 ```
 
 ## What this means for the abhi1693 deployment we already have
@@ -125,7 +127,7 @@ Are you doing single-bot operations on Gregor?
 
 - **Stop adding features to our abhi1693-specific docs.** No more Polkit add-ons, no more new operator's-guide sections built on it. The bundled Control UI is where new operator effort should land.
 - **Move single-bot day-to-day operations to the bundled Control UI** when convenient. Gregor's `:18789` already has the Control UI ready; it just needs to be exposed (Tailscale Serve is the official path; we already expose via Caddy).
-- **Decommission the abhi1693 compose stack** as part of the Aldine-bootstrap migration window — when the right time to migrate to builderz-labs happens, the abhi1693 stack goes with it.
+- **Treat abhi MC as frozen comparison surface** while vNext is built. Decommission it when vNext covers chat, sessions, health, logs, cron, and redacted provider inventory, with bundled Control UI retained as fallback.
 
 ## Tracking
 
@@ -133,7 +135,7 @@ Are you doing single-bot operations on Gregor?
   - `openclaw-bot-2qp` (open, P2) — abhi1693 compose missing shared identity volume; **subsumed by the migration plan above** rather than fixed independently.
   - `openclaw-bot-cwh` (open, P3) — watch upstream issue #266 on abhi1693; will close when we migrate off.
   - `openclaw-bot-ab6` (open, P3) — orphan transcripts hygiene; orthogonal to dashboard choice.
-- **Decision still to be made:** explicit go/no-go on the migration to builderz-labs at Aldine-bootstrap time. File a P3 bead `mc-migrate-builderz` blocked on `o38`.
+- **vNext epic:** track the ClawX-style web control plane in Beads. Link or supersede stale dashboard beads explicitly; do not silently rewrite history.
 
 ## Sources (research transcript 2026-05-06)
 
@@ -149,6 +151,7 @@ Are you doing single-bot operations on Gregor?
 
 - **Architecture of our current deployment (abhi1693):** [MISSION-CONTROL.md](MISSION-CONTROL.md)
 - **Operations guide for our current deployment (abhi1693):** [MISSION-CONTROL-OPERATIONS.md](MISSION-CONTROL-OPERATIONS.md)
+- **vNext control plane:** [MISSION-CONTROL-VNEXT.md](MISSION-CONTROL-VNEXT.md)
 - **Procedural integration recipe (abhi1693):** [GUIDE.md Appendix M](../GUIDE.md#appendix-m--mission-control-integration-overlay-2026-05-05)
 - **5-bot pack design driving the eventual fleet-console need:** [VERTICAL-AGENTS.md](VERTICAL-AGENTS.md)
 - **Audit doctrine that constrains Skills Hub adoption on builderz-labs:** [DOCTRINE-AUDIT-AT-USAGE-TIME.md](DOCTRINE-AUDIT-AT-USAGE-TIME.md)

@@ -105,7 +105,8 @@ function extractJsonKeys(jsonLike: string): Set<string> {
   const keyRegex = /["']([^"'\\]+)["']\s*:/g;
   let m: RegExpExecArray | null;
   while ((m = keyRegex.exec(jsonLike)) !== null) {
-    keys.add(m[1]);
+    const key = m[1];
+    if (key) keys.add(key);
   }
   return keys;
 }
