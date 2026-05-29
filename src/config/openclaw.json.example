@@ -71,8 +71,7 @@
       "botToken": "REDACTED",
       "groups": {},
       "groupPolicy": "allowlist",
-      "streamMode": "off",
-      "blockStreaming": false
+      "streaming": { "mode": "off" }
     }
   },
   "discovery": { "mdns": { "mode": "off" } },

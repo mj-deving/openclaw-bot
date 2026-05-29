@@ -722,7 +722,7 @@ Upgrading 2026-03-09 from v2026.3.2.
 3. **Telegram cron announce delivery fix** — Routes text-only jobs through real outbound adapters.
    - Fixes: cron no longer reports `delivered: true` when message never reached Telegram.
    - Resolves longstanding "silent failure" for announce jobs.
-   - **Impact:** Fixes KNOWN-BUGS.md root cause 1.4 (Cron announce-mode injection). Does NOT fix root causes 1.1-1.3, 1.5-1.7 which are separate bugs. Keep `streamMode: "off"` workaround for non-cron dupes. **BENEFITS**
+   - **Impact:** Fixes KNOWN-BUGS.md root cause 1.4 (Cron announce-mode injection). Does NOT fix root causes 1.1-1.3, 1.5-1.7 which are separate bugs. Keep `streaming: { "mode": "off" }` workaround for non-cron dupes. **BENEFITS**
 
 4. **Bundled plugin priority** — Plugin onboarding prefers bundled plugins over npm-installed copies with same ID.
    - Clears discovery cache before reload after plugin install.
@@ -867,7 +867,7 @@ Upgraded 2026-03-13 from v2026.3.8. Gateway restarted, Telegram verified, `docto
     - **Impact:** Model selection via Telegram inline keyboard now survives restarts. **BENEFITS**
 
 14. **Cron isolated sends excluded from resend queue** — Isolated cron sends no longer enter the resend queue, preventing duplicates.
-    - **Impact:** Another duplicate message fix (KNOWN-BUGS.md). Our `streamMode: "off"` stays, but this fixes one more root cause. **BENEFITS**
+    - **Impact:** Another duplicate message fix (KNOWN-BUGS.md). Our `streaming: { "mode": "off" }` stays, but this fixes one more root cause. **BENEFITS**
 
 15. **TUI duplicate assistant message fix** — Fixed duplicate rendering in streaming runs.
     - **Impact:** TUI-specific. **NONE**
@@ -1370,8 +1370,8 @@ Skipped — included transitively in v2026.4.1 upgrade. v2026.3.31 contains the 
    - **Impact:** Broke Dismas model routing. Fixed with singular key. **APPLIED**
    - **Guide:** Updated Appendix E. **GUIDE**
 
-7. **Streaming config format** — `streamMode` and `blockStreaming` are legacy. Current format: `streaming: "off"|"partial"|"block"|"progress"` (string enum).
-   - **Impact:** Legacy keys cause config warnings on startup. Fixed by using `streaming: "off"`. **APPLIED**
+7. **Streaming config format** — `streamMode`, scalar `streaming`, and `blockStreaming` are legacy. Current Telegram format: `streaming: { "mode": "off"|"partial"|"block"|"progress" }`.
+   - **Impact:** Legacy keys cause config warnings on startup. Fixed by using `streaming: { "mode": "off" }`. **APPLIED**
 
 ### New Features
 
@@ -1447,7 +1447,7 @@ Items extracted from changelogs that may influence our configuration.
 | Fail-closed config loading — validate before EVERY restart | v2026.3.4 #2 | APPLIED | High |
 | `openclaw backup create` vs custom `backup.sh` — evaluate overlap | v2026.3.8 #1 | RESOLVED — both kept: native covers config+sessions+auth, custom covers SQLite+memory markdown | Medium |
 | ACP provenance (`openclaw acp --provenance meta`) | v2026.3.8 #2 | DEFERRED — no multi-agent ACP use case yet | Low |
-| Remove Telegram streaming workarounds after 3.8 cron fix | v2026.3.8 #3 | RESOLVED — keep `streamMode: "off"`. v2026.3.8 fixed cron delivery (1.4) but non-cron dupes (1.1-1.3, 1.5-1.7) still need it | Medium |
+| Remove Telegram streaming workarounds after 3.8 cron fix | v2026.3.8 #3 | RESOLVED — keep `streaming: { "mode": "off" }`. v2026.3.8 fixed cron delivery (1.4) but non-cron dupes (1.1-1.3, 1.5-1.7) still need it | Medium |
 | `node-llama-cpp` peer dep — manual install needed on upgrade | v2026.3.12 ops | APPLIED | High |
 | Cron isolated resend queue fix — another dupe root cause closed | v2026.3.12 #14 | BENEFITS | Medium |
 | Device pairing bootstrap tokens — credential replay class closed | v2026.3.12 #1 | BENEFITS | High |

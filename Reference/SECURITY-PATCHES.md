@@ -181,7 +181,7 @@ Covers v2026.3.11 (March 12) and v2026.3.12 (March 13). Upgraded directly from v
 | **Sender ownership for `/config` and `/debug`** (v2026.3.12) — requires sender ownership verification | Prevents unauthorized config access even in shared contexts. | NONE (auto-applied) |
 | **Hooks fail-closed on unresolvable paths** (v2026.3.12) — hook loader fails closed instead of skipping | Prevents hook bypass via path manipulation. | NONE (auto-applied) |
 | **POSIX case sensitivity in allowlist** (v2026.3.12) — preserves case sensitivity in allowlist patterns | Prevents case-based allowlist bypass on Linux. | NONE (auto-applied) |
-| **Cron isolated sends excluded from resend queue** (v2026.3.12) — prevents duplicate delivery from resend queue | Another duplicate message root cause closed. Keep `streamMode: "off"` for remaining causes. | BENEFITS US |
+| **Cron isolated sends excluded from resend queue** (v2026.3.12) — prevents duplicate delivery from resend queue | Another duplicate message root cause closed. Keep `streaming: { "mode": "off" }` for remaining causes. | BENEFITS US |
 | **Agent text sanitization** (v2026.3.11) — strips leaked model control tokens from delivery | Prevents GLM-5/DeepSeek delimiters from reaching Telegram users. | NONE (auto-applied) |
 | **`node-llama-cpp` peer dependency** (v2026.3.12) — now a peer dep instead of optional | Requires manual install for global npm setups: `cd ~/.npm-global/lib/node_modules/openclaw && npm install node-llama-cpp@3.16.2` | APPLIED |
 

@@ -21,7 +21,7 @@ OpenClaw sends duplicate messages to Telegram users. This is **not a single bug*
 When an agent runs multi-step tool calls, intermediate narration text between tool executions gets sent as separate Telegram messages. A single logical response fragments into multiple near-identical messages 0.3–1s apart.
 
 - **Cause:** Reply pipeline splits streamed output into multiple `sendMessage` calls during tool execution gaps
-- **Fix:** Set `channels.telegram.streamMode: "off"` — disables intermediate streaming, only sends final response
+- **Fix:** Set `channels.telegram.streaming: { "mode": "off" }` — disables intermediate streaming, only sends final response
 - **Upstream:** PR #18956 partially merged; PR #16275 (comprehensive fix) exists in external fork only, NOT merged into main
 
 #### 1.2 Draft Streaming + Final Message (Perceived Duplicate)
@@ -31,7 +31,7 @@ When an agent runs multi-step tool calls, intermediate narration text between to
 Telegram shows a live-updating "draft bubble" while the model streams, then OpenClaw sends the final reply as a separate `sendMessage`. Users perceive this as the answer sent twice.
 
 - **Cause:** By design — `sendMessageDraft` for streaming preview + `sendMessage` for final delivery
-- **Fix:** Same as 1.1 — `channels.telegram.streamMode: "off"` eliminates the preview bubble
+- **Fix:** Same as 1.1 — `channels.telegram.streaming: { "mode": "off" }` eliminates the preview bubble
 - **Note:** This is UX confusion, not a true duplicate. But from the user's perspective it is identical
 
 #### 1.3 Followup Queue Multi-Delivery — Issue [#30604](https://github.com/openclaw/openclaw/issues/30604)
@@ -54,7 +54,7 @@ Isolated cron jobs with `delivery.mode: "announce"` deliver their message correc
 - **Fix:** ~~Set `delivery.relay: false` on announce-mode crons~~
 - **Upstream:** **Fixed in v2026.3.8** — text-only jobs now routed through real outbound adapters. Cron no longer reports `delivered: true` when message never reached Telegram. The silent failure path is eliminated.
 - **v2026.3.12 hardening:** Isolated cron sends are now excluded from the resend queue entirely. Previously, completed cron deliveries could re-enter the retry queue and produce duplicates even after the v2026.3.8 fix. This closes the remaining edge case.
-- **Note:** This fix addresses the cron announce delivery path specifically. Non-cron duplicate causes (1.1-1.3, 1.5-1.7) are unaffected — keep `streamMode: "off"` workarounds.
+- **Note:** This fix addresses the cron announce delivery path specifically. Non-cron duplicate causes (1.1-1.3, 1.5-1.7) are unaffected — keep `streaming: { "mode": "off" }` workarounds.
 
 #### 1.5 Polling Offset Loss on Restart — Issue [#739](https://github.com/openclaw/openclaw/issues/739)
 
@@ -112,7 +112,7 @@ Session `5146418f` — a 9-hour Supercolony session — consumed **$31.77 / 28.8
 - After a 4-hour gap (user aborted, resumed), **every message was delivered 4x** — the followup queue re-drained the same messages on each cycle
 - Each duplicate re-triggers the full agent pipeline (context load + LLM inference + tool execution), multiplying token spend
 
-This is Root Cause 1.3 (followup queue multi-delivery, #30604) in action. Unlike 1.1/1.2, `streamMode: "off"` does **not** fix this — there is no config-level mitigation. The cost inflation from duplicates on long, tool-heavy sessions is substantial.
+This is Root Cause 1.3 (followup queue multi-delivery, #30604) in action. Unlike 1.1/1.2, `streaming: { "mode": "off" }` does **not** fix this — there is no config-level mitigation. The cost inflation from duplicates on long, tool-heavy sessions is substantial.
 
 ### Why It's Intermittent
 
@@ -132,7 +132,7 @@ The single highest-impact config change:
 {
   "channels": {
     "telegram": {
-      "streamMode": "off"
+      "streaming": { "mode": "off" }
     }
   }
 }

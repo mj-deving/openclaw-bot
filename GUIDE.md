@@ -665,8 +665,7 @@ Edit `~/.openclaw/openclaw.json` and add the Telegram channel:
       "dmPolicy": "pairing",
       "groupPolicy": "allowlist",
       "groups": {},
-      "streamMode": "off",
-      "blockStreaming": false
+      "streaming": { "mode": "off" }
     }
   }
 }
@@ -675,8 +674,7 @@ Edit `~/.openclaw/openclaw.json` and add the Telegram channel:
 **What these settings mean:**
 - `dmPolicy: "pairing"` — the first person to DM the bot becomes the paired owner. Only they can talk to it.
 - `groupPolicy: "allowlist"` — the bot ignores all group chats unless you explicitly add them.
-- `streamMode: "off"` — responses deliver all-at-once instead of streaming. Prevents duplicate message artifacts (see [Troubleshooting: Duplicate Messages](#troubleshooting-duplicate-messages)).
-- `blockStreaming: false` — disables block-level chunking that can appear as multiple message bubbles.
+- `streaming: { "mode": "off" }` — responses deliver all-at-once instead of streaming. Prevents duplicate message artifacts (see [Troubleshooting: Duplicate Messages](#troubleshooting-duplicate-messages)).
 
 ### 4.3 Start the Gateway and Pair
 
@@ -2833,7 +2831,7 @@ OpenClaw's cron system received major reliability improvements. Key behaviors to
 - **Lightweight bootstrap (v2026.3.2+)** — Cron and heartbeat sessions use a lighter bootstrap mode with reduced context injection, lowering per-run token cost.
 - **Session reaper reliability (v2026.3.2+)** — Session cleanup is more reliable for isolated cron runs, preventing stale session accumulation.
 - **Cron announce delivery fix (v2026.3.8)** — Silent failure in cron announce delivery resolved. Cron jobs with `delivery.mode: "announce"` now correctly route through real outbound adapters.
-- **Resend queue fix (v2026.3.12)** — Isolated cron sends are now excluded from the resend queue. Previously, completed cron deliveries could re-enter the retry queue and produce duplicates. This closes another duplicate message root cause (see [KNOWN-BUGS.md §1.4](Reference/KNOWN-BUGS.md)). Keep `streamMode: "off"` for non-cron duplicate causes.
+- **Resend queue fix (v2026.3.12)** — Isolated cron sends are now excluded from the resend queue. Previously, completed cron deliveries could re-enter the retry queue and produce duplicates. This closes another duplicate message root cause (see [KNOWN-BUGS.md §1.4](Reference/KNOWN-BUGS.md)). Keep `streaming: { "mode": "off" }` for non-cron duplicate causes.
 
 ### 12.6 Rotating Heartbeat Pattern
 
@@ -3961,7 +3959,7 @@ Use a **different gateway port** for each bot:
     "telegram": {
       "enabled": true,
       "botToken": "YOUR_BOT2_TOKEN",
-      "streaming": "off"
+      "streaming": { "mode": "off" }
     }
   },
   "plugins": {
@@ -3977,7 +3975,7 @@ Use a **different gateway port** for each bot:
 
 > **v2026.4.5 config changes** — if you're copying config from an older bot, update these:
 >
-> - **Streaming:** Use `"streaming": "off"` (string). The legacy `streamMode` and `blockStreaming` keys are no longer recognized.
+> - **Streaming:** Use `"streaming": { "mode": "off" }`. The legacy `streamMode`, scalar `streaming`, and `blockStreaming` keys are no longer recognized.
 > - **plugins.allow:** Do NOT set `plugins.allow` unless you specifically need to restrict plugins. In v2026.4.5, `plugins.allow` acts as a **whitelist** — setting `plugins.allow: ["openai"]` silently blocks ALL other plugins from loading, including Telegram. The channel simply doesn't start with no error message. Bundled plugins load automatically via `plugins.entries`.
 > - **lossless-claw:** Don't reference `lossless-claw` in config unless the plugin is actually installed. Fresh v2026.4.5 installs don't include it; config references cause warnings.
 > - **device-pair:** Enable `device-pair` in `plugins.entries` if you want Telegram pairing to work.
@@ -4097,7 +4095,7 @@ ss -tlnp | grep 18790
 - [ ] Unique Telegram bot token
 - [ ] Config validated (`openclaw config validate`)
 - [ ] Doctor passes (`openclaw doctor --fix`)
-- [ ] `streaming: "off"` (not legacy keys)
+- [ ] `streaming: { mode: "off" }` (not legacy keys)
 - [ ] No `plugins.allow` unless specifically needed
 - [ ] systemd service with ReadWritePaths (no ReadOnlyPaths on first boot)
 - [ ] Service starts and stays running 15+ seconds
@@ -4311,7 +4309,7 @@ These are enforced by `src/scripts/config-invariants.sh` (maintainer-side, singl
       "dmPolicy": "pairing",
       "groupPolicy": "allowlist",
       "groups": {},
-      "streaming": "partial",
+      "streaming": { "mode": "partial" },
       // Invariant I4 — modern unified form. Do NOT add spawnSubagentSessions or
       // spawnAcpSessions: those are deprecated in v5.x (collapsed into spawnSessions).
       // NOTE: Telegram extension in v2026.5.6 lacks subagent-hooks-api implementation.
@@ -4380,7 +4378,7 @@ These are enforced by `src/scripts/config-invariants.sh` (maintainer-side, singl
 - `agents.defaults.embeddedHarness` — legacy in v5.x; use `agentRuntime` instead. Any leftover `fallback` field will brick the gateway (Invariant I1).
 - `compaction.provider` — only for custom plugin IDs, forces safeguard mode, breaks routing for normal models.
 - `agents.defaults.models` (plural) — strips the `openai-codex/` prefix and fails OAuth. Use singular `model`.
-- `streamMode` / `blockStreaming` — legacy v4.x keys; v4.5+ uses `streaming` (string).
+- `streamMode` / `blockStreaming` / scalar `streaming` — legacy keys; current Telegram config uses `streaming` as an object.
 - `tools.allow` set to anything but `["cron"]` — `tools.allow` acts as whitelist; broader use breaks file tools. Use `tools.alsoAllow` for additive grants.
 - `plugins.allow` — whitelist; blocks bundled plugins. Don't set.
 - `session.threadBindings.spawnSubagentSessions` / `spawnAcpSessions` — deprecated; collapsed into `spawnSessions` in v5.x.
@@ -4497,8 +4495,7 @@ OpenClaw has a systemic duplicate message problem with 7+ distinct root causes. 
   },
   "channels": {
     "telegram": {
-      "streamMode": "off",            // Disable draft streaming (eliminates causes 1.1 + 1.2)
-      "blockStreaming": false          // Disable Telegram block chunking
+      "streaming": { "mode": "off" }  // Disable draft/block streaming (eliminates causes 1.1 + 1.2)
     }
   }
 }
@@ -4508,8 +4505,7 @@ OpenClaw has a systemic duplicate message problem with 7+ distinct root causes. 
 
 ```bash
 # Apply via CLI:
-openclaw config set channels.telegram.streamMode off
-openclaw config set channels.telegram.blockStreaming false
+openclaw config set channels.telegram.streaming '{"mode":"off"}'
 openclaw config set agents.defaults.blockStreamingDefault off
 openclaw config validate   # Always validate before restart
 sudo systemctl restart openclaw

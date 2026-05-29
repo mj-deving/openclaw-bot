@@ -11,16 +11,16 @@ applied=0
 skipped=0
 
 # ── Streaming off ───────────────────────────────────────
-STEP="streaming.telegram"
+STEP="streaming.telegram.object_mode"
 if is_step_done "$STEP"; then
     log_skip "Telegram streaming = off"
     skipped=$((skipped + 1))
 else
     log_todo "Setting Telegram streaming to 'off'"
     log_info "Prevents duplicate messages from draft streaming and block chunking."
-    log_info "Uses v2026.4.5 format: streaming=\"off\" (not legacy streamMode)."
+    log_info "Uses current format: streaming={mode: \"off\"} (not legacy streamMode)."
     if confirm; then
-        config_set "channels.telegram.streaming" '"off"'
+        config_set "channels.telegram.streaming" '{"mode":"off"}'
         # Clean up any legacy keys
         config_delete "channels.telegram.streamMode" 2>/dev/null || true
         config_delete "channels.telegram.blockStreaming" 2>/dev/null || true
