@@ -195,7 +195,6 @@ Apply at audit time, not pre-listed by name:
 
 - `SKILLS-AND-TOOLS.md` — skill mechanics, supply-chain risk model, audit checklist (existing)
 - `CONCEPTS-INVENTORY.md` — sub-agent verdict (lean SKIP for current Gregor topology, ADOPT-candidate for agent-pack — relevant here)
-- `ATLASFORGE-PATTERNS.md` — chassis identity layer (SOUL/AGENTS/IDENTITY/USER/MEMORY/SECURITY/HEARTBEAT/TOOLS) inherited by every bot in the pack
 - `DOCTRINE-AUDIT-AT-USAGE-TIME.md` — the policy this catalog feeds
 - `VERTICAL-AGENTS.md` — bot-by-bot skill packs derived from this catalog
 - `KNOWN-BUGS.md` — config gotchas every new bot must respect (#6 OAuth compaction, #7 /tmp workspace, #8 strict-schema auto-restore)

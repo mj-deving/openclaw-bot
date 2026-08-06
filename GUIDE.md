@@ -4993,7 +4993,7 @@ See [Reference/VERTICAL-AGENTS.md](Reference/VERTICAL-AGENTS.md) for the 5-bot m
 | # | Step | GUIDE phase ref | Time | Per-bot delta |
 |---|------|----------------|------|---------------|
 | 1 | User + sudoers | Phase 1 + 2 | 3 min | `sudo openclaw-install-user <bot>` + per-bot scoped sudoers drop-in (copy `/etc/sudoers.d/openclaw-restricted-admin` template, substitute user) |
-| 2 | Workspace + AtlasForge chassis | Phase 8 | 5 min | Copy Gregor's workspace template; substitute persona / IDENTITY / AGENTS files from `Reference/AtlasForge-Bundle/`; **pin workspace under `/home/<bot>/.openclaw/workspace`** (NEVER /tmp — KNOWN-BUGS #7) |
+| 2 | Workspace + AtlasForge chassis | Phase 8 | 5 min | Copy Gregor's workspace template; substitute persona / IDENTITY / AGENTS files from your own chassis templates; **pin workspace under `/home/<bot>/.openclaw/workspace`** (NEVER /tmp — KNOWN-BUGS #7) |
 | 3 | Authentication | Phase 5 | 5 min | Codex OAuth done locally then `scp` to `/home/<bot>/.openclaw/agents/main/agent/auth-profiles.json` (mode 0600); add OpenRouter API key for compaction (OAuth ≠ compaction-capable, see §9.6) |
 | 4 | Config | Phase 6 | 5 min | Generate `openclaw.json` from per-bot template (port, workspace, channels, models per VERTICAL-AGENTS.md). **Canonical compaction defaults** (§9.6): `model: "openrouter/anthropic/claude-haiku-4-5"`, `timeoutSeconds: 120`, `keepRecentTokens: 20000`, `reserveTokens: 8000`, `memoryFlush.enabled: true`. `openclaw config validate` clean; **read-back from live JSON post-restart** (KNOWN-BUGS #8). |
 | 5 | Channels | Phase 11 | 5 min | Register Telegram bot token; opt-in Slack socket-mode + Discord DM-only per bot's spec |

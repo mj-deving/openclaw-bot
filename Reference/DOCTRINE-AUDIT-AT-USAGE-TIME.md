@@ -100,7 +100,7 @@ Audit runs at first-invocation, not at gateway-start. Cold-start latency unaffec
 Bundled skills are pre-audited at OpenClaw release time — they're a **degenerate case** of the new doctrine (audit happened upstream, audit.json is implicit / ships with the package). Forks-with-audit just extends the same trust model to a wider catalog.
 
 ### With AtlasForge chassis
-The audit pipeline mirrors AtlasForge's "Failure → Guardrail" loop: every skill that fails an audit becomes a named regression loaded at boot via AGENTS.md → no skill can fail twice for the same reason. (See `ATLASFORGE-PATTERNS.md`.)
+The audit pipeline mirrors AtlasForge's "Failure → Guardrail" loop: every skill that fails an audit becomes a named regression loaded at boot via AGENTS.md → no skill can fail twice for the same reason. (Pattern credited to AtlasForge by Jonny Miller; its material is not redistributed here.)
 
 ## Migration
 

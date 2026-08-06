@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 11-atlasforge.sh — AtlasForge Meta-Learning Patterns
 # Adopts 3 high-value patterns: Claw Score, Failure→Guardrail, Supersede Tracking.
-# See Reference/ATLASFORGE-PATTERNS.md for full analysis.
+# Patterns credited to AtlasForge (Jonny Miller). The source material is a paid
+# third-party product and is not redistributed in this repository.
 #
 # NOTE: These patterns become useful after 1-2 weeks of conversations.
 # On a fresh bot with no history, they have nothing to operate on.

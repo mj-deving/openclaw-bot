@@ -3,7 +3,7 @@
 **Date:** 2026-04-30
 **Status:** Design retained, **execution deferred indefinitely (2026-05-14)** — Marius decision: no near-term intent to bootstrap additional bots. Verticals (V1–V15) and personas kept as conceptual decomposition. ~1 automation bot may land near-term but scope undefined and not committed. Bootstrap beads `o38` / `8bi` / `o6a` / `cgy` are state=deferred in bd. Re-open when concrete use case emerges. Doctrine extracted from this design (4-layer model, 5-file workspace, security tiers) flows into GUIDE Phase 16 via bead `k0a.2`.
 **Driving plan:** `Plans/next-session-agent-packs.md`
-**Companion docs:** `SKILL-LANDSCAPE.md` (skill catalog), `DOCTRINE-AUDIT-AT-USAGE-TIME.md` (skill policy), `ATLASFORGE-PATTERNS.md` (chassis identity), `KNOWN-BUGS.md` (mandatory config gotchas), `MORITZ-BLUEPRINT.md` (Moritz Kremb adoption + tiered security framing)
+**Companion docs:** `SKILL-LANDSCAPE.md` (skill catalog), `DOCTRINE-AUDIT-AT-USAGE-TIME.md` (skill policy), `KNOWN-BUGS.md` (mandatory config gotchas), `MORITZ-BLUEPRINT.md` (Moritz Kremb adoption + tiered security framing)
 
 ## Pack Overview
 
@@ -271,7 +271,7 @@ This is a vertical-pack overlay on the existing 15-phase `GUIDE.md` flow — doe
 
 **High-level shape (per new bot):**
 1. **User + sudoers** (3 min) — `sudo openclaw-install-user <bot>` + drop-in scoped sudoers for that bot's user
-2. **Workspace + AtlasForge chassis** (5 min) — copy Gregor's workspace template; substitute persona/IDENTITY/AGENTS files from `Reference/AtlasForge-Bundle/`; pin workspace path under `/home/<bot>/.openclaw/workspace` (NEVER /tmp — KNOWN-BUGS #7)
+2. **Workspace + AtlasForge chassis** (5 min) — copy Gregor's workspace template; substitute persona/IDENTITY/AGENTS files from your own chassis templates; pin workspace path under `/home/<bot>/.openclaw/workspace` (NEVER /tmp — KNOWN-BUGS #7)
 3. **Authentication** (5 min) — Codex OAuth done locally then `scp` to `/home/<bot>/.openclaw/agents/main/agent/auth-profiles.json` (mode 0600); add OpenRouter API key for compaction
 4. **Config** (5 min) — generate `openclaw.json` from per-bot template (port, workspace, channels, models per spec above); `openclaw config validate` clean; **read-back from live JSON** post-restart (KNOWN-BUGS #8)
 5. **Channels** (5 min) — register Telegram bot token; opt-in Slack socket-mode + Discord DM-only per bot's spec
@@ -311,6 +311,5 @@ Synthesized 2026-04-30 from 4-seat council debate (2 rounds: opening proposals +
 **Cross-references:**
 - `SKILL-LANDSCAPE.md` — top-100 skill catalog feeding the per-bot packs above
 - `DOCTRINE-AUDIT-AT-USAGE-TIME.md` — skill audit policy for every fork
-- `ATLASFORGE-PATTERNS.md` — chassis identity layer
 - `KNOWN-BUGS.md` — config gotchas (#6 OAuth compaction, #7 /tmp workspace, #8 strict-schema auto-restore)
 - `GUIDE.md` Appendix L (to be added) — vertical-pack bootstrap overlay
